@@ -121,7 +121,7 @@ for marker in [
     "if model.menuBarShowIcon",
 ]:
     if marker not in app_swift:
-        errors.append(f"native v1.1.2 compact-window/v1.0.9 menu-bar gate missing: {marker}")
+        errors.append(f"native compact-window/v1.0.9 menu-bar gate missing: {marker}")
 if "menuRateCompact" not in app_model:
     errors.append("native compact menu-rate formatter missing")
 

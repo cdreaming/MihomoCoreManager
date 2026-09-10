@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.1.3
+
+- 基于 v1.1.2 统一布局修复版发布正式升级版本。
+- App 版本升级为 v1.1.3，Xcode build number 与 portable build number 统一为 113。
+- 保留 v1.1.2 的紧凑标题栏、页面统一布局和 v1.0.9 菜单栏样式，不引入额外 UI 回退。
+- 保留 v1.1.1 以来的管理后端选择器、性能优化、portable runtime 与 unsigned Release 流程。
+
 ## v1.1.2
 
 - 修复 v1.1.1 原生 SwiftUI 菜单栏界面回归，继续使用 v1.0.9 已验证稳定的菜单栏布局与样式。

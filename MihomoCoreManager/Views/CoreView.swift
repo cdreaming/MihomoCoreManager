@@ -13,16 +13,28 @@ struct CoreView: View {
                     subtitle: "仅管理 Mihomo Core 进程；MetaCubeXD 与管理面板保持独立。"
                 )
 
-                HStack(alignment: .top, spacing: 14) {
-                    serviceControl
-                    serviceInfo
-                }
-
+                serviceColumns
                 metaCubePanel
                 updatePanel
             }
             .padding(.horizontal, 28)
             .padding(.vertical, 26)
+        }
+    }
+
+    private var serviceColumns: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 14) {
+                serviceControl
+                    .frame(maxWidth: .infinity, minHeight: 286, alignment: .top)
+                serviceInfo
+                    .frame(maxWidth: .infinity, minHeight: 286, alignment: .top)
+            }
+
+            VStack(spacing: 14) {
+                serviceControl
+                serviceInfo
+            }
         }
     }
 
@@ -49,25 +61,28 @@ struct CoreView: View {
                             .disabled(model.isBusy)
                     }
                 }
+                .frame(maxWidth: .infinity)
 
                 Button("重新生成配置并热重载") { Task { await model.perform(.applySubscriptions) } }
                     .buttonStyle(DashboardActionButtonStyle())
                     .disabled(model.isBusy)
+
+                Spacer(minLength: 0)
 
                 Text("生命周期动作由远端 Mihomo Core 管理面板 v4.0.0 API 执行；config.yaml 路径可在设置中指定。")
                     .font(.system(size: 11))
                     .foregroundStyle(DashboardPalette.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .frame(maxWidth: .infinity)
     }
 
     private var serviceInfo: some View {
         DashboardPanel {
             VStack(alignment: .leading, spacing: 0) {
                 DashboardPanelHeader(title: "服务信息", trailing: live.status?.versions?.core ?? "--")
-                    .padding(.bottom, 5)
+                    .padding(.bottom, 6)
                 infoRow("状态", live.status?.service.active == true ? "RUNNING" : "STOPPED", accent: true)
                 infoRow("服务详情", serviceDetail)
                 infoRow("运行时间", uptime)
@@ -75,10 +90,10 @@ struct CoreView: View {
                 infoRow("连接数", String(live.status?.connections ?? 0))
                 infoRow("PID", pid)
                 infoRow("Controller", live.status?.controller ?? "--", selectable: true)
-                infoRow("config.yaml", model.selectedProfile?.configPath ?? "--", selectable: true)
+                infoRow("config.yaml", model.selectedProfile?.configPath ?? "--", selectable: true, isLast: true)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .frame(maxWidth: .infinity)
     }
 
     private var metaCubePanel: some View {
@@ -100,11 +115,20 @@ struct CoreView: View {
             VStack(alignment: .leading, spacing: 12) {
                 DashboardPanelHeader(title: "项目升级", trailing: "Mihomo Core + MetaCubeXD + Core 管理面板")
 
-                HStack(spacing: 9) {
-                    Button("检查新版本") { Task { await model.checkUpdate() } }
-                        .buttonStyle(DashboardActionButtonStyle())
-                    Button("开始项目升级") { Task { await model.applyUpdate() } }
-                        .buttonStyle(DashboardActionButtonStyle(primary: true))
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 9) {
+                        Button("检查新版本") { Task { await model.checkUpdate() } }
+                            .buttonStyle(DashboardActionButtonStyle())
+                        Button("开始项目升级") { Task { await model.applyUpdate() } }
+                            .buttonStyle(DashboardActionButtonStyle(primary: true))
+                    }
+
+                    VStack(spacing: 9) {
+                        Button("检查新版本") { Task { await model.checkUpdate() } }
+                            .buttonStyle(DashboardActionButtonStyle())
+                        Button("开始项目升级") { Task { await model.applyUpdate() } }
+                            .buttonStyle(DashboardActionButtonStyle(primary: true))
+                    }
                 }
                 .disabled(model.isBusy)
 
@@ -124,7 +148,7 @@ struct CoreView: View {
                     VStack(spacing: 0) {
                         versionRow("Mihomo Core", info.coreCurrent, info.coreLatest, info.coreUpdateAvailable)
                         versionRow("MetaCubeXD", info.metacubexdCurrent, info.metacubexdLatest, info.metacubexdUpdateAvailable)
-                        versionRow("Core 管理面板", info.managementPanelCurrent, info.managementPanelLatest ?? info.managementPanelBundled, info.managementPanelUpdateAvailable)
+                        versionRow("Core 管理面板", info.managementPanelCurrent, info.managementPanelLatest ?? info.managementPanelBundled, info.managementPanelUpdateAvailable, isLast: true)
                     }
                     .background(DashboardPalette.field.opacity(0.55))
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -142,11 +166,12 @@ struct CoreView: View {
     }
 
     @ViewBuilder
-    private func infoRow(_ label: String, _ value: String, accent: Bool = false, selectable: Bool = false) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 14) {
+    private func infoRow(_ label: String, _ value: String, accent: Bool = false, selectable: Bool = false, isLast: Bool = false) -> some View {
+        HStack(alignment: .top, spacing: 14) {
             Text(label)
                 .foregroundStyle(DashboardPalette.secondary)
-            Spacer(minLength: 20)
+                .frame(width: 90, alignment: .leading)
+
             Group {
                 if selectable {
                     Text(value)
@@ -158,15 +183,21 @@ struct CoreView: View {
             .foregroundStyle(accent ? (live.status?.service.active == true ? DashboardPalette.green : DashboardPalette.red) : .white)
             .fontWeight(accent ? .bold : .regular)
             .multilineTextAlignment(.trailing)
-            .lineLimit(2)
+            .lineLimit(3)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .font(.system(size: 12))
-        .padding(.vertical, 9)
-        .overlay(alignment: .bottom) { Rectangle().fill(DashboardPalette.separator).frame(height: 1) }
+        .padding(.vertical, 8)
+        .overlay(alignment: .bottom) {
+            if !isLast {
+                Rectangle().fill(DashboardPalette.separator).frame(height: 1)
+            }
+        }
     }
 
     @ViewBuilder
-    private func versionRow(_ name: String, _ current: String?, _ latest: String?, _ available: Bool?) -> some View {
+    private func versionRow(_ name: String, _ current: String?, _ latest: String?, _ available: Bool?, isLast: Bool = false) -> some View {
         HStack(spacing: 10) {
             Text(name)
                 .foregroundStyle(DashboardPalette.secondary)
@@ -182,7 +213,11 @@ struct CoreView: View {
         .font(.system(size: 11.5))
         .padding(.horizontal, 11)
         .frame(height: 36)
-        .overlay(alignment: .bottom) { Rectangle().fill(DashboardPalette.separator).frame(height: 1) }
+        .overlay(alignment: .bottom) {
+            if !isLast {
+                Rectangle().fill(DashboardPalette.separator).frame(height: 1)
+            }
+        }
     }
 
     private var serviceDetail: String {

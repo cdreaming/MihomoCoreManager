@@ -13,46 +13,60 @@ struct SubscriptionsView: View {
                 )
 
                 DashboardPanel {
-                    VStack(alignment: .leading, spacing: 0) {
+                    VStack(alignment: .leading, spacing: 14) {
                         DashboardPanelHeader(title: "Proxy Providers", trailing: "type: http")
-                            .padding(.bottom, 8)
 
-                        ForEach(Array(providers.enumerated()), id: \.element) { index, key in
-                            HStack(spacing: 18) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(key)
-                                        .font(.system(size: 13, weight: .bold))
-                                    Text(String(format: "Provider %02d", index + 1))
-                                        .font(.system(size: 10.5))
-                                        .foregroundStyle(DashboardPalette.tertiary)
+                        VStack(spacing: 0) {
+                            ForEach(Array(providers.enumerated()), id: \.element) { index, key in
+                                HStack(alignment: .center, spacing: 16) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(key)
+                                            .font(.system(size: 13, weight: .bold))
+                                            .lineLimit(1)
+                                        Text(String(format: "Provider %02d", index + 1))
+                                            .font(.system(size: 10.5))
+                                            .foregroundStyle(DashboardPalette.tertiary)
+                                    }
+                                    .frame(width: 122, alignment: .leading)
+
+                                    TextField("https://…", text: binding(for: key))
+                                        .textFieldStyle(DashboardTextFieldStyle())
                                 }
-                                .frame(width: 105, alignment: .leading)
-
-                                TextField("https://…", text: binding(for: key))
-                                    .textFieldStyle(DashboardTextFieldStyle())
-                            }
-                            .padding(.vertical, 9)
-                            .overlay(alignment: .bottom) {
-                                Rectangle().fill(DashboardPalette.separator).frame(height: 1)
+                                .padding(.vertical, 10)
+                                .overlay(alignment: .bottom) {
+                                    if index != providers.count - 1 {
+                                        Rectangle().fill(DashboardPalette.separator).frame(height: 1)
+                                    }
+                                }
                             }
                         }
 
-                        HStack(spacing: 9) {
-                            Spacer()
-                            Button("重新读取") { Task { await model.fetchSubscriptions() } }
-                                .buttonStyle(DashboardActionButtonStyle())
-                                .frame(width: 120)
-                            Button("保存并应用") { Task { await model.saveSubscriptions() } }
-                                .buttonStyle(DashboardActionButtonStyle(primary: true))
-                                .frame(width: 140)
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 9) {
+                                Spacer()
+                                Button("重新读取") { Task { await model.fetchSubscriptions() } }
+                                    .buttonStyle(DashboardActionButtonStyle())
+                                    .frame(width: 120)
+                                Button("保存并应用") { Task { await model.saveSubscriptions() } }
+                                    .buttonStyle(DashboardActionButtonStyle(primary: true))
+                                    .frame(width: 140)
+                            }
+
+                            VStack(spacing: 9) {
+                                Button("重新读取") { Task { await model.fetchSubscriptions() } }
+                                    .buttonStyle(DashboardActionButtonStyle())
+                                Button("保存并应用") { Task { await model.saveSubscriptions() } }
+                                    .buttonStyle(DashboardActionButtonStyle(primary: true))
+                            }
                         }
-                        .padding(.top, 14)
+                        .padding(.top, 2)
 
                         Text("留空会由服务端生成本地 inline 占位；非空使用 Mihomo 原生 type:http。若 v4.0.0 远端热重载明确超时并回滚，App 会自动停止 Core → 保存配置 → 重新启动，以保证新订阅真正生效。")
                             .font(.system(size: 11))
                             .foregroundStyle(DashboardPalette.tertiary)
-                            .padding(.top, 12)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             .padding(.horizontal, 28)

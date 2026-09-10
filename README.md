@@ -1,6 +1,15 @@
 # Mihomo Core Manager for macOS
 
-基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.1.2 (build 112)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.1.3 (build 113)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+
+## v1.1.3
+
+本版本基于已完成界面统一修复的 v1.1.2 源码发布，版本升级为 **v1.1.3 (build 113)**。
+
+- 保留 v1.1.2 的紧凑标题栏优化。
+- 保留“概览 / Core 控制 / 订阅管理 / 设置”等页面的统一布局修复。
+- 保留 v1.0.9 风格的原生菜单栏标签界面。
+- 不改变 Mihomo Core API、订阅处理、升级流程和 portable runtime 功能逻辑。
 
 ## v1.1.2
 
@@ -83,12 +92,12 @@ xcodebuild \
 
 ## Release
 
-正式 tag `v1.1.2` 成功后生成：
+正式 tag `v1.1.3` 成功后生成：
 
 ```text
-MihomoCoreManager-v1.1.2-arm64.pkg
-MihomoCoreManager-v1.1.2-arm64.zip
-release_v1.1.2_notes_zh-CN.md
+MihomoCoreManager-v1.1.3-arm64.pkg
+MihomoCoreManager-v1.1.3-arm64.zip
+release_v1.1.3_notes_zh-CN.md
 SHA256SUMS.txt
 ```
 

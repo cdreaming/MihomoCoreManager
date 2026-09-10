@@ -14,13 +14,7 @@ struct OverviewView: View {
 
                 hero
                 metrics
-
-                HStack(alignment: .top, spacing: 14) {
-                    trafficPanel
-                        .frame(maxWidth: .infinity)
-                    quickActions
-                        .frame(width: 320)
-                }
+                contentColumns
             }
             .padding(.horizontal, 28)
             .padding(.vertical, 26)
@@ -32,6 +26,22 @@ struct OverviewView: View {
                 endPoint: UnitPoint(x: 0.5, y: 0.28)
             )
         )
+    }
+
+    private var contentColumns: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 14) {
+                trafficPanel
+                    .frame(maxWidth: .infinity, minHeight: 336, alignment: .top)
+                quickActions
+                    .frame(width: 334, minHeight: 336, alignment: .top)
+            }
+
+            VStack(spacing: 14) {
+                trafficPanel
+                quickActions
+            }
+        }
     }
 
     private var hero: some View {
@@ -108,13 +118,14 @@ struct OverviewView: View {
                 DashboardPanelHeader(title: "实时流量", trailing: "每 \(refreshText) 秒刷新")
 
                 TrafficChartView(samples: live.trafficSamples)
-                    .frame(height: 220)
+                    .frame(height: 230)
 
                 HStack(spacing: 18) {
                     legendDot(DashboardPalette.accent, "Upload")
                     legendDot(DashboardPalette.green, "Download")
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 
@@ -141,6 +152,7 @@ struct OverviewView: View {
                             .disabled(model.isBusy)
                     }
                 }
+                .frame(maxWidth: .infinity)
 
                 Button("应用订阅 + 热重载") { Task { await model.perform(.applySubscriptions) } }
                     .buttonStyle(DashboardActionButtonStyle())
@@ -149,7 +161,9 @@ struct OverviewView: View {
                 Button("打开 MetaCubeXD") { model.openMetaCubeXD() }
                     .buttonStyle(DashboardActionButtonStyle())
 
-                VStack(alignment: .leading, spacing: 3) {
+                Spacer(minLength: 0)
+
+                VStack(alignment: .leading, spacing: 4) {
                     Text("MetaCubeXD 独立面板：\(model.resolvedMetaCubeXDURL?.absoluteString ?? "未配置")")
                     if let file = live.status?.metacubexd?.settingsFile {
                         Text("配置文件：\(file)")
@@ -157,9 +171,11 @@ struct OverviewView: View {
                 }
                 .font(.system(size: 10.5))
                 .foregroundStyle(DashboardPalette.tertiary)
-                .lineLimit(2)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 
