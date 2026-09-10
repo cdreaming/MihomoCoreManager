@@ -1,6 +1,17 @@
 # Mihomo Core Manager for macOS
 
-基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.1.6 (build 116)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.1.7 (build 117)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+
+## v1.1.7
+
+v1.1.7 优化异步操作按钮的完整执行反馈：
+
+- “开始项目升级”不再在远端仅返回“已启动”后立即恢复；持续读取升级日志的 `running` 状态，确认任务结束后才恢复初始按钮。
+- 升级 Core 管理面板导致远端短暂重启/断连时保持“项目升级中…”状态并继续检测，避免误判失败或提前结束动画。
+- 原生 SwiftUI 为当前执行按钮显示 `ProgressView`；鼠标停留在执行中按钮时切换为旋转 busy cursor，开启“减少动态效果”时自动使用静态指针。其它操作保持禁用，完成/失败后统一由 `defer` 恢复。
+- portable Web UI 为执行中按钮增加 spinner、`aria-busy` 和全局 `cursor: progress` 忙碌指针反馈。
+- 按压效果增强：原生按钮按下缩放到 `0.955` 并加入位移/阴影反馈；Web 按钮缩放到 `0.945` 并增加高亮闪层与内阴影。
+- 保留 `prefers-reduced-motion` / macOS Reduce Motion 兼容。
 
 ## v1.1.6
 
@@ -119,12 +130,12 @@ xcodebuild \
 
 ## Release
 
-正式 tag `v1.1.6` 成功后生成：
+正式 tag `v1.1.7` 成功后生成：
 
 ```text
-MihomoCoreManager-v1.1.6-arm64.pkg
-MihomoCoreManager-v1.1.6-arm64.zip
-release_v1.1.6_notes_zh-CN.md
+MihomoCoreManager-v1.1.7-arm64.pkg
+MihomoCoreManager-v1.1.7-arm64.zip
+release_v1.1.7_notes_zh-CN.md
 SHA256SUMS.txt
 ```
 

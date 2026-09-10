@@ -13,8 +13,10 @@ struct LogsView: View {
                         Picker("日志行数", selection: $model.logLines) {
                             Text("50 行").tag(50); Text("100 行").tag(100); Text("200 行").tag(200); Text("300 行").tag(300)
                         }.labelsHidden().frame(width: 115)
-                        Button("刷新日志") { Task { await model.fetchLogs() } }
-                            .buttonStyle(DashboardActionButtonStyle()).frame(width: 108)
+                        Button { Task { await model.fetchLogs() } } label: {
+                            DashboardBusyLabel(title: "刷新日志", busyTitle: "刷新中…", isBusy: model.activeOperation == .fetchLogs)
+                        }
+                            .buttonStyle(DashboardActionButtonStyle(busy: model.activeOperation == .fetchLogs)).frame(width: 108)
                     }
                     ScrollView([.horizontal, .vertical]) {
                         Text(model.logs.isEmpty ? "(no logs)" : model.logs)

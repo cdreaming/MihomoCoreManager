@@ -44,7 +44,8 @@ final class AppModel: ObservableObject {
     @Published var updateInfo: ProjectUpdateInfo?
     @Published var updateLogs: String = ""
     @Published var updateRunning = false
-    @Published var isBusy = false
+    @Published private(set) var isBusy = false
+    @Published private(set) var activeOperation: AppOperation?
     @Published var notice: AppNotice?
     @Published var menuBarShowIcon: Bool {
         didSet {
@@ -293,7 +294,7 @@ final class AppModel: ObservableObject {
 
     func perform(_ action: CoreAction) async {
         guard let profile = selectedProfile else { return }
-        await busyOperation {
+        await busyOperation(.core(action)) {
             let message: String
             if action == .reload {
                 message = try await api.reloadConfiguredPath(profile: profile, secret: currentSecret)
@@ -309,7 +310,7 @@ final class AppModel: ObservableObject {
     func fetchSubscriptions() async {
         guard let profile = selectedProfile else { return }
         let profileID = profile.id
-        await busyOperation {
+        await busyOperation(.fetchSubscriptions) {
             let values = try await api.subscriptions(profile: profile, secret: currentSecret)
             guard selectedProfileID == profileID else { return }
             subscriptions = values
@@ -320,7 +321,7 @@ final class AppModel: ObservableObject {
     func saveSubscriptions() async {
         guard let profile = selectedProfile else { return }
         let profileID = profile.id
-        await busyOperation {
+        await busyOperation(.saveSubscriptions) {
             let message = try await api.saveSubscriptions(subscriptions, profile: profile, secret: currentSecret)
             subscriptionsLoadedFor = profileID
             show(message)
@@ -331,7 +332,7 @@ final class AppModel: ObservableObject {
     func fetchLogs() async {
         guard let profile = selectedProfile else { return }
         let profileID = profile.id
-        await busyOperation {
+        await busyOperation(.fetchLogs) {
             let value = try await api.logs(lines: logLines, profile: profile, secret: currentSecret)
             guard selectedProfileID == profileID else { return }
             logs = value
@@ -341,7 +342,7 @@ final class AppModel: ObservableObject {
 
     func checkUpdate() async {
         guard let profile = selectedProfile else { return }
-        await busyOperation {
+        await busyOperation(.checkUpdate) {
             updateInfo = try await api.checkUpdate(profile: profile, secret: currentSecret)
             show("版本检查完成")
         }
@@ -349,21 +350,41 @@ final class AppModel: ObservableObject {
 
     func applyUpdate() async {
         guard let profile = selectedProfile else { return }
-        await busyOperation {
+        await busyOperation(.applyUpdate) {
+            let baseline = try? await api.updateLog(profile: profile, secret: currentSecret)
+            if let baseline {
+                updateLogs = baseline.logs
+                updateRunning = baseline.running
+            }
+
+            if baseline?.running == true {
+                show("检测到项目升级正在执行，继续等待完成。")
+                try await waitForUpdateCompletion(
+                    profile: profile,
+                    baselineLogs: baseline?.logs ?? "",
+                    observedActivity: true
+                )
+                return
+            }
+
             let message = try await api.applyUpdate(
                 preserveSettings: profile.preserveSettingsOnUpdate,
                 profile: profile,
                 secret: currentSecret
             )
             show(message)
-            try? await Task.sleep(nanoseconds: 600_000_000)
-            await fetchUpdateLogInternal(profile: profile)
+            updateRunning = true
+            try await waitForUpdateCompletion(
+                profile: profile,
+                baselineLogs: baseline?.logs ?? "",
+                observedActivity: false
+            )
         }
     }
 
     func fetchUpdateLog() async {
         guard let profile = selectedProfile else { return }
-        await busyOperation { await fetchUpdateLogInternal(profile: profile) }
+        await busyOperation(.fetchUpdateLog) { await fetchUpdateLogInternal(profile: profile) }
     }
 
     func openMetaCubeXD() {
@@ -393,10 +414,78 @@ final class AppModel: ObservableObject {
         catch { show("服务器配置保存失败：\(error.localizedDescription)", error: true) }
     }
 
-    private func busyOperation(_ operation: () async throws -> Void) async {
+    private func waitForUpdateCompletion(
+        profile: ServerProfile,
+        baselineLogs: String,
+        observedActivity initiallyObservedActivity: Bool
+    ) async throws {
+        let deadline = Date().addingTimeInterval(30 * 60)
+        var observedActivity = initiallyObservedActivity
+        var idlePollsAfterStart = 0
+        var lastConnectionNoticeAt = Date.distantPast
+
+        while Date() < deadline {
+            try Task.checkCancellation()
+            try await Task.sleep(nanoseconds: 750_000_000)
+
+            do {
+                let result = try await api.updateLog(profile: profile, secret: currentSecret)
+                updateLogs = result.logs
+                updateRunning = result.running
+
+                if result.running || result.logs != baselineLogs {
+                    observedActivity = true
+                }
+
+                if result.running {
+                    idlePollsAfterStart = 0
+                    continue
+                }
+
+                if observedActivity {
+                    updateRunning = false
+                    if let latest = try? await api.checkUpdate(profile: profile, secret: currentSecret) {
+                        updateInfo = latest
+                    }
+                    show("项目升级执行完成")
+                    return
+                }
+
+                // A very fast update can complete between two polls without exposing running=true.
+                // Require several idle confirmations after the accepted POST before considering it done.
+                idlePollsAfterStart += 1
+                if idlePollsAfterStart >= 4 {
+                    updateRunning = false
+                    if let latest = try? await api.checkUpdate(profile: profile, secret: currentSecret) {
+                        updateInfo = latest
+                    }
+                    show("项目升级执行完成")
+                    return
+                }
+            } catch {
+                // Updating the management panel may briefly restart the remote service. Keep the
+                // initiating button busy and continue polling instead of falsely reporting completion.
+                observedActivity = true
+                updateRunning = true
+                if Date().timeIntervalSince(lastConnectionNoticeAt) > 6 {
+                    lastConnectionNoticeAt = Date()
+                    show("升级进行中，等待管理面板恢复连接…")
+                }
+            }
+        }
+
+        updateRunning = false
+        throw MihomoClientError.operationFailed("等待项目升级完成超时，请检查升级日志和远端服务状态。")
+    }
+
+    private func busyOperation(_ operationID: AppOperation, _ operation: () async throws -> Void) async {
         guard !isBusy else { return }
         isBusy = true
-        defer { isBusy = false }
+        activeOperation = operationID
+        defer {
+            activeOperation = nil
+            isBusy = false
+        }
         do { try await operation() }
         catch { show(error.localizedDescription, error: true) }
     }

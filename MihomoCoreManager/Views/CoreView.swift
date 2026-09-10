@@ -39,26 +39,36 @@ struct CoreView: View {
 
                 Grid(horizontalSpacing: 9, verticalSpacing: 9) {
                     GridRow {
-                        Button("启动 Core") { Task { await model.perform(.start) } }
-                            .buttonStyle(DashboardActionButtonStyle())
+                        Button { Task { await model.perform(.start) } } label: {
+                            DashboardBusyLabel(title: "启动 Core", busyTitle: "启动中…", isBusy: model.activeOperation == .core(.start))
+                        }
+                            .buttonStyle(DashboardActionButtonStyle(busy: model.activeOperation == .core(.start)))
                             .disabled(live.status?.service.active == true || model.isBusy)
-                        Button("停止 Core") { Task { await model.perform(.stop) } }
-                            .buttonStyle(DashboardActionButtonStyle(destructive: true))
+                        Button { Task { await model.perform(.stop) } } label: {
+                            DashboardBusyLabel(title: "停止 Core", busyTitle: "停止中…", isBusy: model.activeOperation == .core(.stop))
+                        }
+                            .buttonStyle(DashboardActionButtonStyle(destructive: true, busy: model.activeOperation == .core(.stop)))
                             .disabled(live.status?.service.active != true || model.isBusy)
                     }
                     GridRow {
-                        Button("重启 Core") { Task { await model.perform(.restart) } }
-                            .buttonStyle(DashboardActionButtonStyle())
+                        Button { Task { await model.perform(.restart) } } label: {
+                            DashboardBusyLabel(title: "重启 Core", busyTitle: "重启中…", isBusy: model.activeOperation == .core(.restart))
+                        }
+                            .buttonStyle(DashboardActionButtonStyle(busy: model.activeOperation == .core(.restart)))
                             .disabled(model.isBusy)
-                        Button("热重载配置") { Task { await model.perform(.reload) } }
-                            .buttonStyle(DashboardActionButtonStyle())
+                        Button { Task { await model.perform(.reload) } } label: {
+                            DashboardBusyLabel(title: "热重载配置", busyTitle: "重载中…", isBusy: model.activeOperation == .core(.reload))
+                        }
+                            .buttonStyle(DashboardActionButtonStyle(busy: model.activeOperation == .core(.reload)))
                             .disabled(model.isBusy)
                     }
                 }
                 .frame(maxWidth: .infinity)
 
-                Button("重新生成配置并热重载") { Task { await model.perform(.applySubscriptions) } }
-                    .buttonStyle(DashboardActionButtonStyle())
+                Button { Task { await model.perform(.applySubscriptions) } } label: {
+                    DashboardBusyLabel(title: "重新生成配置并热重载", busyTitle: "应用中…", isBusy: model.activeOperation == .core(.applySubscriptions))
+                }
+                    .buttonStyle(DashboardActionButtonStyle(busy: model.activeOperation == .core(.applySubscriptions)))
                     .disabled(model.isBusy)
 
                 Spacer(minLength: 0)
@@ -110,10 +120,14 @@ struct CoreView: View {
                 DashboardPanelHeader(title: "项目升级", trailing: "Mihomo Core + MetaCubeXD + Core 管理面板")
 
                 HStack(spacing: 9) {
-                    Button("检查新版本") { Task { await model.checkUpdate() } }
-                        .buttonStyle(DashboardActionButtonStyle())
-                    Button("开始项目升级") { Task { await model.applyUpdate() } }
-                        .buttonStyle(DashboardActionButtonStyle(primary: true))
+                    Button { Task { await model.checkUpdate() } } label: {
+                        DashboardBusyLabel(title: "检查新版本", busyTitle: "检查中…", isBusy: model.activeOperation == .checkUpdate)
+                    }
+                        .buttonStyle(DashboardActionButtonStyle(busy: model.activeOperation == .checkUpdate))
+                    Button { Task { await model.applyUpdate() } } label: {
+                        DashboardBusyLabel(title: "开始项目升级", busyTitle: "项目升级中…", isBusy: model.activeOperation == .applyUpdate)
+                    }
+                        .buttonStyle(DashboardActionButtonStyle(primary: true, busy: model.activeOperation == .applyUpdate))
                 }
                 .disabled(model.isBusy)
 

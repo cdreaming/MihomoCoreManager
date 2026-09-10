@@ -15,10 +15,14 @@ struct UpdateView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         DashboardPanelHeader(title: "版本检查", trailing: "Remote project")
                         HStack(spacing: 9) {
-                            Button("检查新版本") { Task { await model.checkUpdate() } }
-                                .buttonStyle(DashboardActionButtonStyle())
-                            Button("开始项目升级") { Task { await model.applyUpdate() } }
-                                .buttonStyle(DashboardActionButtonStyle(primary: true))
+                            Button { Task { await model.checkUpdate() } } label: {
+                                DashboardBusyLabel(title: "检查新版本", busyTitle: "检查中…", isBusy: model.activeOperation == .checkUpdate)
+                            }
+                                .buttonStyle(DashboardActionButtonStyle(busy: model.activeOperation == .checkUpdate))
+                            Button { Task { await model.applyUpdate() } } label: {
+                                DashboardBusyLabel(title: "开始项目升级", busyTitle: "项目升级中…", isBusy: model.activeOperation == .applyUpdate)
+                            }
+                                .buttonStyle(DashboardActionButtonStyle(primary: true, busy: model.activeOperation == .applyUpdate))
                         }
                         .disabled(model.isBusy)
 
@@ -75,8 +79,10 @@ struct UpdateView: View {
 
                         HStack {
                             Spacer()
-                            Button("刷新升级日志") { Task { await model.fetchUpdateLog() } }
-                                .buttonStyle(DashboardActionButtonStyle())
+                            Button { Task { await model.fetchUpdateLog() } } label: {
+                                DashboardBusyLabel(title: "刷新升级日志", busyTitle: "刷新中…", isBusy: model.activeOperation == .fetchUpdateLog)
+                            }
+                                .buttonStyle(DashboardActionButtonStyle(busy: model.activeOperation == .fetchUpdateLog))
                                 .frame(width: 132)
                         }
                     }

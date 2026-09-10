@@ -154,24 +154,36 @@ for marker in ["DashboardLayout.pageHorizontalPadding", "DashboardLayout.pageVer
     for rel_name, text in [("OverviewView.swift", overview), ("CoreView.swift", core_view), ("SubscriptionsView.swift", subscriptions_view), ("LogsView.swift", logs_view), ("UpdateView.swift", update_view), ("SettingsView.swift (dashboard)", settings_dashboard)]:
         if marker not in text:
             errors.append(f"shared dashboard layout marker missing in {rel_name}: {marker}")
-# v1.1.6: restore the native Dashboard button interaction exactly to v1.0.9.
+# v1.1.7: initiating button remains visibly busy until the awaited operation completes,
+# and press feedback is intentionally more pronounced than v1.1.6.
 for marker in [
-    "Color.white.opacity(configuration.isPressed ? 0.085 : 0.025)",
-    ".scaleEffect(configuration.isPressed ? 0.985 : 1)",
+    "struct DashboardBusyLabel: View",
+    "DashboardBusyCursorAnimator",
+    "NSCursor(image: image, hotSpot:",
+    "DashboardButtonCursorModifier(busy: busy, reduceMotion: reduceMotion)",
+    ".scaleEffect(pressed ? 0.955 : 1)",
+    ".spring(response: 0.18, dampingFraction: 0.68)",
+    "activeOperation = operationID",
+    "waitForUpdateCompletion(",
+    "result.running",
+    "等待管理面板恢复连接",
 ]:
-    if marker not in content:
-        errors.append(f"v1.0.9 button interaction gate missing: {marker}")
+    if marker not in content + "\n" + app_model + "\n" + core_view + "\n" + update_view:
+        errors.append(f"v1.1.7 native button lifecycle gate missing: {marker}")
 
-for forbidden in [
-    "DashboardPressButtonStyle",
-    ".animation(.easeOut(duration: 0.08), value: pressed)",
-    "let pressed = configuration.isPressed",
+for marker in [
+    "control.classList.add('busy')",
+    "control.setAttribute('aria-busy','true')",
+    "operation-busy",
+    "cursor:progress",
+    "waitForUpdateCompletion",
+    "scale(.945)",
 ]:
-    if forbidden in content + "\n" + core_view + "\n" + update_view:
-        errors.append(f"post-v1.0.9 custom button animation must be removed: {forbidden}")
+    if marker not in portable_ui:
+        errors.append(f"v1.1.7 portable button lifecycle gate missing: {marker}")
 
 if ".buttonStyle(.plain)" not in content:
-    errors.append("v1.0.9 navigation/link button behavior (.plain) missing")
+    errors.append("navigation/link button behavior (.plain) missing")
 settings_order_markers = ["serverPanel", "connectionPanel(profile: draftBinding)", "corePanel(profile: draftBinding)", "appPanel", "footerActions"]
 settings_positions = [settings_dashboard.find(marker) for marker in settings_order_markers]
 if any(position < 0 for position in settings_positions) or settings_positions != sorted(settings_positions):

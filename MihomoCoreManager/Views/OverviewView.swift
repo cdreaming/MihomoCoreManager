@@ -131,26 +131,36 @@ struct OverviewView: View {
 
                 Grid(horizontalSpacing: 9, verticalSpacing: 9) {
                     GridRow {
-                        Button("启动") { Task { await model.perform(.start) } }
-                            .buttonStyle(DashboardActionButtonStyle())
+                        Button { Task { await model.perform(.start) } } label: {
+                            DashboardBusyLabel(title: "启动", busyTitle: "启动中…", isBusy: model.activeOperation == .core(.start))
+                        }
+                            .buttonStyle(DashboardActionButtonStyle(busy: model.activeOperation == .core(.start)))
                             .disabled(live.status?.service.active == true || model.isBusy)
-                        Button("停止") { Task { await model.perform(.stop) } }
-                            .buttonStyle(DashboardActionButtonStyle(destructive: true))
+                        Button { Task { await model.perform(.stop) } } label: {
+                            DashboardBusyLabel(title: "停止", busyTitle: "停止中…", isBusy: model.activeOperation == .core(.stop))
+                        }
+                            .buttonStyle(DashboardActionButtonStyle(destructive: true, busy: model.activeOperation == .core(.stop)))
                             .disabled(live.status?.service.active != true || model.isBusy)
                     }
                     GridRow {
-                        Button("重启") { Task { await model.perform(.restart) } }
-                            .buttonStyle(DashboardActionButtonStyle())
+                        Button { Task { await model.perform(.restart) } } label: {
+                            DashboardBusyLabel(title: "重启", busyTitle: "重启中…", isBusy: model.activeOperation == .core(.restart))
+                        }
+                            .buttonStyle(DashboardActionButtonStyle(busy: model.activeOperation == .core(.restart)))
                             .disabled(model.isBusy)
-                        Button("重载配置") { Task { await model.perform(.reload) } }
-                            .buttonStyle(DashboardActionButtonStyle())
+                        Button { Task { await model.perform(.reload) } } label: {
+                            DashboardBusyLabel(title: "重载配置", busyTitle: "重载中…", isBusy: model.activeOperation == .core(.reload))
+                        }
+                            .buttonStyle(DashboardActionButtonStyle(busy: model.activeOperation == .core(.reload)))
                             .disabled(model.isBusy)
                     }
                 }
                 .frame(maxWidth: .infinity)
 
-                Button("应用订阅 + 热重载") { Task { await model.perform(.applySubscriptions) } }
-                    .buttonStyle(DashboardActionButtonStyle())
+                Button { Task { await model.perform(.applySubscriptions) } } label: {
+                    DashboardBusyLabel(title: "应用订阅 + 热重载", busyTitle: "应用中…", isBusy: model.activeOperation == .core(.applySubscriptions))
+                }
+                    .buttonStyle(DashboardActionButtonStyle(busy: model.activeOperation == .core(.applySubscriptions)))
                     .disabled(model.isBusy)
 
                 Button("打开 MetaCubeXD") { model.openMetaCubeXD() }

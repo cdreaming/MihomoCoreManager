@@ -174,7 +174,7 @@ struct TrafficSample: Identifiable {
     let download: Double
 }
 
-enum CoreAction: String {
+enum CoreAction: String, Equatable {
     case start
     case stop
     case restart
@@ -190,6 +190,16 @@ enum CoreAction: String {
         case .applySubscriptions: "应用订阅"
         }
     }
+}
+
+enum AppOperation: Equatable {
+    case core(CoreAction)
+    case fetchSubscriptions
+    case saveSubscriptions
+    case fetchLogs
+    case checkUpdate
+    case applyUpdate
+    case fetchUpdateLog
 }
 
 struct AppNotice: Identifiable, Equatable {

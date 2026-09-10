@@ -1,9 +1,9 @@
-# Validation Report — v1.1.6
+# Validation Report — v1.1.7
 
-- App `1.1.6` / Xcode build `116` / portable build `116`。
-- `DashboardActionButtonStyle` 与 v1.0.9 参考源码逐字节一致。
-- `DashboardPressButtonStyle` 已删除。
-- `0.08s easeOut` 自定义按钮动画已删除。
-- 导航 / 后端 / Popover / link / dismiss 恢复 `.plain`。
-- `MenuBarView.swift` 与 v1.0.9 源码保持一致。
-- v1.1.5 页面排版与设置结构保持不变。
+- App `1.1.7` / Xcode build `117` / portable build `117`。
+- 原生 AppModel 使用 `activeOperation` 精确标识发起操作的按钮。
+- “开始项目升级”持续轮询远端 update log，确认完成后才恢复按钮。
+- 远端管理面板短暂重启/断连时保持 busy 并继续检测。
+- 原生当前操作按钮显示 `ProgressView`，悬停时使用旋转 busy cursor（Reduce Motion 时静态）；按压缩放增强为 `0.955`。
+- portable UI 使用 `.busy`、`aria-busy`、`cursor: progress`；按压缩放增强为 `0.945`。
+- Source validator 与 portable Go 回归测试已加入 v1.1.7 生命周期门禁。

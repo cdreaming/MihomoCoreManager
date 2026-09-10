@@ -43,11 +43,15 @@ struct SubscriptionsView: View {
 
                         HStack(spacing: 9) {
                             Spacer()
-                            Button("重新读取") { Task { await model.fetchSubscriptions() } }
-                                .buttonStyle(DashboardActionButtonStyle())
+                            Button { Task { await model.fetchSubscriptions() } } label: {
+                                DashboardBusyLabel(title: "重新读取", busyTitle: "读取中…", isBusy: model.activeOperation == .fetchSubscriptions)
+                            }
+                                .buttonStyle(DashboardActionButtonStyle(busy: model.activeOperation == .fetchSubscriptions))
                                 .frame(width: 120)
-                            Button("保存并应用") { Task { await model.saveSubscriptions() } }
-                                .buttonStyle(DashboardActionButtonStyle(primary: true))
+                            Button { Task { await model.saveSubscriptions() } } label: {
+                                DashboardBusyLabel(title: "保存并应用", busyTitle: "保存应用中…", isBusy: model.activeOperation == .saveSubscriptions)
+                            }
+                                .buttonStyle(DashboardActionButtonStyle(primary: true, busy: model.activeOperation == .saveSubscriptions))
                                 .frame(width: 140)
                         }
                         .padding(.top, 2)

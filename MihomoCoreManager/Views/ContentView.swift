@@ -476,23 +476,169 @@ struct DashboardPanelHeader: View {
     }
 }
 
+struct DashboardBusyLabel: View {
+    let title: String
+    let busyTitle: String
+    let isBusy: Bool
+
+    var body: some View {
+        HStack(spacing: 7) {
+            if isBusy {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .controlSize(.small)
+                    .scaleEffect(0.82)
+            }
+            Text(isBusy ? busyTitle : title)
+        }
+        .animation(.easeInOut(duration: 0.12), value: isBusy)
+    }
+}
+
+private final class DashboardBusyCursorAnimator {
+    static let shared = DashboardBusyCursorAnimator()
+
+    private var timer: Timer?
+    private var frameIndex = 0
+    private lazy var cursors = (0..<12).map(Self.makeCursor)
+
+    func start(animated: Bool) {
+        stop(resetCursor: false)
+        frameIndex = 0
+        cursors[frameIndex].set()
+        if !animated {
+            return
+        }
+        let timer = Timer(timeInterval: 0.075, repeats: true) { [weak self] _ in
+            self?.advance()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
+    func stop(resetCursor: Bool = true) {
+        timer?.invalidate()
+        timer = nil
+        if resetCursor {
+            NSCursor.arrow.set()
+        }
+    }
+
+    private func advance() {
+        frameIndex = (frameIndex + 1) % cursors.count
+        cursors[frameIndex].set()
+    }
+
+    private static func makeCursor(frame: Int) -> NSCursor {
+        let size = NSSize(width: 22, height: 22)
+        let image = NSImage(size: size, flipped: false) { _ in
+            let center = NSPoint(x: 11, y: 11)
+            let radiusInner: CGFloat = 5.2
+            let radiusOuter: CGFloat = 8.0
+
+            NSColor.black.withAlphaComponent(0.20).setFill()
+            NSBezierPath(ovalIn: NSRect(x: 1.5, y: 1.5, width: 19, height: 19)).fill()
+
+            for segment in 0..<8 {
+                let phase = (segment - frame + 96) % 8
+                let alpha = 0.24 + CGFloat(phase + 1) * 0.095
+                let angle = CGFloat(segment) * (.pi / 4) - (.pi / 2)
+                let start = NSPoint(
+                    x: center.x + cos(angle) * radiusInner,
+                    y: center.y + sin(angle) * radiusInner
+                )
+                let end = NSPoint(
+                    x: center.x + cos(angle) * radiusOuter,
+                    y: center.y + sin(angle) * radiusOuter
+                )
+                let path = NSBezierPath()
+                path.lineWidth = 2.1
+                path.lineCapStyle = .round
+                path.move(to: start)
+                path.line(to: end)
+                NSColor.white.withAlphaComponent(min(alpha, 1)).setStroke()
+                path.stroke()
+            }
+            return true
+        }
+        return NSCursor(image: image, hotSpot: NSPoint(x: 11, y: 11))
+    }
+}
+
+private struct DashboardButtonCursorModifier: ViewModifier {
+    let busy: Bool
+    let reduceMotion: Bool
+    @State private var hovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { inside in
+                hovering = inside
+                updateCursor(inside: inside, busy: busy)
+            }
+            .onChange(of: busy) { newValue in
+                guard hovering else { return }
+                updateCursor(inside: true, busy: newValue)
+            }
+            .onDisappear {
+                if hovering {
+                    DashboardBusyCursorAnimator.shared.stop()
+                }
+            }
+    }
+
+    private func updateCursor(inside: Bool, busy: Bool) {
+        guard inside else {
+            DashboardBusyCursorAnimator.shared.stop()
+            return
+        }
+        if busy {
+            DashboardBusyCursorAnimator.shared.start(animated: !reduceMotion)
+        } else {
+            DashboardBusyCursorAnimator.shared.stop(resetCursor: false)
+            NSCursor.pointingHand.set()
+        }
+    }
+}
+
 struct DashboardActionButtonStyle: ButtonStyle {
     var destructive = false
     var primary = false
+    var busy = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
+        let pressed = configuration.isPressed && !busy
+
         configuration.label
             .font(.system(size: 13, weight: .semibold))
             .foregroundStyle(destructive ? DashboardPalette.red : .white)
             .frame(maxWidth: .infinity)
             .frame(height: 38)
-            .background(primary ? DashboardPalette.accent : Color.white.opacity(configuration.isPressed ? 0.085 : 0.025))
+            .background(
+                primary
+                    ? DashboardPalette.accent.opacity(pressed ? 0.78 : 1)
+                    : Color.white.opacity(pressed ? 0.14 : (busy ? 0.055 : 0.025))
+            )
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .stroke(destructive ? DashboardPalette.red.opacity(0.45) : DashboardPalette.separator, lineWidth: 1)
+                    .stroke(
+                        destructive ? DashboardPalette.red.opacity(pressed ? 0.72 : 0.45) : DashboardPalette.separator,
+                        lineWidth: pressed ? 1.5 : 1
+                    )
             }
-            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+            .overlay {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(Color.white.opacity(pressed ? 0.075 : 0))
+                    .allowsHitTesting(false)
+            }
+            .scaleEffect(pressed ? 0.955 : 1)
+            .offset(y: pressed ? 1 : 0)
+            .shadow(color: Color.black.opacity(pressed ? 0.08 : 0.20), radius: pressed ? 1 : 4, y: pressed ? 0 : 2)
+            .opacity(busy ? 0.88 : 1)
+            .animation(reduceMotion ? nil : .spring(response: 0.18, dampingFraction: 0.68), value: pressed)
+            .modifier(DashboardButtonCursorModifier(busy: busy, reduceMotion: reduceMotion))
     }
 }
 

@@ -223,3 +223,24 @@ func TestFallbackMenuScriptIsMinimalAndUsable(t *testing.T) {
 		}
 	}
 }
+
+func TestPortableButtonBusyLifecycleV117(t *testing.T) {
+	page, err := assets.ReadFile("ui/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(page)
+	for _, marker := range []string{
+		"control.classList.add('busy')",
+		"control.setAttribute('aria-busy','true')",
+		"operation-busy",
+		"cursor:progress",
+		"waitForUpdateCompletion",
+		"项目升级中…",
+		"scale(.945)",
+	} {
+		if !strings.Contains(text, marker) {
+			t.Fatalf("portable v1.1.7 button lifecycle missing marker %q", marker)
+		}
+	}
+}
