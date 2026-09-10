@@ -16,6 +16,7 @@ required = [
     "MihomoCoreManager/Views/SettingsView.swift",
     ".github/workflows/release.yml",
     "SOURCE-SHA256SUMS.txt",
+    "scripts/build-portable-installer.sh",
 ]
 for rel in required:
     if not (root / rel).is_file(): errors.append(f"missing: {rel}")
@@ -154,8 +155,8 @@ for marker in ["DashboardLayout.pageHorizontalPadding", "DashboardLayout.pageVer
     for rel_name, text in [("OverviewView.swift", overview), ("CoreView.swift", core_view), ("SubscriptionsView.swift", subscriptions_view), ("LogsView.swift", logs_view), ("UpdateView.swift", update_view), ("SettingsView.swift (dashboard)", settings_dashboard)]:
         if marker not in text:
             errors.append(f"shared dashboard layout marker missing in {rel_name}: {marker}")
-# v1.1.7: initiating button remains visibly busy until the awaited operation completes,
-# and press feedback is intentionally more pronounced than v1.1.6.
+# v1.1.7 regression: initiating button remains visibly busy until the awaited operation completes,
+# and press feedback remains intentionally more pronounced than v1.1.6.
 for marker in [
     "struct DashboardBusyLabel: View",
     "DashboardBusyCursorAnimator",
@@ -169,7 +170,7 @@ for marker in [
     "等待管理面板恢复连接",
 ]:
     if marker not in content + "\n" + app_model + "\n" + core_view + "\n" + update_view:
-        errors.append(f"v1.1.7 native button lifecycle gate missing: {marker}")
+        errors.append(f"v1.1.7 regression native button lifecycle gate missing: {marker}")
 
 for marker in [
     "control.classList.add('busy')",
@@ -180,7 +181,40 @@ for marker in [
     "scale(.945)",
 ]:
     if marker not in portable_ui:
-        errors.append(f"v1.1.7 portable button lifecycle gate missing: {marker}")
+        errors.append(f"v1.1.7 regression portable button lifecycle gate missing: {marker}")
+
+# v1.1.8: success notices auto-dismiss only after the current operation exits busy,
+# sidebar page buttons use a larger full-row hit target, and persistent pages use
+# a real profile/section task identity so first navigation loads immediately.
+for marker in [
+    "noticeDismissTask",
+    "scheduleNoticeDismissIfNeeded",
+    "func dismissNotice()",
+    "scheduleNoticeDismissIfNeeded()",
+    "DashboardNotice(notice: notice) { model.dismissNotice() }",
+    "DashboardSidebarButtonStyle",
+    ".frame(maxWidth: .infinity, minHeight: 47, alignment: .leading)",
+    ".contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))",
+    ".scaleEffect(pressed ? 0.972 : 1)",
+]:
+    if marker not in app_model + "\n" + content:
+        errors.append(f"v1.1.8 native interaction gate missing: {marker}")
+
+expected_task_id = '"\\(model.selectedProfileID?.uuidString ?? "none")|\\(model.selectedSection.rawValue)"'
+for rel_name, text in [("SettingsView.swift", settings_dashboard), ("LogsView.swift", logs_view)]:
+    if expected_task_id not in text:
+        errors.append(f"v1.1.8 persistent-page task id missing in {rel_name}")
+    if '"\\\\(model.selectedProfileID' in text:
+        errors.append(f"v1.1.8 persistent-page task id is still escaped in {rel_name}")
+
+for marker in ["min-height:46px", ".nav button:active", "scale(.955)"]:
+    if marker not in portable_ui:
+        errors.append(f"v1.1.8 portable sidebar interaction gate missing: {marker}")
+
+portable_installer = (root / "scripts/build-portable-installer.sh").read_text(encoding="utf-8")
+for marker in ["GOOS=darwin GOARCH=arm64", "MihomoCoreManager.app", "Install-MihomoCoreManager.command", "LSMinimumSystemVersion", "codesign --force --deep --sign -"]:
+    if marker not in portable_installer:
+        errors.append(f"portable installer gate missing: {marker}")
 
 if ".buttonStyle(.plain)" not in content:
     errors.append("navigation/link button behavior (.plain) missing")

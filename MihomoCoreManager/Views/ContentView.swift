@@ -44,7 +44,7 @@ struct ContentView: View {
         .frame(minWidth: 1000, minHeight: 650)
         .overlay(alignment: .bottom) {
             if let notice = model.notice {
-                DashboardNotice(notice: notice) { model.notice = nil }
+                DashboardNotice(notice: notice) { model.dismissNotice() }
                     .padding(.bottom, 18)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
@@ -166,11 +166,13 @@ private struct DashboardSidebar: View {
                         }
                         .foregroundStyle(model.selectedSection == section ? .white : DashboardPalette.secondary)
                         .padding(.horizontal, 10)
-                        .frame(height: 43)
+                        .frame(maxWidth: .infinity, minHeight: 47, alignment: .leading)
                         .background(model.selectedSection == section ? DashboardPalette.accent : Color.clear)
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(DashboardSidebarButtonStyle())
+                    .frame(maxWidth: .infinity)
                 }
 
                 DashboardBackendSelector()
@@ -232,6 +234,25 @@ private struct DashboardSidebar: View {
             return "Panel :\(port)"
         }
         return "Panel · Remote"
+    }
+}
+
+private struct DashboardSidebarButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        let pressed = configuration.isPressed
+        configuration.label
+            .scaleEffect(pressed ? 0.972 : 1)
+            .offset(y: pressed ? 1.5 : 0)
+            .brightness(pressed ? -0.08 : 0)
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.white.opacity(pressed ? 0.075 : 0))
+                    .allowsHitTesting(false)
+            }
+            .shadow(color: .black.opacity(pressed ? 0.08 : 0), radius: 2, y: 1)
+            .animation(reduceMotion ? nil : .spring(response: 0.16, dampingFraction: 0.68), value: pressed)
     }
 }
 

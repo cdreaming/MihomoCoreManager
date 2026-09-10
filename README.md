@@ -1,6 +1,16 @@
 # Mihomo Core Manager for macOS
 
-基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.1.7 (build 117)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.1.8 (build 118)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+
+## v1.1.8
+
+v1.1.8 以 v1.1.7 按钮动画为基线，修复日常交互中的四个体验问题：
+
+- 成功通知自动收起：按钮操作产生的成功提示会在操作真正结束、按钮退出 busy 状态后自动消失；错误提示仍保留供排查。
+- 左侧页面导航整行可点击，原生行高提升为 47pt，增加缩放、下沉、亮度与 spring 回弹；portable UI 同步扩大命中区域。
+- 修复“设置”持久页面首次打开不加载当前服务器草稿的问题，无需再新增服务器即可看到“服务器连接 / Core 配置 / App 与状态栏 / 保存设置”等完整选项。
+- 同步修复运行日志首次切换时的加载任务 ID。
+- 完整保留 v1.1.7 的当前操作 spinner、旋转 busy cursor 和项目升级完成检测。
 
 ## v1.1.7
 
@@ -130,12 +140,12 @@ xcodebuild \
 
 ## Release
 
-正式 tag `v1.1.7` 成功后生成：
+正式 tag `v1.1.8` 成功后生成：
 
 ```text
-MihomoCoreManager-v1.1.7-arm64.pkg
-MihomoCoreManager-v1.1.7-arm64.zip
-release_v1.1.7_notes_zh-CN.md
+MihomoCoreManager-v1.1.8-arm64.pkg
+MihomoCoreManager-v1.1.8-arm64.zip
+release_v1.1.8_notes_zh-CN.md
 SHA256SUMS.txt
 ```
 

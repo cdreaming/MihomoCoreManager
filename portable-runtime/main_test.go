@@ -224,7 +224,7 @@ func TestFallbackMenuScriptIsMinimalAndUsable(t *testing.T) {
 	}
 }
 
-func TestPortableButtonBusyLifecycleV117(t *testing.T) {
+func TestPortableInteractionRegressionV118(t *testing.T) {
 	page, err := assets.ReadFile("ui/index.html")
 	if err != nil {
 		t.Fatal(err)
@@ -238,9 +238,18 @@ func TestPortableButtonBusyLifecycleV117(t *testing.T) {
 		"waitForUpdateCompletion",
 		"项目升级中…",
 		"scale(.945)",
+		"min-height:46px",
+		".nav button:active",
+		"scale(.955)",
 	} {
 		if !strings.Contains(text, marker) {
-			t.Fatalf("portable v1.1.7 button lifecycle missing marker %q", marker)
+			t.Fatalf("portable v1.1.8 interaction regression missing marker %q", marker)
 		}
+	}
+}
+
+func TestPortableVersionV118(t *testing.T) {
+	if appVersion != "1.1.8" || buildNumber != "118" {
+		t.Fatalf("unexpected portable version/build: %s/%s", appVersion, buildNumber)
 	}
 }

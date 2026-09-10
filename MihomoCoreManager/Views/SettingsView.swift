@@ -189,7 +189,7 @@ struct DashboardSettingsView: View {
         .overlay { RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DashboardPalette.separator, lineWidth: 1) }
     }
 
-    private var loadTaskID: String { "\\(model.selectedProfileID?.uuidString ?? \"none\")|\\(model.selectedSection.rawValue)" }
+    private var loadTaskID: String { "\(model.selectedProfileID?.uuidString ?? "none")|\(model.selectedSection.rawValue)" }
     private func loadDraft() {
         draft = model.selectedProfile
         if let id = model.selectedProfileID { secret = KeychainStore.readSecret(profileID: id) } else { secret = "" }

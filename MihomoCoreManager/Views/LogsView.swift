@@ -36,5 +36,5 @@ struct LogsView: View {
         .task(id: loadTaskID) { guard model.selectedSection == .logs else { return }; await model.ensureLogsLoaded() }
         .disabled(model.isBusy)
     }
-    private var loadTaskID: String { "\\(model.selectedProfileID?.uuidString ?? \"none\")|\\(model.selectedSection.rawValue)" }
+    private var loadTaskID: String { "\(model.selectedProfileID?.uuidString ?? "none")|\(model.selectedSection.rawValue)" }
 }

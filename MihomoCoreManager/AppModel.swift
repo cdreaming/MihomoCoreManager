@@ -84,6 +84,7 @@ final class AppModel: ObservableObject {
     private var secretCache: [UUID: String] = [:]
     private var subscriptionsLoadedFor: UUID?
     private var logsLoadedFor: UUID?
+    private var noticeDismissTask: Task<Void, Never>?
 
     private static let selectedProfileKey = "selectedProfileID"
     private static let refreshIntervalKey = "refreshInterval"
@@ -396,7 +397,30 @@ final class AppModel: ObservableObject {
     }
 
     func show(_ text: String, error: Bool = false) {
+        noticeDismissTask?.cancel()
+        noticeDismissTask = nil
         notice = AppNotice(text: text, isError: error)
+        if !error && !isBusy {
+            scheduleNoticeDismissIfNeeded()
+        }
+    }
+
+    func dismissNotice() {
+        noticeDismissTask?.cancel()
+        noticeDismissTask = nil
+        notice = nil
+    }
+
+    private func scheduleNoticeDismissIfNeeded(after delay: TimeInterval = 2.4) {
+        guard !isBusy, let currentNotice = notice, !currentNotice.isError else { return }
+        let noticeID = currentNotice.id
+        noticeDismissTask?.cancel()
+        noticeDismissTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled, let self, self.notice?.id == noticeID, !self.isBusy else { return }
+            self.notice = nil
+            self.noticeDismissTask = nil
+        }
     }
 
     private func fetchUpdateLogInternal(profile: ServerProfile) async {
@@ -485,6 +509,7 @@ final class AppModel: ObservableObject {
         defer {
             activeOperation = nil
             isBusy = false
+            scheduleNoticeDismissIfNeeded()
         }
         do { try await operation() }
         catch { show(error.localizedDescription, error: true) }

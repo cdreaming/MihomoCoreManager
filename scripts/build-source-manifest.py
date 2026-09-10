@@ -5,7 +5,7 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
 out = root / "SOURCE-SHA256SUMS.txt"
-ignored_parts = {".git", "build", "dist", "DerivedData", "xcuserdata", "__pycache__"}
+ignored_parts = {".git", "build", "dist", "dist-portable", "DerivedData", "xcuserdata", "__pycache__"}
 
 
 def entries():

@@ -6,8 +6,10 @@
 - 主进程仅监听随机 `127.0.0.1` 端口，并用每次启动随机 token 保护本地 API。
 - JXA + AppKit/WebKit 提供窗口与状态栏；远端 Mihomo 请求由 Go 进程发送，因此不受 WebKit CORS 限制。
 - Profile 非敏感字段写入 `~/Library/Application Support/MihomoCoreManager/settings.json`；Core Secret 使用 macOS Keychain。
-- v1.1.7 使用 Mihomo Core 管理面板 v4.0.0 Dashboard UI，并继续保留 v1.0.7 菜单栏 JXA 启动稳定性保护。
-- v1.1.7 异步按钮会保持 busy spinner 与 `cursor: progress`，项目升级仅在远端 `running=false` 且确认任务已结束后恢复。
+- v1.1.8 使用 Mihomo Core 管理面板 v4.0.0 Dashboard UI，并继续保留 v1.0.7 菜单栏 JXA 启动稳定性保护。
+- v1.1.8 保留 v1.1.7 异步按钮 busy spinner 与 `cursor: progress`，项目升级仅在远端 `running=false` 且确认任务已结束后恢复。
+- v1.1.8 扩大左侧导航整行命中区域并增强按下动画；原生成功通知会在对应按钮动作真正结束后自动收起。
+- v1.1.8 修复持久页面首次切换到“设置/运行日志”时加载任务 ID 未变化的问题。
 - 状态栏 `显示图标` / `显示运行状态` / `显示网速` 三项独立持久化并可同时开启；旧设置自动迁移 `showIcon=true`。
 - `POST /local/subscriptions` 对 v4.0.0 “热重载超时并回滚”增加安全重启回退：停止 Core → 再保存/校验 → 启动 Core；其它 renderer/URL 错误不触发该回退。
 - 左侧“管理后端”入口移动到“设置”下方，使用与其它侧栏菜单一致的 43px 行高与 14px 文字；不再显示 M 品牌方块。
@@ -17,4 +19,4 @@
 - 下拉菜单中的上传/下载速度使用两个独立只读菜单项。
 - 主菜单栏 JXA shell 异常退出时自动启动最小恢复 shell，并记录 `Runtime/menubar.log`；标题栏 drag strip、集中状态缓存、标准 Edit responder chain、`⌘V`/显式粘贴继续保留。
 
-正式 GitHub Release 仍由 `.github/workflows/release.yml` 在 macOS arm64 Runner 上构建 SwiftUI App；v1.1.7 默认使用无需 Apple Developer 凭据的 `--unsigned` 发布路径。
+正式 GitHub Release 仍由 `.github/workflows/release.yml` 在 macOS arm64 Runner 上构建 SwiftUI App；v1.1.8 默认使用无需 Apple Developer 凭据的 `--unsigned` 发布路径。
