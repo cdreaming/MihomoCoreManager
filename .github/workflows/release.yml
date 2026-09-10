@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: '要发布的版本，例如 1.0.9 或 v1.0.9'
+        description: '要发布的版本，例如 1.1.0 或 v1.1.0'
         required: true
         type: string
 
@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   release:
-    name: arm64 签名 / 公证 / PKG 发布
+    name: arm64 未签名 / PKG 发布
     runs-on: macos-15
     timeout-minutes: 60
     steps:
@@ -51,71 +51,10 @@ jobs:
           python3 scripts/validate-source.py
           python3 scripts/build-source-manifest.py --check
 
-      - name: 校验签名与公证 Secrets
+
+      - name: 构建 arm64 未签名版本并生成 PKG
         shell: bash
-        env:
-          APP_P12: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_P12_BASE64 }}
-          APP_P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_P12_PASSWORD }}
-          INSTALLER_P12: ${{ secrets.APPLE_DEVELOPER_ID_INSTALLER_P12_BASE64 }}
-          INSTALLER_P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_INSTALLER_P12_PASSWORD }}
-          API_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY_BASE64 }}
-          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
-        run: |
-          set -Eeuo pipefail
-          for name in APP_P12 APP_P12_PASSWORD INSTALLER_P12 INSTALLER_P12_PASSWORD API_KEY API_KEY_ID API_ISSUER_ID; do
-            [[ -n "${!name}" ]] || { echo "缺少 Release Secret: $name" >&2; exit 1; }
-          done
-
-      - name: 导入 Developer ID 证书
-        id: signing
-        shell: bash
-        env:
-          APP_P12: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_P12_BASE64 }}
-          APP_P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_P12_PASSWORD }}
-          INSTALLER_P12: ${{ secrets.APPLE_DEVELOPER_ID_INSTALLER_P12_BASE64 }}
-          INSTALLER_P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_INSTALLER_P12_PASSWORD }}
-          API_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY_BASE64 }}
-        run: |
-          set -Eeuo pipefail
-          KEYCHAIN="$RUNNER_TEMP/mihomo-release.keychain-db"
-          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
-          APP_CERT="$RUNNER_TEMP/app-cert.p12"
-          INSTALLER_CERT="$RUNNER_TEMP/installer-cert.p12"
-          NOTARY_KEY="$RUNNER_TEMP/AuthKey.p8"
-
-          printf '%s' "$APP_P12" | base64 -D > "$APP_CERT"
-          printf '%s' "$INSTALLER_P12" | base64 -D > "$INSTALLER_CERT"
-          printf '%s' "$API_KEY" | base64 -D > "$NOTARY_KEY"
-          chmod 600 "$NOTARY_KEY"
-
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-          security import "$APP_CERT" -k "$KEYCHAIN" -P "$APP_P12_PASSWORD" -T /usr/bin/codesign
-          security import "$INSTALLER_CERT" -k "$KEYCHAIN" -P "$INSTALLER_P12_PASSWORD" -T /usr/bin/productbuild -T /usr/bin/productsign
-          security list-keychains -d user -s "$KEYCHAIN"
-          security default-keychain -s "$KEYCHAIN"
-          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-
-          APP_IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" | awk -F '"' '/Developer ID Application/{print $2; exit}')"
-          INSTALLER_IDENTITY="$(security find-identity -v "$KEYCHAIN" | awk -F '"' '/Developer ID Installer/{print $2; exit}')"
-          [[ -n "$APP_IDENTITY" ]] || { echo '找不到 Developer ID Application identity' >&2; exit 1; }
-          [[ -n "$INSTALLER_IDENTITY" ]] || { echo '找不到 Developer ID Installer identity' >&2; exit 1; }
-
-          echo "app_identity=$APP_IDENTITY" >> "$GITHUB_OUTPUT"
-          echo "installer_identity=$INSTALLER_IDENTITY" >> "$GITHUB_OUTPUT"
-          echo "notary_key=$NOTARY_KEY" >> "$GITHUB_OUTPUT"
-
-      - name: 构建 arm64、签名、公证并生成 PKG
-        shell: bash
-        env:
-          DEVELOPER_ID_APPLICATION: ${{ steps.signing.outputs.app_identity }}
-          DEVELOPER_ID_INSTALLER: ${{ steps.signing.outputs.installer_identity }}
-          NOTARY_KEY_PATH: ${{ steps.signing.outputs.notary_key }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
-        run: bash scripts/build-release.sh --signed
+        run: bash scripts/build-release.sh --unsigned
 
       - name: 为 workflow_dispatch 准备 tag
         if: github.event_name == 'workflow_dispatch'

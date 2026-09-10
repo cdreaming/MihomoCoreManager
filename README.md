@@ -1,6 +1,17 @@
 # Mihomo Core Manager for macOS
 
-基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.0.9 (build 109)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.1.0 (build 110)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+
+## v1.1.0
+
+这一版主要修复 GitHub Actions 自动 Release 在没有 Apple Developer 凭据时直接失败的问题：
+
+- **Release 默认无需 Apple Secrets**：移除 Developer ID / Notary Secrets 强制校验和证书导入步骤。
+- **自动构建未签名 Release**：GitHub Actions 默认使用 `scripts/build-release.sh --unsigned`，继续生成 arm64 `.zip`、`.pkg`、Release Notes 和 SHA-256 清单。
+- **保留自动发布**：支持 tag `v1.1.0` 和手工 `workflow_dispatch`，并自动创建/更新 GitHub Release、上传资产、在线回读验证 SHA-256。
+- **保留正式签名能力**：`scripts/build-release.sh --signed` 路径未删除，以后有 Apple Developer 证书时仍可重新启用签名与公证。
+- **安装提示**：默认产物没有 Developer ID / Apple Notary 身份，其它 Mac 首次安装/启动时可能出现 Gatekeeper 提示。
+- 保留 v1.0.9 的状态栏组合显示、订阅热重载超时安全恢复及此前全部功能。
 
 ## v1.0.9
 
@@ -18,7 +29,7 @@
 2. **跨域 / 跨机管理**：正式 SwiftUI App 使用原生 `URLSession`，不受浏览器 CORS 限制；支持多服务器 Profile、域名、内网 IP 与 VPN 地址。
 3. **配置设置**：每台服务器可设置 Management URL、Core Secret、Direct Core Controller URL、远端 `config.yaml` 路径、MetaCubeXD URL、HTTP 兼容和升级保留策略。
 4. **状态栏管理**：图标、运行状态、实时网速三项可独立开关并同时显示，菜单覆盖日常管理动作。
-5. **自动发布**：GitHub Actions 在 macOS arm64 Runner 构建，支持 Developer ID 签名、Apple Notary Service 公证、Staple、`.pkg` 与 GitHub Release。
+5. **自动发布**：GitHub Actions 在 macOS arm64 Runner 构建；v1.1.0 默认无需 Apple Developer Secrets，自动生成未签名 `.pkg` / ad-hoc 签名 App ZIP 并发布到 GitHub Release。
 
 ## v4.0.0 API 兼容
 
@@ -52,17 +63,17 @@ xcodebuild \
 
 ## Release
 
-正式 tag `v1.0.9` 成功后生成：
+正式 tag `v1.1.0` 成功后生成：
 
 ```text
-MihomoCoreManager-v1.0.9-arm64.pkg
-MihomoCoreManager-v1.0.9-arm64.zip
-release_v1.0.9_notes_zh-CN.md
+MihomoCoreManager-v1.1.0-arm64.pkg
+MihomoCoreManager-v1.1.0-arm64.zip
+release_v1.1.0_notes_zh-CN.md
 SHA256SUMS.txt
 ```
 
-正式发布需要以下 Repository Secrets：`APPLE_DEVELOPER_ID_APPLICATION_P12_BASE64`、`APPLE_DEVELOPER_ID_APPLICATION_P12_PASSWORD`、`APPLE_DEVELOPER_ID_INSTALLER_P12_BASE64`、`APPLE_DEVELOPER_ID_INSTALLER_P12_PASSWORD`、`APPLE_API_PRIVATE_KEY_BASE64`、`APPLE_API_KEY_ID`、`APPLE_API_ISSUER_ID`。
+v1.1.0 默认 Release **不需要 Apple Developer Repository Secrets**。默认产物没有 Developer ID / Apple Notary 身份；若以后需要正式签名与公证，可继续使用保留的 `scripts/build-release.sh --signed` 路径并重新接入 Apple 凭据。
 
 ## 当前非 macOS 构建环境的交付说明
 
-`portable-runtime/` 可在 Linux 上交叉编译为 `darwin/arm64` Mach-O，并在 macOS 上通过系统 AppKit/WebKit + JXA 提供主窗口与状态栏菜单，用于即时安装/测试。正式发行仍以 Xcode/SwiftUI 目标为准，由 Release workflow 完成签名和公证。
+`portable-runtime/` 可在 Linux 上交叉编译为 `darwin/arm64` Mach-O，并在 macOS 上通过系统 AppKit/WebKit + JXA 提供主窗口与状态栏菜单，用于即时安装/测试。GitHub Release 仍以 Xcode/SwiftUI 目标为准；v1.1.0 默认走无需 Apple 凭据的未签名发布路径。

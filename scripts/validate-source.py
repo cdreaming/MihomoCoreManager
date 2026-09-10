@@ -95,9 +95,9 @@ for marker in [
     '.frame(width: 206)',
 ]:
     if marker not in content:
-        errors.append(f"native v1.0.9 window/backend-selector gate missing: {marker}")
+        errors.append(f"native v1.1.0 window/backend-selector gate missing: {marker}")
 if "miniBrandMark" in content or 'Text("M")\n                                        .font(.system(size: 12' in content:
-    errors.append("native v1.0.9 backend selector must not repeat the M brand tile")
+    errors.append("native v1.1.0 backend selector must not repeat the M brand tile")
 for marker in ["LiveStatusStore", "secretCache", "ensureSubscriptionsLoaded", "ensureLogsLoaded"]:
     if marker not in app_model:
         errors.append(f"native performance gate missing: {marker}")
@@ -154,10 +154,10 @@ for marker in [
     'coreLifecycleAction("start")',
 ]:
     if marker not in portable_main:
-        errors.append(f"portable v1.0.9 crash-recovery/native-speed gate missing: {marker}")
+        errors.append(f"portable v1.1.0 crash-recovery/native-speed gate missing: {marker}")
 for forbidden in ["ObjC.import('QuartzCore')", "CATextLayer", "button.cell.wraps=true", "button.cell.usesSingleLineMode=false", "NSBaselineOffsetAttributeName"]:
     if forbidden in portable_main:
-        errors.append(f"portable v1.0.9 startup path still contains crash-prone marker: {forbidden}")
+        errors.append(f"portable v1.1.0 startup path still contains crash-prone marker: {forbidden}")
 for marker in [
     "profile-trigger-label",
     "height:43px",
@@ -168,10 +168,10 @@ for marker in [
     "profile-option-title",
 ]:
     if marker not in portable_ui:
-        errors.append(f"portable v1.0.9 backend selector gate missing: {marker}")
+        errors.append(f"portable v1.1.0 backend selector gate missing: {marker}")
 for forbidden in ["profile-trigger-icon", "profile-option-icon", "profile-caption", "width:304px"]:
     if forbidden in portable_ui:
-        errors.append(f"portable v1.0.9 backend selector still contains removed brand-card marker: {forbidden}")
+        errors.append(f"portable v1.1.0 backend selector still contains removed brand-card marker: {forbidden}")
 
 with (root / "MihomoCoreManager/Info.plist").open("rb") as f:
     plist = plistlib.load(f)
@@ -183,6 +183,12 @@ build_release = (root / "scripts/build-release.sh").read_text(encoding="utf-8")
 release_text = workflow + "\n" + build_release
 for marker in ["macos-15", "notarytool", "productbuild", "gh release", "SHA256SUMS.txt"]:
     if marker not in release_text: errors.append(f"release gate missing: {marker}")
+
+if "run: bash scripts/build-release.sh --unsigned" not in workflow:
+    errors.append("v1.1.0 release workflow must use --unsigned by default")
+for forbidden in ["secrets.APPLE_", "校验签名与公证 Secrets", "导入 Developer ID 证书"]:
+    if forbidden in workflow:
+        errors.append(f"v1.1.0 unsigned release workflow must not require Apple signing secrets: {forbidden}")
 
 # Never ship an obvious hard-coded secret assignment.
 for path in (root / "MihomoCoreManager").rglob("*.swift"):

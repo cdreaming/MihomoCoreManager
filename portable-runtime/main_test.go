@@ -197,12 +197,12 @@ func TestMenuScriptUsesCachedSnapshotNativeDragAndCompactTwoLineSpeed(t *testing
 		"downHeader.title='↓ 下载    '+fmtRate(lastDown)",
 	} {
 		if !strings.Contains(script, marker) {
-			t.Fatalf("menu script missing v1.0.9 marker %q", marker)
+			t.Fatalf("menu script missing v1.1.0 marker %q", marker)
 		}
 	}
 	for _, forbidden := range []string{"button.cell.wraps=true", "button.cell.usesSingleLineMode=false", "NSBaselineOffsetAttributeName", "CATextLayer", "function speedImage(up,down)"} {
 		if strings.Contains(script, forbidden) {
-			t.Fatalf("v1.0.9 status-bar startup path must avoid crash-prone marker %q", forbidden)
+			t.Fatalf("v1.1.0 status-bar startup path must avoid crash-prone marker %q", forbidden)
 		}
 	}
 	if strings.Contains(script, "%!") {

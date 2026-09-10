@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.1.0
+
+- 修复 GitHub Actions `macOS Release` 因缺少 Apple Developer / Notary Secrets 而在构建前直接失败的问题。
+- 默认 Release 改为 `scripts/build-release.sh --unsigned`，无需配置 Developer ID Application、Developer ID Installer 或 Notary API Key。
+- Release 仍生成 arm64 `.zip`、`.pkg`、中文发布说明与 `SHA256SUMS.txt`，并自动创建/更新 GitHub Release、在线回读校验 SHA-256。
+- `scripts/build-release.sh --signed` 正式签名/公证路径继续保留，后续获得 Apple Developer 证书后可重新启用。
+- App 版本升级为 v1.1.0，Xcode build number 为 110；其余功能保持 v1.0.9 行为。
+
 ## v1.0.9
 
 - 状态栏显示改为三项独立控制：`显示图标`、`显示运行状态`、`显示网速` 可同时开启；默认保留图标，升级旧配置时自动迁移 `showIcon=true`。
