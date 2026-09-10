@@ -1,0 +1,161 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		7084AECA3D3CC7FF6F1D9872 /* MihomoCoreManagerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A4CF8CB6E269F4A610B032B /* MihomoCoreManagerApp.swift */; };
+		B7576BED5440A2743574875D /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34BC9E4BEF20D90E630C6C3F /* AppModel.swift */; };
+		F755EFF50C51E67FB343E3BC /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FDE30CD3246630E2C5ECC66 /* Models.swift */; };
+		D8BFB1A14992215CF5711985 /* MihomoAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 581DA245D0BB493D51D96977 /* MihomoAPIClient.swift */; };
+		F6427F213145B958594F4500 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB07D2E99E61C2DCEC1CB7F3 /* KeychainStore.swift */; };
+		4383F19462EB062334F27C24 /* ProfileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 518FB29768F54322F88EE408 /* ProfileStore.swift */; };
+		8F5CD3AF04D4E988AAAB782F /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8BC8F1AE9FB6117399B3726 /* ContentView.swift */; };
+		D4CDC09937D2E5DC8DF77198 /* OverviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAFCA219C18B7923EEB965BB /* OverviewView.swift */; };
+		C037E39C7C20458AE33E3534 /* CoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61529BEE33627CD8153B6E90 /* CoreView.swift */; };
+		3B439020E26A150ADA8BAC69 /* SubscriptionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEAE5D3E9768B5B764BA680B /* SubscriptionsView.swift */; };
+		14D4C874A33FDA840AED77B6 /* LogsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2069365A762E83B1FE8A9CD8 /* LogsView.swift */; };
+		7FDB453F3D631C7CC4DA204B /* UpdateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 701777451790A6FFF3EFAFB0 /* UpdateView.swift */; };
+		FBAD0A152F520BF6C9EF8919 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E24658EEB42F57DC12DD001 /* MenuBarView.swift */; };
+		1A531C08BF56BA35C2F732C0 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 618648B5766C521769542D9F /* SettingsView.swift */; };
+		1320961DEB0F71537B1EF4CA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CCD0D03C743BEDD63A2005B4 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		4A4CF8CB6E269F4A610B032B /* MihomoCoreManagerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MihomoCoreManager/MihomoCoreManagerApp.swift"; sourceTree = "<group>"; };
+		34BC9E4BEF20D90E630C6C3F /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MihomoCoreManager/AppModel.swift"; sourceTree = "<group>"; };
+		8FDE30CD3246630E2C5ECC66 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MihomoCoreManager/Models.swift"; sourceTree = "<group>"; };
+		581DA245D0BB493D51D96977 /* MihomoAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MihomoCoreManager/API/MihomoAPIClient.swift"; sourceTree = "<group>"; };
+		DB07D2E99E61C2DCEC1CB7F3 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MihomoCoreManager/Storage/KeychainStore.swift"; sourceTree = "<group>"; };
+		518FB29768F54322F88EE408 /* ProfileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MihomoCoreManager/Storage/ProfileStore.swift"; sourceTree = "<group>"; };
+		C8BC8F1AE9FB6117399B3726 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MihomoCoreManager/Views/ContentView.swift"; sourceTree = "<group>"; };
+		EAFCA219C18B7923EEB965BB /* OverviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MihomoCoreManager/Views/OverviewView.swift"; sourceTree = "<group>"; };
+		61529BEE33627CD8153B6E90 /* CoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MihomoCoreManager/Views/CoreView.swift"; sourceTree = "<group>"; };
+		FEAE5D3E9768B5B764BA680B /* SubscriptionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MihomoCoreManager/Views/SubscriptionsView.swift"; sourceTree = "<group>"; };
+		2069365A762E83B1FE8A9CD8 /* LogsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MihomoCoreManager/Views/LogsView.swift"; sourceTree = "<group>"; };
+		701777451790A6FFF3EFAFB0 /* UpdateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MihomoCoreManager/Views/UpdateView.swift"; sourceTree = "<group>"; };
+		7E24658EEB42F57DC12DD001 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MihomoCoreManager/Views/MenuBarView.swift"; sourceTree = "<group>"; };
+		618648B5766C521769542D9F /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MihomoCoreManager/Views/SettingsView.swift"; sourceTree = "<group>"; };
+		CCD0D03C743BEDD63A2005B4 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "MihomoCoreManager/Resources/Assets.xcassets"; sourceTree = "<group>"; };
+		9214F630D73C6E51436554BA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "MihomoCoreManager/Info.plist"; sourceTree = "<group>"; };
+		294174BE4BF2511F5691ABCD /* MihomoCoreManager.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MihomoCoreManager.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		7B8633C7EB6F5CB13673C25D /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		6CFC827E67DCAE34C72B9CED = {isa = PBXGroup; children = (
+			4A4CF8CB6E269F4A610B032B /* MihomoCoreManagerApp.swift */,
+			34BC9E4BEF20D90E630C6C3F /* AppModel.swift */,
+			8FDE30CD3246630E2C5ECC66 /* Models.swift */,
+			581DA245D0BB493D51D96977 /* MihomoAPIClient.swift */,
+			DB07D2E99E61C2DCEC1CB7F3 /* KeychainStore.swift */,
+			518FB29768F54322F88EE408 /* ProfileStore.swift */,
+			C8BC8F1AE9FB6117399B3726 /* ContentView.swift */,
+			EAFCA219C18B7923EEB965BB /* OverviewView.swift */,
+			61529BEE33627CD8153B6E90 /* CoreView.swift */,
+			FEAE5D3E9768B5B764BA680B /* SubscriptionsView.swift */,
+			2069365A762E83B1FE8A9CD8 /* LogsView.swift */,
+			701777451790A6FFF3EFAFB0 /* UpdateView.swift */,
+			7E24658EEB42F57DC12DD001 /* MenuBarView.swift */,
+			618648B5766C521769542D9F /* SettingsView.swift */,
+			CCD0D03C743BEDD63A2005B4 /* Assets.xcassets */,
+			9214F630D73C6E51436554BA /* Info.plist */,
+			FBDC4F23F93125BBEEAE800C /* Products */,
+		); sourceTree = "<group>"; };
+		FBDC4F23F93125BBEEAE800C /* Products */ = {isa = PBXGroup; children = (294174BE4BF2511F5691ABCD /* MihomoCoreManager.app */,); name = Products; sourceTree = "<group>"; };
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		0E8A3AD980EC179856012B7E /* MihomoCoreManager */ = {isa = PBXNativeTarget; buildConfigurationList = F8D9D3B88CD6FC592C2C9D18; buildPhases = (E4F78730D65EE9F55E2BAC2F, 7B8633C7EB6F5CB13673C25D, C52ABA055DA4D0050382EB56); buildRules = (); dependencies = (); name = MihomoCoreManager; productName = MihomoCoreManager; productReference = 294174BE4BF2511F5691ABCD; productType = "com.apple.product-type.application"; };
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		98F54143AB4E86B28C3AFEE0 /* Project object */ = {isa = PBXProject; attributes = {BuildIndependentTargetsInParallel = 1; LastSwiftUpdateCheck = 1600; LastUpgradeCheck = 1600; TargetAttributes = {0E8A3AD980EC179856012B7E = {CreatedOnToolsVersion = 16.0; }; }; }; buildConfigurationList = B21C1D195CCB6F2828E1C10C; compatibilityVersion = "Xcode 14.0"; developmentRegion = zh_CN; hasScannedForEncodings = 0; knownRegions = (Base, zh_CN, en); mainGroup = 6CFC827E67DCAE34C72B9CED; productRefGroup = FBDC4F23F93125BBEEAE800C; projectDirPath = ""; projectRoot = ""; targets = (0E8A3AD980EC179856012B7E); };
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		C52ABA055DA4D0050382EB56 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (1320961DEB0F71537B1EF4CA); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		E4F78730D65EE9F55E2BAC2F /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (
+			7084AECA3D3CC7FF6F1D9872 /* MihomoCoreManagerApp.swift in Sources */,
+			B7576BED5440A2743574875D /* AppModel.swift in Sources */,
+			F755EFF50C51E67FB343E3BC /* Models.swift in Sources */,
+			D8BFB1A14992215CF5711985 /* MihomoAPIClient.swift in Sources */,
+			F6427F213145B958594F4500 /* KeychainStore.swift in Sources */,
+			4383F19462EB062334F27C24 /* ProfileStore.swift in Sources */,
+			8F5CD3AF04D4E988AAAB782F /* ContentView.swift in Sources */,
+			D4CDC09937D2E5DC8DF77198 /* OverviewView.swift in Sources */,
+			C037E39C7C20458AE33E3534 /* CoreView.swift in Sources */,
+			3B439020E26A150ADA8BAC69 /* SubscriptionsView.swift in Sources */,
+			14D4C874A33FDA840AED77B6 /* LogsView.swift in Sources */,
+			7FDB453F3D631C7CC4DA204B /* UpdateView.swift in Sources */,
+			FBAD0A152F520BF6C9EF8919 /* MenuBarView.swift in Sources */,
+			1A531C08BF56BA35C2F732C0 /* SettingsView.swift in Sources */,
+		); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		5E8ACABCCBE1DB5D311988C9 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = macosx;
+			}; name = Debug; };
+		F84FD35CA8548076F2B51EDF /* Release */ = {isa = XCBuildConfiguration; buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = macosx;
+			}; name = Release; };
+		52E4B1F45A8301801ABFA155 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 109;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MihomoCoreManager/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0.9;
+				PRODUCT_BUNDLE_IDENTIFIER = cc.kkr.MihomoCoreManager;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_VERSION = 5.0;
+			}; name = Debug; };
+		9F4924C3DF89CA99B9B1F005 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 109;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MihomoCoreManager/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0.9;
+				PRODUCT_BUNDLE_IDENTIFIER = cc.kkr.MihomoCoreManager;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_VERSION = 5.0;
+			}; name = Release; };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		B21C1D195CCB6F2828E1C10C = {isa = XCConfigurationList; buildConfigurations = (5E8ACABCCBE1DB5D311988C9, F84FD35CA8548076F2B51EDF); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		F8D9D3B88CD6FC592C2C9D18 = {isa = XCConfigurationList; buildConfigurations = (52E4B1F45A8301801ABFA155, 9F4924C3DF89CA99B9B1F005); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+	};
+	rootObject = 98F54143AB4E86B28C3AFEE0 /* Project object */;
+}
