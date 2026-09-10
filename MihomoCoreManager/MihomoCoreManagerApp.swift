@@ -21,6 +21,7 @@ struct MihomoCoreManagerApp: App {
         Settings {
             SettingsRootView()
                 .environmentObject(model)
+                .preferredColorScheme(.dark)
         }
 
         MenuBarExtra(isInserted: $showMenuBarExtra) {

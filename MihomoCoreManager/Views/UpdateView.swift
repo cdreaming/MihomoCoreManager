@@ -2,11 +2,10 @@ import SwiftUI
 
 struct UpdateView: View {
     @EnvironmentObject private var model: AppModel
-    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: DashboardLayout.pageSpacing) {
                 DashboardPageHeader(
                     title: "项目升级",
                     subtitle: "检查并升级 Mihomo Core、MetaCubeXD 与 Core 管理面板。"
@@ -47,8 +46,8 @@ struct UpdateView: View {
                             Spacer()
                             Text(model.selectedProfile?.preserveSettingsOnUpdate == true ? "保留现有参数" : "不保留，使用默认参数")
                                 .foregroundStyle(DashboardPalette.tertiary)
-                            Button("修改…") { openSettings() }
-                                .buttonStyle(.plain)
+                            Button("修改…") { model.selectedSection = .settings }
+                                .buttonStyle(DashboardPressButtonStyle())
                                 .foregroundStyle(DashboardPalette.accent)
                         }
                         .font(.system(size: 11.5))
@@ -83,8 +82,8 @@ struct UpdateView: View {
                     }
                 }
             }
-            .padding(.horizontal, 28)
-            .padding(.vertical, 26)
+            .padding(.horizontal, DashboardLayout.pageHorizontalPadding)
+            .padding(.vertical, DashboardLayout.pageVerticalPadding)
         }
         .disabled(model.isBusy)
     }

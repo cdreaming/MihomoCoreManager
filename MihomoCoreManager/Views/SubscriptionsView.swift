@@ -6,7 +6,7 @@ struct SubscriptionsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: DashboardLayout.pageSpacing) {
                 DashboardPageHeader(
                     title: "订阅管理",
                     subtitle: "管理 Proxy Providers；保存后生成并校验 config.yaml，热重载超时时自动安全重启应用。"
@@ -41,23 +41,14 @@ struct SubscriptionsView: View {
                             }
                         }
 
-                        ViewThatFits(in: .horizontal) {
-                            HStack(spacing: 9) {
-                                Spacer()
-                                Button("重新读取") { Task { await model.fetchSubscriptions() } }
-                                    .buttonStyle(DashboardActionButtonStyle())
-                                    .frame(width: 120)
-                                Button("保存并应用") { Task { await model.saveSubscriptions() } }
-                                    .buttonStyle(DashboardActionButtonStyle(primary: true))
-                                    .frame(width: 140)
-                            }
-
-                            VStack(spacing: 9) {
-                                Button("重新读取") { Task { await model.fetchSubscriptions() } }
-                                    .buttonStyle(DashboardActionButtonStyle())
-                                Button("保存并应用") { Task { await model.saveSubscriptions() } }
-                                    .buttonStyle(DashboardActionButtonStyle(primary: true))
-                            }
+                        HStack(spacing: 9) {
+                            Spacer()
+                            Button("重新读取") { Task { await model.fetchSubscriptions() } }
+                                .buttonStyle(DashboardActionButtonStyle())
+                                .frame(width: 120)
+                            Button("保存并应用") { Task { await model.saveSubscriptions() } }
+                                .buttonStyle(DashboardActionButtonStyle(primary: true))
+                                .frame(width: 140)
                         }
                         .padding(.top, 2)
 
@@ -69,8 +60,8 @@ struct SubscriptionsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .padding(.horizontal, 28)
-            .padding(.vertical, 26)
+            .padding(.horizontal, DashboardLayout.pageHorizontalPadding)
+            .padding(.vertical, DashboardLayout.pageVerticalPadding)
         }
         .task(id: loadTaskID) {
             guard model.selectedSection == .subscriptions else { return }

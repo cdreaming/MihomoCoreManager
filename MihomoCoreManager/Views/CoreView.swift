@@ -3,11 +3,10 @@ import SwiftUI
 struct CoreView: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var live: LiveStatusStore
-    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: DashboardLayout.pageSpacing) {
                 DashboardPageHeader(
                     title: "Core 控制",
                     subtitle: "仅管理 Mihomo Core 进程；MetaCubeXD 与管理面板保持独立。"
@@ -17,24 +16,19 @@ struct CoreView: View {
                 metaCubePanel
                 updatePanel
             }
-            .padding(.horizontal, 28)
-            .padding(.vertical, 26)
+            .padding(.horizontal, DashboardLayout.pageHorizontalPadding)
+            .padding(.vertical, DashboardLayout.pageVerticalPadding)
         }
     }
 
     private var serviceColumns: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 14) {
-                serviceControl
-                    .frame(maxWidth: .infinity, minHeight: 286, alignment: .top)
-                serviceInfo
-                    .frame(maxWidth: .infinity, minHeight: 286, alignment: .top)
-            }
-
-            VStack(spacing: 14) {
-                serviceControl
-                serviceInfo
-            }
+        HStack(alignment: .top, spacing: DashboardLayout.sectionSpacing) {
+            serviceControl
+                .frame(maxWidth: .infinity)
+                .frame(height: 300)
+            serviceInfo
+                .frame(maxWidth: .infinity)
+                .frame(height: 300)
         }
     }
 
@@ -115,20 +109,11 @@ struct CoreView: View {
             VStack(alignment: .leading, spacing: 12) {
                 DashboardPanelHeader(title: "项目升级", trailing: "Mihomo Core + MetaCubeXD + Core 管理面板")
 
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 9) {
-                        Button("检查新版本") { Task { await model.checkUpdate() } }
-                            .buttonStyle(DashboardActionButtonStyle())
-                        Button("开始项目升级") { Task { await model.applyUpdate() } }
-                            .buttonStyle(DashboardActionButtonStyle(primary: true))
-                    }
-
-                    VStack(spacing: 9) {
-                        Button("检查新版本") { Task { await model.checkUpdate() } }
-                            .buttonStyle(DashboardActionButtonStyle())
-                        Button("开始项目升级") { Task { await model.applyUpdate() } }
-                            .buttonStyle(DashboardActionButtonStyle(primary: true))
-                    }
+                HStack(spacing: 9) {
+                    Button("检查新版本") { Task { await model.checkUpdate() } }
+                        .buttonStyle(DashboardActionButtonStyle())
+                    Button("开始项目升级") { Task { await model.applyUpdate() } }
+                        .buttonStyle(DashboardActionButtonStyle(primary: true))
                 }
                 .disabled(model.isBusy)
 
@@ -138,8 +123,8 @@ struct CoreView: View {
                     Spacer()
                     Text(model.selectedProfile?.preserveSettingsOnUpdate == true ? "保留现有参数" : "不保留，使用默认参数")
                         .foregroundStyle(DashboardPalette.tertiary)
-                    Button("修改…") { openSettings() }
-                        .buttonStyle(.plain)
+                    Button("修改…") { model.selectedSection = .settings }
+                        .buttonStyle(DashboardPressButtonStyle())
                         .foregroundStyle(DashboardPalette.accent)
                 }
                 .font(.system(size: 11.5))

@@ -6,7 +6,7 @@ struct OverviewView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: DashboardLayout.pageSpacing) {
                 DashboardPageHeader(
                     title: "概览",
                     subtitle: "实时掌握 Mihomo Core 的运行状态与网络负载。"
@@ -16,8 +16,8 @@ struct OverviewView: View {
                 metrics
                 contentColumns
             }
-            .padding(.horizontal, 28)
-            .padding(.vertical, 26)
+            .padding(.horizontal, DashboardLayout.pageHorizontalPadding)
+            .padding(.vertical, DashboardLayout.pageVerticalPadding)
         }
         .background(
             LinearGradient(
@@ -29,19 +29,13 @@ struct OverviewView: View {
     }
 
     private var contentColumns: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 14) {
-                trafficPanel
-                    .frame(maxWidth: .infinity, minHeight: 336, alignment: .top)
-                quickActions
-                    .frame(width: 334)
-                    .frame(minHeight: 336, alignment: .top)
-            }
-
-            VStack(spacing: 14) {
-                trafficPanel
-                quickActions
-            }
+        HStack(alignment: .top, spacing: DashboardLayout.sectionSpacing) {
+            trafficPanel
+                .frame(maxWidth: .infinity)
+                .frame(height: 336)
+            quickActions
+                .frame(width: 334)
+                .frame(height: 336)
         }
     }
 
@@ -115,7 +109,7 @@ struct OverviewView: View {
 
     private var trafficPanel: some View {
         DashboardPanel {
-            VStack(alignment: .leading, spacing: 13) {
+            VStack(alignment: .leading, spacing: DashboardLayout.panelSpacing) {
                 DashboardPanelHeader(title: "实时流量", trailing: "每 \(refreshText) 秒刷新")
 
                 TrafficChartView(samples: live.trafficSamples)
@@ -132,7 +126,7 @@ struct OverviewView: View {
 
     private var quickActions: some View {
         DashboardPanel {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: DashboardLayout.panelSpacing) {
                 DashboardPanelHeader(title: "快速控制", trailing: "Core only")
 
                 Grid(horizontalSpacing: 9, verticalSpacing: 9) {

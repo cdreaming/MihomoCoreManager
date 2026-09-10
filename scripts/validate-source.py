@@ -144,6 +144,32 @@ for marker in [
 if "menuRateCompact" not in app_model:
     errors.append("native compact menu-rate formatter missing")
 
+core_view = (root / "MihomoCoreManager/Views/CoreView.swift").read_text(encoding="utf-8")
+update_view = (root / "MihomoCoreManager/Views/UpdateView.swift").read_text(encoding="utf-8")
+settings_dashboard = settings.split("struct SettingsRootView: View {", 1)[0]
+for rel_name, text in [("OverviewView.swift", overview), ("CoreView.swift", core_view), ("SubscriptionsView.swift", subscriptions_view), ("SettingsView.swift (dashboard)", settings_dashboard)]:
+    if "ViewThatFits(in: .horizontal)" in text:
+        errors.append(f"duplicate responsive button/view subtree is not allowed in {rel_name}")
+for marker in ["DashboardLayout.pageHorizontalPadding", "DashboardLayout.pageVerticalPadding", "DashboardLayout.pageSpacing"]:
+    for rel_name, text in [("OverviewView.swift", overview), ("CoreView.swift", core_view), ("SubscriptionsView.swift", subscriptions_view), ("LogsView.swift", logs_view), ("UpdateView.swift", update_view), ("SettingsView.swift (dashboard)", settings_dashboard)]:
+        if marker not in text:
+            errors.append(f"shared dashboard layout marker missing in {rel_name}: {marker}")
+for marker in ["struct DashboardPressButtonStyle: ButtonStyle", ".scaleEffect(pressed ? 0.985 : 1)", ".animation(.easeOut(duration: 0.08), value: pressed)", "Color.white.opacity(pressed ? 0.085 : 0.025)"]:
+    if marker not in content:
+        errors.append(f"v1.0.9-style unified button feedback gate missing: {marker}")
+for rel_name, text in [("ContentView.swift", content), ("CoreView.swift", core_view), ("UpdateView.swift", update_view), ("SettingsView.swift (dashboard)", settings_dashboard)]:
+    if ".buttonStyle(.plain)" in text:
+        errors.append(f"unstyled dashboard button remains in {rel_name}")
+settings_order_markers = ["serverPanel", "connectionPanel(profile: draftBinding)", "corePanel(profile: draftBinding)", "appPanel", "footerActions"]
+settings_positions = [settings_dashboard.find(marker) for marker in settings_order_markers]
+if any(position < 0 for position in settings_positions) or settings_positions != sorted(settings_positions):
+    errors.append("settings blocks must be vertically ordered: server -> connection -> Core -> App/status -> actions")
+for marker in ['DashboardPanelHeader(title: "App 与状态栏"', 'appControlCell("显示状态栏按钮"', 'appControlCell("状态栏显示图标"', 'appControlCell("状态栏显示运行状态"', 'appControlCell("状态栏显示实时网速"', 'appControlCell("状态刷新间隔"', 'appControlCell("默认日志行数"']:
+    if marker not in settings_dashboard:
+        errors.append(f"two-column App/status settings gate missing: {marker}")
+if ".frame(height: 336)" not in overview: errors.append("overview paired panels must use the same 336pt height")
+if ".frame(height: 300)" not in core_view: errors.append("Core paired panels must use the same 300pt height")
+
 for marker in ['data-nav="settings"', 'data-view="settings"', 'contain:layout paint style', "pageLoaded=new Set()", "document.hidden", 'id="pMenuIcon"', "showIcon:icon.checked"]:
     if marker not in portable_ui:
         errors.append(f"portable settings/performance gate missing: {marker}")

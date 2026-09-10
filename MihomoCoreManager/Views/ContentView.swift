@@ -15,6 +15,15 @@ enum DashboardPalette {
     static let red = Color(red: 1.0, green: 0.27, blue: 0.23)
 }
 
+enum DashboardLayout {
+    static let pageHorizontalPadding: CGFloat = 28
+    static let pageVerticalPadding: CGFloat = 26
+    static let pageSpacing: CGFloat = 22
+    static let sectionSpacing: CGFloat = 14
+    static let panelSpacing: CGFloat = 12
+    static let actionHeight: CGFloat = 38
+}
+
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
 
@@ -161,7 +170,7 @@ private struct DashboardSidebar: View {
                         .background(model.selectedSection == section ? DashboardPalette.accent : Color.clear)
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(DashboardPressButtonStyle())
                 }
 
                 DashboardBackendSelector()
@@ -260,7 +269,7 @@ private struct DashboardBackendSelector: View {
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(DashboardPressButtonStyle())
         .help("切换 Mihomo Core 后端服务器")
         .popover(isPresented: $isPresented, arrowEdge: .trailing) {
             BackendPickerPopover(isPresented: $isPresented)
@@ -339,7 +348,7 @@ private struct BackendPickerPopover: View {
                             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(DashboardPressButtonStyle())
                     }
                 }
                 .padding(8)
@@ -368,7 +377,7 @@ private struct BackendPickerPopover: View {
                 .frame(height: 44)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(DashboardPressButtonStyle())
         }
         // Match the popover content width to the sidebar trigger exactly:
         // 230pt sidebar - 12pt leading - 12pt trailing = 206pt.
@@ -470,20 +479,38 @@ struct DashboardPanelHeader: View {
 struct DashboardActionButtonStyle: ButtonStyle {
     var destructive = false
     var primary = false
+    @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
+        let pressed = configuration.isPressed && isEnabled
+
         configuration.label
             .font(.system(size: 13, weight: .semibold))
             .foregroundStyle(destructive ? DashboardPalette.red : .white)
             .frame(maxWidth: .infinity)
-            .frame(height: 38)
-            .background(primary ? DashboardPalette.accent : Color.white.opacity(configuration.isPressed ? 0.085 : 0.025))
+            .frame(height: DashboardLayout.actionHeight)
+            .background(primary ? DashboardPalette.accent : Color.white.opacity(pressed ? 0.085 : 0.025))
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .stroke(destructive ? DashboardPalette.red.opacity(0.45) : DashboardPalette.separator, lineWidth: 1)
             }
-            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+            .scaleEffect(pressed ? 0.985 : 1)
+            .opacity(isEnabled ? 1 : 0.48)
+            .animation(.easeOut(duration: 0.08), value: pressed)
+    }
+}
+
+struct DashboardPressButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        let pressed = configuration.isPressed && isEnabled
+
+        configuration.label
+            .scaleEffect(pressed ? 0.985 : 1)
+            .opacity(isEnabled ? (pressed ? 0.86 : 1) : 0.48)
+            .animation(.easeOut(duration: 0.08), value: pressed)
     }
 }
 
@@ -515,7 +542,7 @@ private struct DashboardNotice: View {
             Button(action: dismiss) {
                 Image(systemName: "xmark")
             }
-            .buttonStyle(.plain)
+            .buttonStyle(DashboardPressButtonStyle())
             .foregroundStyle(DashboardPalette.secondary)
         }
         .font(.system(size: 12, weight: .medium))

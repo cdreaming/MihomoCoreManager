@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.1.5
+
+- 统一 Dashboard 按钮交互并参考 v1.0.9。
+- 移除重复 Button 的 ViewThatFits 候选树。
+- 设置页改为纵向；App 与状态栏改为双列分组。
+- 概览/Core 成对卡片统一高度；日志页统一结构。
+- 版本升级为 v1.1.5 / build 115。
+
 ## v1.1.4
 
 - 修复 v1.1.3 Release 在 Xcode 16.4 下编译失败的问题。
