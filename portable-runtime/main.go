@@ -22,8 +22,8 @@ import (
 )
 
 const (
-	appVersion      = "1.1.9"
-	buildNumber     = "119"
+	appVersion      = "1.2.0"
+	buildNumber     = "120"
 	keychainService = "cc.kkr.MihomoCoreManager"
 )
 
@@ -899,10 +899,14 @@ function fmtMenuRate(raw){
   var digits=i===0?0:(value<10?1:0);
   return value.toFixed(digits)+' '+units[i];
 }
-function padMenuRate(raw){
-  var text=fmtMenuRate(raw);
-  while(text.length<9) text=' '+text;
-  return text;
+function statusRateParts(raw){
+  var value=Math.max(0,Number(raw||0)), units=['B/s','KB/s','MB/s','GB/s','TB/s'], i=0;
+  while(value>=1024 && i<units.length-1){ value/=1024; i++; }
+  // The value label has exactly four monospaced character cells. Keep the
+  // actual text within those cells and let the adjacent unit label change
+  // independently as traffic crosses B/s, KB/s, MB/s and larger thresholds.
+  var number=(i>0 && value<10)?value.toFixed(1):value.toFixed(0);
+  return {value:number,unit:units[i]};
 }
 function statusFromFile(){
   try {
@@ -919,6 +923,15 @@ function statusFromFile(){
 ObjC.registerSubclass({name:'MihomoWindowDragView', superclass:'NSView', methods:{
 'mouseDown:':{types:['void',['id']],implementation:function(event){try{this.window.performWindowDragWithEvent(event);}catch(e){}}}
 }});
+ObjC.registerSubclass({name:'MihomoStatusOverlayView', superclass:'NSView', methods:{
+'mouseDown:':{types:['void',['id']],implementation:function(event){try{statusItem.button.performClick(null);}catch(e){}}}
+}});
+ObjC.registerSubclass({name:'MihomoStatusLabel', superclass:'NSTextField', methods:{
+'mouseDown:':{types:['void',['id']],implementation:function(event){try{statusItem.button.performClick(null);}catch(e){}}}
+}});
+ObjC.registerSubclass({name:'MihomoStatusIconView', superclass:'NSImageView', methods:{
+'mouseDown:':{types:['void',['id']],implementation:function(event){try{statusItem.button.performClick(null);}catch(e){}}}
+}});
 var cocoaApp=$.NSApplication.sharedApplication; cocoaApp.setActivationPolicy(1);
 var rect=$.NSMakeRect(0,0,1180,760);
 var win=$.NSWindow.alloc.initWithContentRectStyleMaskBackingDefer(rect,32783,2,false);
@@ -933,6 +946,7 @@ function openHash(h){ showURL(BASE+'/#'+h); }
 var statusItem=null, statusHeader=null, upHeader=null, downHeader=null, prefIconItem=null, prefStatusItem=null, prefSpeedItem=null, iconOnlyItem=null, startItem=null, stopItem=null, serverMenu=null, serverRoot=null;
 var showIcon=true, showStatus=true, showSpeed=true, lastRunning=false, lastReachable=false, lastUp=0, lastDown=0, lastCoreVersion='--';
 var appSymbol=null, missingSnapshotTicks=0;
+var statusOverlay=null, statusIconView=null, statusDot=null, upValueLabel=null, upUnitLabel=null, downValueLabel=null, downUnitLabel=null;
 function savePrefs(){ post('/local/menu-preferences',{showIcon:showIcon,showStatus:showStatus,showSpeed:showSpeed},true); }
 function syncPrefItems(){
   if(prefIconItem) prefIconItem.state=showIcon?1:0;
@@ -945,15 +959,59 @@ function safeSingleLineTitle(){
   var state=lastReachable?(lastRunning?'Running':'Stopped'):'Offline';
   var parts=[];
   if(showStatus) parts.push(state);
-  if(showSpeed) parts.push('↑ '+fmtMenuRate(lastUp)+'  ↓ '+fmtMenuRate(lastDown));
+  if(showSpeed) parts.push(fmtMenuRate(lastUp)+'  '+fmtMenuRate(lastDown));
   return parts.join('   ');
+}
+function setStatusOverlayHidden(hidden){
+  if(statusOverlay) statusOverlay.hidden=hidden;
+}
+function renderStatusSpeedOverlay(){
+  var up=statusRateParts(lastUp), down=statusRateParts(lastDown);
+  var iconWidth=showIcon?20:0, dotWidth=(!showIcon&&showStatus)?9:0;
+  var speedX=3+iconWidth+dotWidth;
+  var width=speedX+49+3;
+  statusItem.length=width;
+  statusOverlay.frame=$.NSMakeRect(0,0,width,22);
+  statusOverlay.hidden=false;
+
+  statusIconView.hidden=!showIcon;
+  if(showIcon){
+    statusIconView.frame=$.NSMakeRect(3,4,14,14);
+    statusIconView.image=appSymbol;
+  }
+
+  statusDot.hidden=!showStatus;
+  if(showStatus){
+    statusDot.frame=showIcon?$.NSMakeRect(14,0.5,7,8):$.NSMakeRect(2,6.2,7,8);
+    statusDot.textColor=lastReachable?(lastRunning?$.NSColor.systemGreenColor:$.NSColor.systemOrangeColor):$.NSColor.secondaryLabelColor;
+  }
+
+  // v1.2.0: never rely on NSStatusBarButton multiline title rendering.
+  // Two independent native labels are pinned near the bottom of the 22pt menu
+  // bar. Numeric labels are left aligned in four monospaced cells; units sit in
+  // their own adjacent field. This keeps both rows visible on normal macOS menu
+  // bars without the crash-prone NSButtonCell/attributedTitle overrides.
+  upValueLabel.frame=$.NSMakeRect(speedX,9.3,22,10.5);
+  upUnitLabel.frame=$.NSMakeRect(speedX+22,9.3,27,10.5);
+  downValueLabel.frame=$.NSMakeRect(speedX,0.3,22,10.5);
+  downUnitLabel.frame=$.NSMakeRect(speedX+22,0.3,27,10.5);
+  upValueLabel.stringValue=$(up.value); upUnitLabel.stringValue=$(up.unit);
+  downValueLabel.stringValue=$(down.value); downUnitLabel.stringValue=$(down.unit);
 }
 function renderStatusButton(){
   if(!statusItem) return;
   var button=statusItem.button;
   try {
     keepMenuVisible();
-    var hasText=showStatus||showSpeed;
+
+    if(showSpeed && statusOverlay){
+      button.image=null; button.imagePosition=0; button.title='';
+      renderStatusSpeedOverlay();
+      return;
+    }
+
+    setStatusOverlayHidden(true);
+    var hasText=showStatus;
     if(showIcon&&appSymbol){
       button.image=appSymbol;
       button.imagePosition=hasText?2:1; // NSImageLeft / NSImageOnly
@@ -966,31 +1024,20 @@ function renderStatusButton(){
       button.title='';
       return;
     }
-    // v1.1.9: keep the app glyph on the left and reserve the text column for
-    // two-line traffic values. A monospaced font plus right-aligned button cell
-    // keeps upload/download digits visually stable while values change.
-    try{button.font=$.NSFont.monospacedSystemFontOfSizeWeight(8.5,0.28);}catch(fontErr){try{button.font=$.NSFont.systemFontOfSize(8.5);}catch(ignore){}}
-    try{button.alignment=2;}catch(ignore){} // NSTextAlignmentRight
+    try{button.font=$.NSFont.systemFontOfSize(9.2);button.alignment=0;}catch(ignore){}
     var state=lastReachable?(lastRunning?'Running':'Stopped'):'Offline';
-    var up='↑ '+padMenuRate(lastUp), down='↓ '+padMenuRate(lastDown), title='';
-    if(showSpeed){
-      title=up+'\n'+down;
-      statusItem.length=showIcon?94:72;
-    } else {
-      title=showStatus?state:'';
-      statusItem.length=showIcon?(showStatus?82:25):(showStatus?60:25);
-    }
-    button.title=$(title);
+    button.title=$(state);
+    statusItem.length=showIcon?82:60;
   } catch(renderErr) {
     // Never allow a cosmetic status-bar failure to terminate the whole App.
-    // Recovery deliberately avoids the combined image+text layout that failed.
     try{
+      setStatusOverlayHidden(true);
       keepMenuVisible();
       if(showStatus||showSpeed){
         button.image=null;
         button.imagePosition=0;
         button.title=$(safeSingleLineTitle());
-        statusItem.length=showSpeed?126:62;
+        statusItem.length=showSpeed?118:62;
       } else {
         button.title='';
         button.image=appSymbol;
@@ -1078,6 +1125,24 @@ editRoot.submenu=editMenu; mainMenu.addItem(editRoot); cocoaApp.mainMenu=mainMen
 
 statusItem=$.NSStatusBar.systemStatusBar.statusItemWithLength(25); statusItem.button.toolTip='Mihomo Core Manager v%s';
 try{appSymbol=$.NSImage.imageWithSystemSymbolNameAccessibilityDescription('circle.grid.cross','Mihomo Core');appSymbol.template=true;}catch(e){}
+try{
+  statusOverlay=$.MihomoStatusOverlayView.alloc.initWithFrame($.NSMakeRect(0,0,25,22));
+  statusIconView=$.MihomoStatusIconView.alloc.initWithFrame($.NSMakeRect(3,4,14,14));
+  statusIconView.imageScaling=3; statusOverlay.addSubview(statusIconView);
+  function makeStatusLabel(size,weight){
+    var label=$.MihomoStatusLabel.alloc.initWithFrame($.NSMakeRect(0,0,1,1));
+    label.stringValue=''; label.bezeled=false; label.bordered=false; label.drawsBackground=false; label.editable=false; label.selectable=false;
+    try{label.font=$.NSFont.monospacedSystemFontOfSizeWeight(size,weight);}catch(e){label.font=$.NSFont.systemFontOfSize(size);}
+    label.alignment=0; label.textColor=$.NSColor.labelColor;
+    return label;
+  }
+  upValueLabel=makeStatusLabel(8.5,0.28); upUnitLabel=makeStatusLabel(8.5,0.28);
+  downValueLabel=makeStatusLabel(8.5,0.28); downUnitLabel=makeStatusLabel(8.5,0.28);
+  statusDot=makeStatusLabel(5.5,0.0); statusDot.stringValue='●';
+  statusOverlay.addSubview(upValueLabel); statusOverlay.addSubview(upUnitLabel);
+  statusOverlay.addSubview(downValueLabel); statusOverlay.addSubview(downUnitLabel); statusOverlay.addSubview(statusDot);
+  statusItem.button.addSubview(statusOverlay);
+}catch(overlayErr){statusOverlay=null;}
 
 var prefs=get('/local/menu-preferences',true); if(prefs){showIcon=prefs.showIcon!==false;showStatus=!!prefs.showStatus;showSpeed=!!prefs.showSpeed;} keepMenuVisible();
 var menu=$.NSMenu.alloc.init;

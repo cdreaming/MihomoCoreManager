@@ -72,14 +72,14 @@ private struct MenuBarLabelView: View {
             }
 
             if model.menuBarShowSpeed {
-                VStack(alignment: .trailing, spacing: -2) {
-                    speedLine(symbol: "↑", value: model.menuRateCompact(live.status?.speed?.up))
-                    speedLine(symbol: "↓", value: model.menuRateCompact(live.status?.speed?.down))
+                VStack(alignment: .leading, spacing: -2) {
+                    speedLine(model.menuBarRateParts(live.status?.speed?.up))
+                    speedLine(model.menuBarRateParts(live.status?.speed?.down))
                 }
                 .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
                 .monospacedDigit()
-                .frame(minWidth: 62, alignment: .trailing)
-                .frame(height: 18, alignment: .trailing)
+                .frame(width: 55, height: 18, alignment: .bottomLeading)
+                .offset(y: 1)
                 .fixedSize(horizontal: true, vertical: true)
             } else if model.menuBarShowStatus && model.menuBarShowIcon {
                 Text(statusText)
@@ -90,14 +90,17 @@ private struct MenuBarLabelView: View {
         .accessibilityLabel("Mihomo Core Manager, \(model.menuBarSummary)")
     }
 
-    private func speedLine(symbol: String, value: String) -> some View {
-        HStack(spacing: 3) {
-            Text(symbol)
-                .frame(width: 8, alignment: .leading)
-            Text(value)
-                .frame(minWidth: 49, alignment: .trailing)
+    private func speedLine(_ rate: (value: String, unit: String)) -> some View {
+        HStack(spacing: 0) {
+            // Four monospaced character cells are always reserved for the numeric
+            // part. Both rows therefore share the same left edge while B/s, KB/s,
+            // MB/s and larger units can change independently.
+            Text(rate.value)
+                .frame(width: 24, alignment: .leading)
+            Text(rate.unit)
+                .frame(width: 31, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .trailing)
+        .frame(width: 55, alignment: .leading)
     }
 
     private var statusText: String {

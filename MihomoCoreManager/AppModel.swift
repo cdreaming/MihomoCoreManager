@@ -198,6 +198,28 @@ final class AppModel: ObservableObject {
         return String(format: "%.*f %@", digits, value, units[unit])
     }
 
+    func menuBarRateParts(_ raw: Double?) -> (value: String, unit: String) {
+        var value = max(0, raw ?? 0)
+        let units = ["B/s", "KB/s", "MB/s", "GB/s", "TB/s"]
+        var unitIndex = 0
+        while value >= 1024, unitIndex < units.count - 1 {
+            value /= 1024
+            unitIndex += 1
+        }
+
+        // Keep the numeric field within four monospaced cells. Sub-10 values use
+        // one decimal after unit conversion; all other values are integers.
+        // Because the scaled value is always below 1024, the result is at most
+        // four characters (for example 9.8, 53, 999 or 1023).
+        let number: String
+        if unitIndex > 0, value < 10 {
+            number = String(format: "%.1f", value)
+        } else {
+            number = String(format: "%.0f", value)
+        }
+        return (number, units[unitIndex])
+    }
+
     var resolvedMetaCubeXDURL: URL? {
         guard let profile = selectedProfile else { return nil }
         let candidates = [profile.metaCubeXDURL, status?.metacubexd?.url ?? ""]

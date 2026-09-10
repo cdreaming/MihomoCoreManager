@@ -133,17 +133,19 @@ if "guard model.selectedSection == .logs" not in logs_view:
 for marker in [
     ".windowStyle(.hiddenTitleBar)",
     ".menuBarExtraStyle(.window)",
-    'speedLine(symbol: "↑", value: model.menuRateCompact(live.status?.speed?.up))',
-    'speedLine(symbol: "↓", value: model.menuRateCompact(live.status?.speed?.down))',
-    '.frame(minWidth: 49, alignment: .trailing)',
+    'speedLine(model.menuBarRateParts(live.status?.speed?.up))',
+    'speedLine(model.menuBarRateParts(live.status?.speed?.down))',
+    '.frame(width: 24, alignment: .leading)',
+    '.frame(width: 55, height: 18, alignment: .bottomLeading)',
+    '.offset(y: 1)',
     "HStack(alignment: .center, spacing: 5)",
     "if model.menuBarShowIcon",
     "model.menuBarShowStatus && !model.menuBarShowIcon",
 ]:
     if marker not in app_swift:
-        errors.append(f"native compact-window/v1.1.9 menu-bar gate missing: {marker}")
-if "menuRateCompact" not in app_model:
-    errors.append("native compact menu-rate formatter missing")
+        errors.append(f"native compact-window/v1.2.0 menu-bar gate missing: {marker}")
+if "menuBarRateParts" not in app_model:
+    errors.append("native v1.2.0 menu-bar rate-parts formatter missing")
 
 core_view = (root / "MihomoCoreManager/Views/CoreView.swift").read_text(encoding="utf-8")
 update_view = (root / "MihomoCoreManager/Views/UpdateView.swift").read_text(encoding="utf-8")
@@ -211,13 +213,9 @@ for marker in ["min-height:46px", ".nav button:active", "scale(.955)"]:
     if marker not in portable_ui:
         errors.append(f"v1.1.8 portable sidebar interaction gate missing: {marker}")
 
-# v1.1.9: status-bar speed uses a stable two-line, right-aligned layout and
-# the native dropdown is a compact custom MenuBarExtra window rather than a long NSMenu.
+# v1.1.9 dropdown regression: keep the compact custom MenuBarExtra panel.
 for marker in [
     ".menuBarExtraStyle(.window)",
-    'speedLine(symbol: "↑"',
-    'speedLine(symbol: "↓"',
-    '.frame(minWidth: 49, alignment: .trailing)',
     'private var speedCard: some View',
     'private var serverCard: some View',
     'private var coreActions: some View',
@@ -227,12 +225,23 @@ for marker in [
     'MenuPanelPressStyle',
 ]:
     if marker not in app_swift + "\n" + menu:
-        errors.append(f"v1.1.9 native status-menu gate missing: {marker}")
+        errors.append(f"v1.1.9 native dropdown regression missing: {marker}")
 
+# v1.2.0 status-bar body: use independent AppKit labels instead of a multiline
+# NSStatusBarButton title so both traffic rows are actually visible.
 for marker in [
-    "try{button.alignment=2;}",
-    "var up='↑ '+padMenuRate(lastUp), down='↓ '+padMenuRate(lastDown)",
-    "title=up+'\\n'+down",
+    "function statusRateParts(raw)",
+    "MihomoStatusOverlayView",
+    "MihomoStatusLabel",
+    "MihomoStatusIconView",
+    "statusItem.button.performClick(null)",
+    "function renderStatusSpeedOverlay()",
+    "upValueLabel.frame=$.NSMakeRect(speedX,9.3,22,10.5)",
+    "downValueLabel.frame=$.NSMakeRect(speedX,0.3,22,10.5)",
+    "upValueLabel.stringValue=$(up.value)",
+    "downValueLabel.stringValue=$(down.value)",
+    "statusItem.button.addSubview(statusOverlay)",
+    "button.image=null; button.imagePosition=0; button.title=''",
     "serverRoot.title='服务器  ·  '+selectedName",
     "var coreRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('Core 控制'",
     "var toolsRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('管理与工具'",
@@ -240,7 +249,11 @@ for marker in [
     "function addSymbol(item,name)",
 ]:
     if marker not in portable_main:
-        errors.append(f"v1.1.9 portable status-menu gate missing: {marker}")
+        errors.append(f"v1.2.0 portable status-bar gate missing: {marker}")
+if "function renderStatusSpeedOverlay()" in portable_main and "function renderStatusButton()" in portable_main:
+    status_overlay = portable_main.split("function renderStatusSpeedOverlay()", 1)[1].split("function renderStatusButton()", 1)[0]
+    if "↑" in status_overlay or "↓" in status_overlay:
+        errors.append("v1.2.0 status-bar body must not render upload/download arrows")
 
 portable_installer = (root / "scripts/build-portable-installer.sh").read_text(encoding="utf-8")
 for marker in ["GOOS=darwin GOARCH=arm64", "MihomoCoreManager.app", "Install-MihomoCoreManager.command", "LSMinimumSystemVersion", "codesign --force --deep --sign -"]:
@@ -275,14 +288,15 @@ for marker in [
     "MihomoWindowDragView",
     "performWindowDragWithEvent",
     "function fmtMenuRate(raw)",
-    "function padMenuRate(raw)",
+    "function statusRateParts(raw)",
+    "function renderStatusSpeedOverlay()",
     "function renderStatusButton()",
     "function safeSingleLineTitle()",
     "Never allow a cosmetic status-bar failure to terminate the whole App",
     "fallbackMenuScript",
     "starting recovery shell",
     "menubar.log",
-    "var up='↑ '+padMenuRate(lastUp), down='↓ '+padMenuRate(lastDown)",
+    "statusItem.button.addSubview(statusOverlay)",
     "_menu_updated_unix_ms",
     "missingSnapshotTicks>=4",
     "var showIcon=true, showStatus=true, showSpeed=true",

@@ -177,7 +177,7 @@ func TestInvalidateStatusCacheRemovesSnapshot(t *testing.T) {
 	}
 }
 
-func TestMenuScriptUsesCachedSnapshotNativeDragAndV119StatusMenu(t *testing.T) {
+func TestMenuScriptUsesCachedSnapshotNativeDragAndV120StatusSpeed(t *testing.T) {
 	script := menuScript("http://127.0.0.1:12345", "token", "/tmp/status.json")
 	for _, marker := range []string{
 		"function statusFromFile()",
@@ -186,16 +186,23 @@ func TestMenuScriptUsesCachedSnapshotNativeDragAndV119StatusMenu(t *testing.T) {
 		"MihomoWindowDragView",
 		"performWindowDragWithEvent",
 		"function fmtMenuRate(raw)",
-		"function padMenuRate(raw)",
+		"function statusRateParts(raw)",
+		"MihomoStatusOverlayView",
+		"MihomoStatusLabel",
+		"MihomoStatusIconView",
+		"statusItem.button.performClick(null)",
+		"function renderStatusSpeedOverlay()",
 		"function renderStatusButton()",
 		"function safeSingleLineTitle()",
 		"var showIcon=true, showStatus=true, showSpeed=true",
 		"prefIconItem=addItem(displayMenu,'显示图标','toggleShowIcon:','')",
-		"button.imagePosition=hasText?2:1",
+		"statusItem.button.addSubview(statusOverlay)",
+		"upValueLabel.frame=$.NSMakeRect(speedX,9.3,22,10.5)",
+		"downValueLabel.frame=$.NSMakeRect(speedX,0.3,22,10.5)",
+		"upValueLabel.stringValue=$(up.value)",
+		"downValueLabel.stringValue=$(down.value)",
+		"button.image=null; button.imagePosition=0; button.title=''",
 		"Never allow a cosmetic status-bar failure to terminate the whole App",
-		"var up='↑ '+padMenuRate(lastUp), down='↓ '+padMenuRate(lastDown)",
-		"try{button.alignment=2;}",
-		"title=up+'\\n'+down",
 		"upHeader.title='↑  上传                     '+fmtRate(lastUp)",
 		"downHeader.title='↓  下载                     '+fmtRate(lastDown)",
 		"var coreRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('Core 控制'",
@@ -204,13 +211,22 @@ func TestMenuScriptUsesCachedSnapshotNativeDragAndV119StatusMenu(t *testing.T) {
 		"function addSymbol(item,name)",
 	} {
 		if !strings.Contains(script, marker) {
-			t.Fatalf("menu script missing v1.1.9 marker %q", marker)
+			t.Fatalf("menu script missing v1.2.0 marker %q", marker)
 		}
 	}
-	for _, forbidden := range []string{"button.cell.wraps=true", "button.cell.usesSingleLineMode=false", "NSBaselineOffsetAttributeName", "CATextLayer", "function speedImage(up,down)"} {
+	for _, forbidden := range []string{"button.cell.wraps=true", "button.cell.usesSingleLineMode=false", "NSBaselineOffsetAttributeName", "CATextLayer", "function speedImage(up,down)", "title=up+'\\n'+down"} {
 		if strings.Contains(script, forbidden) {
-			t.Fatalf("v1.1.9 status-bar startup path must avoid crash-prone marker %q", forbidden)
+			t.Fatalf("v1.2.0 status-bar startup path must avoid marker %q", forbidden)
 		}
+	}
+	overlayStart := strings.Index(script, "function renderStatusSpeedOverlay()")
+	overlayEnd := strings.Index(script, "function renderStatusButton()")
+	if overlayStart < 0 || overlayEnd <= overlayStart {
+		t.Fatal("could not isolate v1.2.0 status speed overlay")
+	}
+	overlay := script[overlayStart:overlayEnd]
+	if strings.ContainsAny(overlay, "↑↓") {
+		t.Fatal("status-bar body must not include upload/download arrows")
 	}
 	if strings.Contains(script, "%!") {
 		t.Fatalf("menu script contains fmt formatting errors")
@@ -255,8 +271,8 @@ func TestPortableInteractionRegressionV118(t *testing.T) {
 	}
 }
 
-func TestPortableVersionV119(t *testing.T) {
-	if appVersion != "1.1.9" || buildNumber != "119" {
+func TestPortableVersionV120(t *testing.T) {
+	if appVersion != "1.2.0" || buildNumber != "120" {
 		t.Fatalf("unexpected portable version/build: %s/%s", appVersion, buildNumber)
 	}
 }

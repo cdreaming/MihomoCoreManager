@@ -1,9 +1,9 @@
-# Validation Report — v1.1.9
+# Validation Report — v1.2.0
 
-- App `1.1.9` / Xcode build `119` / portable build `119`。
-- v1.1.8 通知、侧栏命中范围、设置/日志首次加载修复保持不变。
-- 原生状态栏标签使用图标左置、上传/下载双行、等宽数字与右对齐数值列。
-- 原生 `MenuBarExtra` 使用 `.window` 自定义紧凑面板，避免标准 NSMenu 过长和顶部禁用文本层级混乱。
-- 原生菜单面板保留服务器选择、Core 全部控制、订阅/日志/升级/MetaCubeXD/设置以及项目检查/升级操作。
-- portable JXA 状态栏采用上传在上/下载在下、右对齐与固定宽度，菜单压缩为分组子菜单并使用系统符号。
-- Source validator 与 portable Go 回归测试加入 v1.1.9 状态栏门禁。
+- App `1.2.0` / Xcode build `120` / portable build `120`。
+- v1.1.9 自定义状态栏下拉面板保持不变。
+- 原生状态栏上传在上、下载在下；双行速度块靠下、左对齐，数字区域固定预留 4 个等宽字符位，状态栏本体不显示箭头。
+- portable JXA 状态栏改用将点击转交给状态栏按钮的 AppKit overlay + 独立 `NSTextField` 行，绕过 `NSStatusBarButton` 默认单行 title 对换行的裁切。
+- portable 速度数字列/单位列独立布局并左对齐，单位按 `B/s / KB/s / MB/s / GB/s / TB/s` 自动变化。
+- 继续禁止 portable 启动路径使用 `NSButtonCell` 多行属性、`attributedTitle` / baseline offset 和 `CATextLayer`。
+- Source validator、portable Go 回归测试、Swift parse 与源码 SHA manifest 均作为 v1.2.0 发布门禁。

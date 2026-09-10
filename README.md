@@ -1,6 +1,18 @@
 # Mihomo Core Manager for macOS
 
-基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.1.9 (build 119)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.2.0 (build 120)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+
+## v1.2.0
+
+v1.2.0 以 v1.1.9 为基线，只修复状态栏本体的实时网速显示，保留已经达标的自定义下拉面板：
+
+- 修复 portable 安装版依赖 `NSStatusBarButton` 多行 title 导致网速在状态栏本体被系统裁切/不显示的问题。
+- portable 改为在状态栏按钮内放置可将点击转交给状态栏按钮的原生 AppKit overlay，上传与下载由两组独立 `NSTextField` 渲染，不再依赖多行 title，也不恢复高风险的 `NSButtonCell` 多行属性、`attributedTitle` 或 `CATextLayer`。
+- 上传固定在上半行、下载固定在下半行，整个双行速度块向状态栏底部对齐。
+- 速度文本只显示数字与自动切换的 `B/s / KB/s / MB/s / GB/s / TB/s` 单位，不显示上传/下载箭头。
+- 数字区域预留 4 个等宽字符位并左对齐，单位使用独立列；实时数值变化和单位切换时两行左边缘保持稳定。
+- 原生 SwiftUI `MenuBarExtra` 标签同步使用相同的双行、左对齐、4 字符数字位规则。
+- v1.1.9 的紧凑自定义下拉面板与其它按钮/页面修复全部保持不变。
 
 ## v1.1.9
 
@@ -151,12 +163,12 @@ xcodebuild \
 
 ## Release
 
-正式 tag `v1.1.9` 成功后生成：
+正式 tag `v1.2.0` 成功后生成：
 
 ```text
-MihomoCoreManager-v1.1.9-arm64.pkg
-MihomoCoreManager-v1.1.9-arm64.zip
-release_v1.1.9_notes_zh-CN.md
+MihomoCoreManager-v1.2.0-arm64.pkg
+MihomoCoreManager-v1.2.0-arm64.zip
+release_v1.2.0_notes_zh-CN.md
 SHA256SUMS.txt
 ```
 
