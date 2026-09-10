@@ -1,6 +1,16 @@
 # Mihomo Core Manager for macOS
 
-基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.1.0 (build 110)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.1.1 (build 111)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+
+## v1.1.1
+
+这一版集中修复原生状态栏显示问题：
+
+- **更紧凑的状态栏宽度**：收紧 `MenuBarExtra` 标签横向间距，减少左右空白占用。
+- **更好的垂直居中**：统一状态栏标签高度，修复图标、状态文本和双行网速在菜单栏内上下不居中的问题。
+- **更稳定的双行网速排版**：上传/下载箭头改用 SF Symbols，并优化两行间距与对齐。
+- **更短的状态文案**：显示 `On / Off / Wait`，减少状态栏横向长度。
+- 继续保留 v1.1.0 的无需 Apple Developer Secrets 的 Release 自动构建流程。
 
 ## v1.1.0
 
@@ -63,12 +73,12 @@ xcodebuild \
 
 ## Release
 
-正式 tag `v1.1.0` 成功后生成：
+正式 tag `v1.1.1` 成功后生成：
 
 ```text
-MihomoCoreManager-v1.1.0-arm64.pkg
-MihomoCoreManager-v1.1.0-arm64.zip
-release_v1.1.0_notes_zh-CN.md
+MihomoCoreManager-v1.1.1-arm64.pkg
+MihomoCoreManager-v1.1.1-arm64.zip
+release_v1.1.1_notes_zh-CN.md
 SHA256SUMS.txt
 ```
 

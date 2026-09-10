@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.1.1
+
+- 修复原生 SwiftUI 状态栏标签过宽、左右留白偏多的问题。
+- 修复双行实时网速在菜单栏内上下不居中的问题，并改为更稳定的 SF Symbols 箭头布局。
+- 将状态栏运行状态文案压缩为 `On / Off / Wait`，减少宽度占用。
+- App 版本升级为 v1.1.1，Xcode build number 为 111；继续保留 v1.1.0 的无需 Apple Secrets 的自动 Release 流程。
+
 ## v1.1.0
 
 - 修复 GitHub Actions `macOS Release` 因缺少 Apple Developer / Notary Secrets 而在构建前直接失败的问题。

@@ -38,53 +38,57 @@ private struct MenuBarLabelView: View {
     @EnvironmentObject private var live: LiveStatusStore
 
     var body: some View {
-        HStack(alignment: .center, spacing: 5) {
+        HStack(alignment: .center, spacing: 4) {
             if model.menuBarShowIcon {
                 Image(systemName: "circle.grid.cross")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .frame(width: 11, height: 11, alignment: .center)
                     .accessibilityHidden(true)
             }
 
             if model.menuBarShowStatus {
-                HStack(spacing: 3) {
+                HStack(spacing: 2) {
                     Circle()
                         .fill(statusColor)
                         .frame(width: 5, height: 5)
-                    Text(statusText)
-                        .font(.system(size: 9.2, weight: .medium))
-                        .fixedSize()
+                    Text(compactStatusText)
+                        .font(.system(size: 8.8, weight: .medium))
+                        .fixedSize(horizontal: true, vertical: false)
                 }
-            }
-
-            if model.menuBarShowStatus && model.menuBarShowSpeed {
-                Spacer()
-                    .frame(width: 1)
+                .frame(height: 11, alignment: .center)
             }
 
             if model.menuBarShowSpeed {
-                HStack(alignment: .center, spacing: 3) {
-                    VStack(alignment: .center, spacing: -2) {
-                        Text("↓")
-                        Text("↑")
+                HStack(alignment: .center, spacing: 2) {
+                    VStack(alignment: .center, spacing: -1) {
+                        Image(systemName: "arrow.down")
+                        Image(systemName: "arrow.up")
                     }
-                    VStack(alignment: .trailing, spacing: -2) {
+                    .font(.system(size: 6, weight: .semibold))
+                    .frame(width: 7, height: 14, alignment: .center)
+
+                    VStack(alignment: .trailing, spacing: -1) {
                         Text(model.menuRateCompact(live.status?.speed?.down))
                         Text(model.menuRateCompact(live.status?.speed?.up))
                     }
+                    .frame(height: 14, alignment: .center)
                 }
-                .font(.system(size: 8.4, weight: .medium))
+                .font(.system(size: 8.0, weight: .medium))
                 .monospacedDigit()
                 .lineLimit(1)
-                .frame(height: 18, alignment: .center)
                 .fixedSize(horizontal: true, vertical: true)
             }
         }
+        .frame(height: 18, alignment: .center)
+        .fixedSize(horizontal: true, vertical: true)
+        .padding(.horizontal, 0)
+        .padding(.vertical, 0)
         .accessibilityLabel("Mihomo Core Manager, \(model.menuBarSummary)")
     }
 
-    private var statusText: String {
-        if live.status == nil { return "Checking" }
-        return live.status?.service.active == true ? "Running" : "Stopped"
+    private var compactStatusText: String {
+        if live.status == nil { return "Wait" }
+        return live.status?.service.active == true ? "On" : "Off"
     }
 
     private var statusColor: Color {
