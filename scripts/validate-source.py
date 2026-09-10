@@ -87,6 +87,11 @@ for marker in ["persistentDetail", "persistentPage(.settings)", "DashboardSettin
 for marker in [
     "WindowBehaviorConfigurator",
     "window.isMovable = true",
+    "window.titleVisibility = .hidden",
+    "window.titlebarAppearsTransparent = true",
+    "window.titlebarSeparatorStyle = .none",
+    "window.styleMask.insert(.fullSizeContentView)",
+    ".padding(.top, 38)",
     "DashboardBackendSelector",
     "BackendPickerPopover",
     '.frame(height: 43)',
@@ -95,7 +100,7 @@ for marker in [
     '.frame(width: 206)',
 ]:
     if marker not in content:
-        errors.append(f"native v1.1.1 window/backend-selector gate missing: {marker}")
+        errors.append(f"native window/backend-selector/titlebar gate missing: {marker}")
 if "miniBrandMark" in content or 'Text("M")\n                                        .font(.system(size: 12' in content:
     errors.append("native v1.1.1 backend selector must not repeat the M brand tile")
 for marker in ["LiveStatusStore", "secretCache", "ensureSubscriptionsLoaded", "ensureLogsLoaded"]:
@@ -106,16 +111,17 @@ if "guard model.selectedSection == .subscriptions" not in subscriptions_view:
 if "guard model.selectedSection == .logs" not in logs_view:
     errors.append("logs must load only when its tab becomes active")
 for marker in [
-    'Image(systemName: "arrow.down")',
-    'Image(systemName: "arrow.up")',
+    ".windowStyle(.hiddenTitleBar)",
+    'Text("↓")',
+    'Text("↑")',
     'model.menuRateCompact(live.status?.speed?.down)',
     'model.menuRateCompact(live.status?.speed?.up)',
-    "HStack(alignment: .center, spacing: 4)",
-    'Text(compactStatusText)',
-    '.padding(.horizontal, 0)',
+    "HStack(alignment: .center, spacing: 5)",
+    "model.menuBarShowStatus && model.menuBarShowSpeed",
+    "if model.menuBarShowIcon",
 ]:
     if marker not in app_swift:
-        errors.append(f"native compact two-line menu-bar layout gate missing: {marker}")
+        errors.append(f"native v1.1.2 compact-window/v1.0.9 menu-bar gate missing: {marker}")
 if "menuRateCompact" not in app_model:
     errors.append("native compact menu-rate formatter missing")
 
@@ -185,10 +191,10 @@ for marker in ["macos-15", "notarytool", "productbuild", "gh release", "SHA256SU
     if marker not in release_text: errors.append(f"release gate missing: {marker}")
 
 if "run: bash scripts/build-release.sh --unsigned" not in workflow:
-    errors.append("v1.1.1 release workflow must use --unsigned by default")
+    errors.append("release workflow must use --unsigned by default")
 for forbidden in ["secrets.APPLE_", "校验签名与公证 Secrets", "导入 Developer ID 证书"]:
     if forbidden in workflow:
-        errors.append(f"v1.1.1 unsigned release workflow must not require Apple signing secrets: {forbidden}")
+        errors.append(f"unsigned release workflow must not require Apple signing secrets: {forbidden}")
 
 # Never ship an obvious hard-coded secret assignment.
 for path in (root / "MihomoCoreManager").rglob("*.swift"):

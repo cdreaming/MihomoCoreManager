@@ -85,6 +85,14 @@ private struct WindowBehaviorConfigurator: NSViewRepresentable {
 
     private func configure(_ view: NSView) {
         guard let window = view.window else { return }
+
+        // v1.1.2 compact title bar: keep the native traffic-light controls,
+        // remove the oversized title backing, and let the dashboard occupy it.
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
+        window.styleMask.insert(.fullSizeContentView)
+
         window.isMovable = true
         window.isMovableByWindowBackground = true
     }
@@ -124,8 +132,10 @@ private struct DashboardSidebar: View {
 
             }
             .padding(.horizontal, 22)
-            .padding(.top, 24)
-            .padding(.bottom, 20)
+            // Clear the native traffic-light controls now that content extends
+            // into the title-bar region, without recreating a tall top strip.
+            .padding(.top, 38)
+            .padding(.bottom, 14)
 
             VStack(spacing: 6) {
                 ForEach(visibleSections) { section in
