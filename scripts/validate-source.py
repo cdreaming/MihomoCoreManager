@@ -154,12 +154,24 @@ for marker in ["DashboardLayout.pageHorizontalPadding", "DashboardLayout.pageVer
     for rel_name, text in [("OverviewView.swift", overview), ("CoreView.swift", core_view), ("SubscriptionsView.swift", subscriptions_view), ("LogsView.swift", logs_view), ("UpdateView.swift", update_view), ("SettingsView.swift (dashboard)", settings_dashboard)]:
         if marker not in text:
             errors.append(f"shared dashboard layout marker missing in {rel_name}: {marker}")
-for marker in ["struct DashboardPressButtonStyle: ButtonStyle", ".scaleEffect(pressed ? 0.985 : 1)", ".animation(.easeOut(duration: 0.08), value: pressed)", "Color.white.opacity(pressed ? 0.085 : 0.025)"]:
+# v1.1.6: restore the native Dashboard button interaction exactly to v1.0.9.
+for marker in [
+    "Color.white.opacity(configuration.isPressed ? 0.085 : 0.025)",
+    ".scaleEffect(configuration.isPressed ? 0.985 : 1)",
+]:
     if marker not in content:
-        errors.append(f"v1.0.9-style unified button feedback gate missing: {marker}")
-for rel_name, text in [("ContentView.swift", content), ("CoreView.swift", core_view), ("UpdateView.swift", update_view), ("SettingsView.swift (dashboard)", settings_dashboard)]:
-    if ".buttonStyle(.plain)" in text:
-        errors.append(f"unstyled dashboard button remains in {rel_name}")
+        errors.append(f"v1.0.9 button interaction gate missing: {marker}")
+
+for forbidden in [
+    "DashboardPressButtonStyle",
+    ".animation(.easeOut(duration: 0.08), value: pressed)",
+    "let pressed = configuration.isPressed",
+]:
+    if forbidden in content + "\n" + core_view + "\n" + update_view:
+        errors.append(f"post-v1.0.9 custom button animation must be removed: {forbidden}")
+
+if ".buttonStyle(.plain)" not in content:
+    errors.append("v1.0.9 navigation/link button behavior (.plain) missing")
 settings_order_markers = ["serverPanel", "connectionPanel(profile: draftBinding)", "corePanel(profile: draftBinding)", "appPanel", "footerActions"]
 settings_positions = [settings_dashboard.find(marker) for marker in settings_order_markers]
 if any(position < 0 for position in settings_positions) or settings_positions != sorted(settings_positions):

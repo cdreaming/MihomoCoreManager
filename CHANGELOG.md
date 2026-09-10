@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.1.6
+
+- 修复 v1.1.5 按钮动画仍不符合预期的问题。
+- `DashboardActionButtonStyle` 恢复为 v1.0.9 源码实现。
+- 删除 `DashboardPressButtonStyle`、`0.08s easeOut` 与额外 disabled opacity。
+- 侧栏、后端选择、Popover、文本链接、通知关闭按钮恢复 `.plain`。
+- 保留 v1.1.5 的设置页排版与统一 UI。
+- 版本升级为 v1.1.6 / build 116。
+
 ## v1.1.5
 
 - 统一 Dashboard 按钮交互并参考 v1.0.9。

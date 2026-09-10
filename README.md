@@ -1,6 +1,17 @@
 # Mihomo Core Manager for macOS
 
-基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.1.5 (build 115)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.1.6 (build 116)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+
+## v1.1.6
+
+v1.1.6 再次修复按钮交互，直接恢复 v1.0.9 的实现：
+
+- `DashboardActionButtonStyle` 与 v1.0.9 源码实现一致。
+- 删除 v1.1.5 新增的 `DashboardPressButtonStyle`。
+- 删除显式 `0.08s easeOut` 和额外 disabled opacity 动画。
+- 侧栏、管理后端、Popover、文本链接、通知关闭按钮恢复 v1.0.9 的 `.plain` 行为。
+- 主操作按钮保留 v1.0.9 的按下背景反馈与 `0.985` 缩放。
+- v1.1.5 的设置页纵向结构、双列“App 与状态栏”和统一页面 UI 全部保留。
 
 ## v1.1.5
 
@@ -108,12 +119,12 @@ xcodebuild \
 
 ## Release
 
-正式 tag `v1.1.5` 成功后生成：
+正式 tag `v1.1.6` 成功后生成：
 
 ```text
-MihomoCoreManager-v1.1.5-arm64.pkg
-MihomoCoreManager-v1.1.5-arm64.zip
-release_v1.1.5_notes_zh-CN.md
+MihomoCoreManager-v1.1.6-arm64.pkg
+MihomoCoreManager-v1.1.6-arm64.zip
+release_v1.1.6_notes_zh-CN.md
 SHA256SUMS.txt
 ```
 

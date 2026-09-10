@@ -1,8 +1,9 @@
-# Validation Report — v1.1.5
+# Validation Report — v1.1.6
 
-- 版本 1.1.5 / build 115。
-- 按钮按压参考 v1.0.9：背景 0.085/0.025，scale 0.985。
-- 设置页纵向排列；App 与状态栏双列分组。
-- 概览 336pt、Core 300pt 配对卡片对齐。
-- Dashboard 统一 DashboardLayout spacing/padding。
-- Swift parse、source validator、manifest、Go tests、mock API smoke test 均执行。
+- App `1.1.6` / Xcode build `116` / portable build `116`。
+- `DashboardActionButtonStyle` 与 v1.0.9 参考源码逐字节一致。
+- `DashboardPressButtonStyle` 已删除。
+- `0.08s easeOut` 自定义按钮动画已删除。
+- 导航 / 后端 / Popover / link / dismiss 恢复 `.plain`。
+- `MenuBarView.swift` 与 v1.0.9 源码保持一致。
+- v1.1.5 页面排版与设置结构保持不变。

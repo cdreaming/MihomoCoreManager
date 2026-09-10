@@ -124,7 +124,7 @@ struct CoreView: View {
                     Text(model.selectedProfile?.preserveSettingsOnUpdate == true ? "保留现有参数" : "不保留，使用默认参数")
                         .foregroundStyle(DashboardPalette.tertiary)
                     Button("修改…") { model.selectedSection = .settings }
-                        .buttonStyle(DashboardPressButtonStyle())
+                        .buttonStyle(.plain)
                         .foregroundStyle(DashboardPalette.accent)
                 }
                 .font(.system(size: 11.5))
