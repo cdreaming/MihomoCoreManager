@@ -42,7 +42,7 @@ for marker in ["shouldRetrySubscriptionApplyWithRestart", "热重载超时", "ac
         errors.append(f"native subscription timeout recovery missing: {marker}")
 
 menu = (root / "MihomoCoreManager/Views/MenuBarView.swift").read_text(encoding="utf-8")
-for marker in ["显示图标", "显示运行状态", "显示网速", "仅显示图标", "启动 Core", "停止 Core", "重启 Core", "重载配置", "应用订阅 + 热重载", "订阅管理…", "运行日志…", "检查项目更新", "开始项目升级", "打开 MetaCubeXD", "设置…"]:
+for marker in ["图标", "状态", "网速", "仅图标", "启动", "停止", "重启", "重载配置", "应用订阅 + 热重载", "订阅管理…", "运行日志…", "检查项目更新", "开始项目升级", "MetaCubeXD", "设置…"]:
     if marker not in menu: errors.append(f"menu function missing: {marker}")
 
 settings = (root / "MihomoCoreManager/Views/SettingsView.swift").read_text(encoding="utf-8")
@@ -132,16 +132,16 @@ if "guard model.selectedSection == .logs" not in logs_view:
     errors.append("logs must load only when its tab becomes active")
 for marker in [
     ".windowStyle(.hiddenTitleBar)",
-    'Text("↓")',
-    'Text("↑")',
-    'model.menuRateCompact(live.status?.speed?.down)',
-    'model.menuRateCompact(live.status?.speed?.up)',
+    ".menuBarExtraStyle(.window)",
+    'speedLine(symbol: "↑", value: model.menuRateCompact(live.status?.speed?.up))',
+    'speedLine(symbol: "↓", value: model.menuRateCompact(live.status?.speed?.down))',
+    '.frame(minWidth: 49, alignment: .trailing)',
     "HStack(alignment: .center, spacing: 5)",
-    "model.menuBarShowStatus && model.menuBarShowSpeed",
     "if model.menuBarShowIcon",
+    "model.menuBarShowStatus && !model.menuBarShowIcon",
 ]:
     if marker not in app_swift:
-        errors.append(f"native compact-window/v1.0.9 menu-bar gate missing: {marker}")
+        errors.append(f"native compact-window/v1.1.9 menu-bar gate missing: {marker}")
 if "menuRateCompact" not in app_model:
     errors.append("native compact menu-rate formatter missing")
 
@@ -211,6 +211,37 @@ for marker in ["min-height:46px", ".nav button:active", "scale(.955)"]:
     if marker not in portable_ui:
         errors.append(f"v1.1.8 portable sidebar interaction gate missing: {marker}")
 
+# v1.1.9: status-bar speed uses a stable two-line, right-aligned layout and
+# the native dropdown is a compact custom MenuBarExtra window rather than a long NSMenu.
+for marker in [
+    ".menuBarExtraStyle(.window)",
+    'speedLine(symbol: "↑"',
+    'speedLine(symbol: "↓"',
+    '.frame(minWidth: 49, alignment: .trailing)',
+    'private var speedCard: some View',
+    'private var serverCard: some View',
+    'private var coreActions: some View',
+    'private var shortcutGrid: some View',
+    'private var updateActions: some View',
+    'private var displayOptions: some View',
+    'MenuPanelPressStyle',
+]:
+    if marker not in app_swift + "\n" + menu:
+        errors.append(f"v1.1.9 native status-menu gate missing: {marker}")
+
+for marker in [
+    "try{button.alignment=2;}",
+    "var up='↑ '+padMenuRate(lastUp), down='↓ '+padMenuRate(lastDown)",
+    "title=up+'\\n'+down",
+    "serverRoot.title='服务器  ·  '+selectedName",
+    "var coreRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('Core 控制'",
+    "var toolsRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('管理与工具'",
+    "var displayRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('状态栏显示'",
+    "function addSymbol(item,name)",
+]:
+    if marker not in portable_main:
+        errors.append(f"v1.1.9 portable status-menu gate missing: {marker}")
+
 portable_installer = (root / "scripts/build-portable-installer.sh").read_text(encoding="utf-8")
 for marker in ["GOOS=darwin GOARCH=arm64", "MihomoCoreManager.app", "Install-MihomoCoreManager.command", "LSMinimumSystemVersion", "codesign --force --deep --sign -"]:
     if marker not in portable_installer:
@@ -238,23 +269,24 @@ if "d=get('/local/status',quiet===true)" not in portable_main:
     errors.append("portable recoverable menu refresh fallback missing")
 if "scheduledTimerWithTimeIntervalTargetSelectorUserInfoRepeats(1.2" not in portable_main:
     errors.append("portable menu refresh timer missing")
-if "upHeader.title='↑ 上传    '+fmtRate(lastUp)" not in portable_main or "downHeader.title='↓ 下载    '+fmtRate(lastDown)" not in portable_main:
+if "upHeader.title='↑  上传                     '+fmtRate(lastUp)" not in portable_main or "downHeader.title='↓  下载                     '+fmtRate(lastDown)" not in portable_main:
     errors.append("portable menu dropdown speed headers missing")
 for marker in [
     "MihomoWindowDragView",
     "performWindowDragWithEvent",
     "function fmtMenuRate(raw)",
+    "function padMenuRate(raw)",
     "function renderStatusButton()",
     "function safeSingleLineTitle()",
     "Never allow a cosmetic status-bar failure to terminate the whole App",
     "fallbackMenuScript",
     "starting recovery shell",
     "menubar.log",
-    "var down='↓ '+fmtMenuRate(lastDown), up='↑ '+fmtMenuRate(lastUp)",
+    "var up='↑ '+padMenuRate(lastUp), down='↓ '+padMenuRate(lastDown)",
     "_menu_updated_unix_ms",
     "missingSnapshotTicks>=4",
     "var showIcon=true, showStatus=true, showSpeed=true",
-    "prefIconItem=item('显示图标','toggleShowIcon:')",
+    "prefIconItem=addItem(displayMenu,'显示图标','toggleShowIcon:','')",
     "button.imagePosition=hasText?2:1",
     "handleSubscriptions",
     "subscriptionReloadTimedOut",

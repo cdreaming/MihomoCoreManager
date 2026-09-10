@@ -1,6 +1,17 @@
 # Mihomo Core Manager for macOS
 
-基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.1.8 (build 118)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.1.9 (build 119)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+
+## v1.1.9
+
+v1.1.9 以 v1.1.8 为基线，集中重做 macOS 状态栏显示与下拉菜单体验：
+
+- 状态栏默认组合显示改为“应用图标在左 + 上传/下载双行网速在右”；上传在上、下载在下，数值使用等宽数字并右对齐，流量变化时不会左右跳动。
+- 运行状态在显示图标时改为图标右下角的小状态点，不再和双行网速争抢横向空间；关闭图标或网速时仍保留对应状态文案。
+- 原生 `MenuBarExtra` 从标准长菜单升级为 `.window` 自定义面板：增加品牌/版本/状态头部、实时上下行卡片、当前服务器卡片、Core 快捷控制、常用入口、项目维护与状态栏显示开关。
+- 下拉面板操作按钮统一使用更明显的按压/回弹反馈，并直接映射当前异步操作的 busy 状态。
+- portable arm64 状态栏同步修复上传/下载顺序、右对齐与固定宽度；下拉菜单改为紧凑的“服务器 / Core 控制 / 管理与工具 / 状态栏显示”分组子菜单，并补充 SF Symbols 图标。
+- 保留 v1.1.8 的通知自动收起、侧栏命中区域修复和设置页首次加载修复。
 
 ## v1.1.8
 
@@ -140,12 +151,12 @@ xcodebuild \
 
 ## Release
 
-正式 tag `v1.1.8` 成功后生成：
+正式 tag `v1.1.9` 成功后生成：
 
 ```text
-MihomoCoreManager-v1.1.8-arm64.pkg
-MihomoCoreManager-v1.1.8-arm64.zip
-release_v1.1.8_notes_zh-CN.md
+MihomoCoreManager-v1.1.9-arm64.pkg
+MihomoCoreManager-v1.1.9-arm64.zip
+release_v1.1.9_notes_zh-CN.md
 SHA256SUMS.txt
 ```
 

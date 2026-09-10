@@ -33,7 +33,7 @@ struct MihomoCoreManagerApp: App {
                 .environmentObject(model)
                 .environmentObject(model.live)
         }
-        .menuBarExtraStyle(.menu)
+        .menuBarExtraStyle(.window)
     }
 }
 
@@ -45,45 +45,59 @@ private struct MenuBarLabelView: View {
         HStack(alignment: .center, spacing: 5) {
             if model.menuBarShowIcon {
                 Image(systemName: "circle.grid.cross")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .overlay(alignment: .bottomTrailing) {
+                        if model.menuBarShowStatus {
+                            Circle()
+                                .fill(statusColor)
+                                .frame(width: 4.5, height: 4.5)
+                                .overlay { Circle().stroke(Color.black.opacity(0.45), lineWidth: 0.6) }
+                                .offset(x: 2, y: 1)
+                        }
+                    }
                     .accessibilityHidden(true)
             }
 
-            if model.menuBarShowStatus {
-                HStack(spacing: 3) {
+            if model.menuBarShowStatus && !model.menuBarShowIcon {
+                HStack(spacing: 4) {
                     Circle()
                         .fill(statusColor)
                         .frame(width: 5, height: 5)
-                    Text(statusText)
-                        .font(.system(size: 9.2, weight: .medium))
-                        .fixedSize()
+                    if !model.menuBarShowSpeed {
+                        Text(statusText)
+                            .font(.system(size: 9.2, weight: .medium))
+                    }
                 }
-            }
-
-            if model.menuBarShowStatus && model.menuBarShowSpeed {
-                Spacer()
-                    .frame(width: 1)
+                .fixedSize()
             }
 
             if model.menuBarShowSpeed {
-                HStack(alignment: .center, spacing: 3) {
-                    VStack(alignment: .center, spacing: -2) {
-                        Text("↓")
-                        Text("↑")
-                    }
-                    VStack(alignment: .trailing, spacing: -2) {
-                        Text(model.menuRateCompact(live.status?.speed?.down))
-                        Text(model.menuRateCompact(live.status?.speed?.up))
-                    }
+                VStack(alignment: .trailing, spacing: -2) {
+                    speedLine(symbol: "↑", value: model.menuRateCompact(live.status?.speed?.up))
+                    speedLine(symbol: "↓", value: model.menuRateCompact(live.status?.speed?.down))
                 }
-                .font(.system(size: 8.4, weight: .medium))
+                .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
                 .monospacedDigit()
-                .lineLimit(1)
-                .frame(height: 18, alignment: .center)
+                .frame(minWidth: 62, alignment: .trailing)
+                .frame(height: 18, alignment: .trailing)
                 .fixedSize(horizontal: true, vertical: true)
+            } else if model.menuBarShowStatus && model.menuBarShowIcon {
+                Text(statusText)
+                    .font(.system(size: 9.2, weight: .medium))
+                    .fixedSize()
             }
         }
         .accessibilityLabel("Mihomo Core Manager, \(model.menuBarSummary)")
+    }
+
+    private func speedLine(symbol: String, value: String) -> some View {
+        HStack(spacing: 3) {
+            Text(symbol)
+                .frame(width: 8, alignment: .leading)
+            Text(value)
+                .frame(minWidth: 49, alignment: .trailing)
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
     private var statusText: String {

@@ -1,9 +1,9 @@
-# Validation Report — v1.1.8
+# Validation Report — v1.1.9
 
-- App `1.1.8` / Xcode build `118` / portable build `118`。
-- v1.1.7 当前操作 spinner、busy cursor、按钮完成检测和项目升级轮询保持不变。
-- 原生成功通知只会在当前异步操作退出 busy 后开始自动收起计时；错误通知保持可手动关闭。
-- 原生侧栏页面按钮使用整行 47pt 命中区域与独立按压动画；portable 页面按钮最小 46px 并增强按下反馈。
-- 设置页 `task(id:)` 已恢复真实 profile/section 字符串插值，首次进入即可加载默认服务器并展示完整选项。
-- 运行日志同类持久页面首次加载问题一并修复。
-- Source validator 与 portable Go 回归测试加入 v1.1.8 对应门禁。
+- App `1.1.9` / Xcode build `119` / portable build `119`。
+- v1.1.8 通知、侧栏命中范围、设置/日志首次加载修复保持不变。
+- 原生状态栏标签使用图标左置、上传/下载双行、等宽数字与右对齐数值列。
+- 原生 `MenuBarExtra` 使用 `.window` 自定义紧凑面板，避免标准 NSMenu 过长和顶部禁用文本层级混乱。
+- 原生菜单面板保留服务器选择、Core 全部控制、订阅/日志/升级/MetaCubeXD/设置以及项目检查/升级操作。
+- portable JXA 状态栏采用上传在上/下载在下、右对齐与固定宽度，菜单压缩为分组子菜单并使用系统符号。
+- Source validator 与 portable Go 回归测试加入 v1.1.9 状态栏门禁。

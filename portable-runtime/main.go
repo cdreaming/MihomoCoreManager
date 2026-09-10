@@ -22,8 +22,8 @@ import (
 )
 
 const (
-	appVersion      = "1.1.8"
-	buildNumber     = "118"
+	appVersion      = "1.1.9"
+	buildNumber     = "119"
 	keychainService = "cc.kkr.MihomoCoreManager"
 )
 
@@ -899,6 +899,11 @@ function fmtMenuRate(raw){
   var digits=i===0?0:(value<10?1:0);
   return value.toFixed(digits)+' '+units[i];
 }
+function padMenuRate(raw){
+  var text=fmtMenuRate(raw);
+  while(text.length<9) text=' '+text;
+  return text;
+}
 function statusFromFile(){
   try {
     var err=Ref(), text=$.NSString.stringWithContentsOfFileEncodingError($(STATUS_FILE),4,err);
@@ -925,7 +930,7 @@ win.center;
 function showURL(u){ try{var url=$.NSURL.URLWithString($(u));var req=$.NSURLRequest.requestWithURL(url);web.loadRequest(req);win.makeKeyAndOrderFront(null);cocoaApp.activateIgnoringOtherApps(true);}catch(e){std.displayNotification(String(e),{withTitle:'Mihomo Core Manager'});} }
 function openHash(h){ showURL(BASE+'/#'+h); }
 
-var statusItem=null, statusHeader=null, upHeader=null, downHeader=null, prefIconItem=null, prefStatusItem=null, prefSpeedItem=null, iconOnlyItem=null, startItem=null, stopItem=null, serverMenu=null;
+var statusItem=null, statusHeader=null, upHeader=null, downHeader=null, prefIconItem=null, prefStatusItem=null, prefSpeedItem=null, iconOnlyItem=null, startItem=null, stopItem=null, serverMenu=null, serverRoot=null;
 var showIcon=true, showStatus=true, showSpeed=true, lastRunning=false, lastReachable=false, lastUp=0, lastDown=0, lastCoreVersion='--';
 var appSymbol=null, missingSnapshotTicks=0;
 function savePrefs(){ post('/local/menu-preferences',{showIcon:showIcon,showStatus:showStatus,showSpeed:showSpeed},true); }
@@ -936,12 +941,11 @@ function syncPrefItems(){
   if(iconOnlyItem) iconOnlyItem.state=(showIcon&&!showStatus&&!showSpeed)?1:0;
 }
 function keepMenuVisible(){if(!showIcon&&!showStatus&&!showSpeed)showIcon=true;}
-function repeatedSpace(n){var s='';while(n-->0)s+=' ';return s;}
 function safeSingleLineTitle(){
   var state=lastReachable?(lastRunning?'Running':'Stopped'):'Offline';
   var parts=[];
   if(showStatus) parts.push(state);
-  if(showSpeed) parts.push('↓ '+fmtMenuRate(lastDown)+'  ↑ '+fmtMenuRate(lastUp));
+  if(showSpeed) parts.push('↑ '+fmtMenuRate(lastUp)+'  ↓ '+fmtMenuRate(lastDown));
   return parts.join('   ');
 }
 function renderStatusButton(){
@@ -962,21 +966,19 @@ function renderStatusButton(){
       button.title='';
       return;
     }
-    // Keep NSStatusBarButton on its default cell configuration. v1.0.6 proved
-    // that mutating wrapping/baseline properties through JXA is crash-prone.
-    try{button.font=$.NSFont.monospacedSystemFontOfSizeWeight(8.4,0.23);}catch(fontErr){try{button.font=$.NSFont.systemFontOfSize(8.4);}catch(ignore){}}
+    // v1.1.9: keep the app glyph on the left and reserve the text column for
+    // two-line traffic values. A monospaced font plus right-aligned button cell
+    // keeps upload/download digits visually stable while values change.
+    try{button.font=$.NSFont.monospacedSystemFontOfSizeWeight(8.5,0.28);}catch(fontErr){try{button.font=$.NSFont.systemFontOfSize(8.5);}catch(ignore){}}
+    try{button.alignment=2;}catch(ignore){} // NSTextAlignmentRight
     var state=lastReachable?(lastRunning?'Running':'Stopped'):'Offline';
-    var down='↓ '+fmtMenuRate(lastDown), up='↑ '+fmtMenuRate(lastUp), title='';
-    if(showStatus&&showSpeed){
-      var prefix=state+'   ';
-      title=prefix+down+'\n'+repeatedSpace(prefix.length)+up;
-      statusItem.length=showIcon?140:118;
-    } else if(showSpeed){
-      title=down+'\n'+up;
-      statusItem.length=showIcon?91:69;
+    var up='↑ '+padMenuRate(lastUp), down='↓ '+padMenuRate(lastDown), title='';
+    if(showSpeed){
+      title=up+'\n'+down;
+      statusItem.length=showIcon?94:72;
     } else {
-      title=state;
-      statusItem.length=showIcon?80:58;
+      title=showStatus?state:'';
+      statusItem.length=showIcon?(showStatus?82:25):(showStatus?60:25);
     }
     button.title=$(title);
   } catch(renderErr) {
@@ -1001,9 +1003,10 @@ function renderStatusButton(){
 function updateStatusTitle(){
   if(!statusItem) return;
   renderStatusButton();
-  if(statusHeader) statusHeader.title='Mihomo Core    '+lastCoreVersion;
-  if(upHeader) upHeader.title='↑ 上传    '+fmtRate(lastUp);
-  if(downHeader) downHeader.title='↓ 下载    '+fmtRate(lastDown);
+  var state=lastReachable?(lastRunning?'Running':'Stopped'):'Offline';
+  if(statusHeader) statusHeader.title='Mihomo Core  ·  '+lastCoreVersion+'  ·  '+state;
+  if(upHeader) upHeader.title='↑  上传                     '+fmtRate(lastUp);
+  if(downHeader) downHeader.title='↓  下载                     '+fmtRate(lastDown);
   if(startItem) startItem.enabled=lastReachable&&!lastRunning;
   if(stopItem) stopItem.enabled=lastReachable&&lastRunning;
 }
@@ -1029,9 +1032,12 @@ function rebuildServers(){
   if(!serverMenu) return;
   while(serverMenu.numberOfItems>0) serverMenu.removeItemAtIndex(0);
   var d=get('/local/profiles',true); if(!d||!d.profiles) return;
+  var selectedName='未选择';
   d.profiles.forEach(function(p){
     var i=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent(p.name,'selectProfile:',''); i.target=delegate; i.representedObject=$(p.id); i.state=(p.id===d.selectedID)?1:0; serverMenu.addItem(i);
+    if(p.id===d.selectedID) selectedName=p.name;
   });
+  if(serverRoot) serverRoot.title='服务器  ·  '+selectedName;
 }
 
 ObjC.registerSubclass({name:'MihomoMenuDelegate', methods:{
@@ -1075,18 +1081,41 @@ try{appSymbol=$.NSImage.imageWithSystemSymbolNameAccessibilityDescription('circl
 
 var prefs=get('/local/menu-preferences',true); if(prefs){showIcon=prefs.showIcon!==false;showStatus=!!prefs.showStatus;showSpeed=!!prefs.showSpeed;} keepMenuVisible();
 var menu=$.NSMenu.alloc.init;
-function item(title,sel){var i=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent(title,sel,'');i.target=delegate;menu.addItem(i);return i;}
-function sep(){menu.addItem($.NSMenuItem.separatorItem);}
-statusHeader=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('Mihomo Core','', '');statusHeader.enabled=false;menu.addItem(statusHeader);
-downHeader=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('↓ 下载    0 B/s','', '');downHeader.enabled=false;menu.addItem(downHeader);
-upHeader=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('↑ 上传    0 B/s','', '');upHeader.enabled=false;menu.addItem(upHeader);
-sep();
-prefIconItem=item('显示图标','toggleShowIcon:'); prefStatusItem=item('显示运行状态','toggleShowStatus:'); prefSpeedItem=item('显示网速','toggleShowSpeed:'); iconOnlyItem=item('仅显示图标','iconOnly:'); syncPrefItems();
-sep();
-var serverRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('服务器','', ''); serverMenu=$.NSMenu.alloc.initWithTitle('服务器'); serverRoot.submenu=serverMenu; menu.addItem(serverRoot); rebuildServers();
-item('打开主窗口…','openManager:'); item('刷新状态','refresh:'); sep();
-startItem=item('启动 Core','startCore:'); stopItem=item('停止 Core','stopCore:'); item('重启 Core','restartCore:'); item('重载配置','reloadConfig:'); item('应用订阅 + 热重载','applySubs:'); sep();
-item('订阅管理…','subscriptions:'); item('运行日志…','logs:'); item('项目升级…','checkUpdate:'); item('开始项目升级','applyUpdate:'); item('打开 MetaCubeXD','openMeta:'); sep(); item('设置…','settings:'); item('退出','quitApp:');
+menu.autoenablesItems=false;
+function addItem(targetMenu,title,sel,key){var i=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent(title,sel,key||'');i.target=delegate;targetMenu.addItem(i);return i;}
+function addSymbol(item,name){try{var img=$.NSImage.imageWithSystemSymbolNameAccessibilityDescription(name,item.title);if(img){img.template=true;item.image=img;}}catch(e){} return item;}
+function addSep(targetMenu){targetMenu.addItem($.NSMenuItem.separatorItem);}
+
+statusHeader=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('Mihomo Core  ·  --  ·  Offline','', '');statusHeader.enabled=false;menu.addItem(statusHeader);
+upHeader=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('↑  上传                     0 B/s','', '');upHeader.enabled=false;menu.addItem(upHeader);
+downHeader=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('↓  下载                     0 B/s','', '');downHeader.enabled=false;menu.addItem(downHeader);
+addSep(menu);
+
+addSymbol(addItem(menu,'打开主窗口','openManager:','o'),'macwindow');
+addSymbol(addItem(menu,'刷新状态','refresh:','r'),'arrow.clockwise');
+serverRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('服务器  ·  未选择','', ''); serverMenu=$.NSMenu.alloc.initWithTitle('服务器'); serverRoot.submenu=serverMenu; addSymbol(serverRoot,'server.rack'); menu.addItem(serverRoot); rebuildServers();
+addSep(menu);
+
+var coreRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('Core 控制','', ''); var coreMenu=$.NSMenu.alloc.initWithTitle('Core 控制'); coreRoot.submenu=coreMenu; addSymbol(coreRoot,'cpu'); menu.addItem(coreRoot);
+startItem=addSymbol(addItem(coreMenu,'启动 Core','startCore:',''),'play.fill');
+stopItem=addSymbol(addItem(coreMenu,'停止 Core','stopCore:',''),'stop.fill');
+addSymbol(addItem(coreMenu,'重启 Core','restartCore:',''),'arrow.clockwise');
+addSymbol(addItem(coreMenu,'重载配置','reloadConfig:',''),'doc.badge.arrow.up');
+addSep(coreMenu);
+addSymbol(addItem(coreMenu,'应用订阅 + 热重载','applySubs:',''),'arrow.triangle.2.circlepath');
+
+var toolsRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('管理与工具','', ''); var toolsMenu=$.NSMenu.alloc.initWithTitle('管理与工具'); toolsRoot.submenu=toolsMenu; addSymbol(toolsRoot,'square.grid.2x2'); menu.addItem(toolsRoot);
+addSymbol(addItem(toolsMenu,'订阅管理…','subscriptions:',''),'arrow.left.arrow.right');
+addSymbol(addItem(toolsMenu,'运行日志…','logs:',''),'text.alignleft');
+addSymbol(addItem(toolsMenu,'项目升级…','checkUpdate:',''),'arrow.up.circle');
+addSymbol(addItem(toolsMenu,'开始项目升级','applyUpdate:',''),'arrow.down.circle');
+addSymbol(addItem(toolsMenu,'打开 MetaCubeXD','openMeta:',''),'safari');
+
+var displayRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('状态栏显示','', ''); var displayMenu=$.NSMenu.alloc.initWithTitle('状态栏显示'); displayRoot.submenu=displayMenu; addSymbol(displayRoot,'menubar.rectangle'); menu.addItem(displayRoot);
+prefIconItem=addItem(displayMenu,'显示图标','toggleShowIcon:',''); prefStatusItem=addItem(displayMenu,'显示运行状态','toggleShowStatus:',''); prefSpeedItem=addItem(displayMenu,'显示网速','toggleShowSpeed:',''); addSep(displayMenu); iconOnlyItem=addItem(displayMenu,'仅显示图标','iconOnly:',''); syncPrefItems();
+addSep(menu);
+addSymbol(addItem(menu,'设置…','settings:',','),'gearshape');
+addSymbol(addItem(menu,'退出 Mihomo Core Manager','quitApp:','q'),'power');
 statusItem.menu=menu;
 updateStatus(true);
 $.NSTimer.scheduledTimerWithTimeIntervalTargetSelectorUserInfoRepeats(1.2,delegate,'tick:',null,true);

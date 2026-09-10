@@ -177,7 +177,7 @@ func TestInvalidateStatusCacheRemovesSnapshot(t *testing.T) {
 	}
 }
 
-func TestMenuScriptUsesCachedSnapshotNativeDragAndCompactTwoLineSpeed(t *testing.T) {
+func TestMenuScriptUsesCachedSnapshotNativeDragAndV119StatusMenu(t *testing.T) {
 	script := menuScript("http://127.0.0.1:12345", "token", "/tmp/status.json")
 	for _, marker := range []string{
 		"function statusFromFile()",
@@ -186,23 +186,30 @@ func TestMenuScriptUsesCachedSnapshotNativeDragAndCompactTwoLineSpeed(t *testing
 		"MihomoWindowDragView",
 		"performWindowDragWithEvent",
 		"function fmtMenuRate(raw)",
+		"function padMenuRate(raw)",
 		"function renderStatusButton()",
 		"function safeSingleLineTitle()",
 		"var showIcon=true, showStatus=true, showSpeed=true",
-		"prefIconItem=item('显示图标','toggleShowIcon:')",
+		"prefIconItem=addItem(displayMenu,'显示图标','toggleShowIcon:','')",
 		"button.imagePosition=hasText?2:1",
 		"Never allow a cosmetic status-bar failure to terminate the whole App",
-		"var down='↓ '+fmtMenuRate(lastDown), up='↑ '+fmtMenuRate(lastUp)",
-		"upHeader.title='↑ 上传    '+fmtRate(lastUp)",
-		"downHeader.title='↓ 下载    '+fmtRate(lastDown)",
+		"var up='↑ '+padMenuRate(lastUp), down='↓ '+padMenuRate(lastDown)",
+		"try{button.alignment=2;}",
+		"title=up+'\\n'+down",
+		"upHeader.title='↑  上传                     '+fmtRate(lastUp)",
+		"downHeader.title='↓  下载                     '+fmtRate(lastDown)",
+		"var coreRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('Core 控制'",
+		"var toolsRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('管理与工具'",
+		"var displayRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('状态栏显示'",
+		"function addSymbol(item,name)",
 	} {
 		if !strings.Contains(script, marker) {
-			t.Fatalf("menu script missing v1.1.1 marker %q", marker)
+			t.Fatalf("menu script missing v1.1.9 marker %q", marker)
 		}
 	}
 	for _, forbidden := range []string{"button.cell.wraps=true", "button.cell.usesSingleLineMode=false", "NSBaselineOffsetAttributeName", "CATextLayer", "function speedImage(up,down)"} {
 		if strings.Contains(script, forbidden) {
-			t.Fatalf("v1.1.1 status-bar startup path must avoid crash-prone marker %q", forbidden)
+			t.Fatalf("v1.1.9 status-bar startup path must avoid crash-prone marker %q", forbidden)
 		}
 	}
 	if strings.Contains(script, "%!") {
@@ -248,8 +255,8 @@ func TestPortableInteractionRegressionV118(t *testing.T) {
 	}
 }
 
-func TestPortableVersionV118(t *testing.T) {
-	if appVersion != "1.1.8" || buildNumber != "118" {
+func TestPortableVersionV119(t *testing.T) {
+	if appVersion != "1.1.9" || buildNumber != "119" {
 		t.Fatalf("unexpected portable version/build: %s/%s", appVersion, buildNumber)
 	}
 }
