@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.1.4
+
+- 修复 v1.1.3 Release 在 Xcode 16.4 下编译失败的问题。
+- 修复 `OverviewView.swift` 非法 `.frame(width:minHeight:alignment:)` 调用，拆分为兼容的固定宽度与最小高度修饰器。
+- 新增 SwiftUI `frame` 参数组合静态校验，避免同类错误进入 GitHub Actions 构建阶段。
+- App 版本升级为 v1.1.4，Xcode build number 与 portable build number 统一为 114。
+- 保留 v1.1.3 的统一布局修复、紧凑标题栏与 v1.0.9 菜单栏界面。
+
 ## v1.1.3
 
 - 基于 v1.1.2 统一布局修复版发布正式升级版本。

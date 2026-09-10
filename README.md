@@ -1,6 +1,15 @@
 # Mihomo Core Manager for macOS
 
-基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.1.3 (build 113)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.1.4 (build 114)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+
+## v1.1.4
+
+这是 v1.1.3 统一布局版的构建修复版本，正式版本升级为 **v1.1.4 (build 114)**。
+
+- 修复 `OverviewView.swift` 中 SwiftUI `frame` 参数组合导致的 Xcode 16.4 编译失败。
+- 将固定宽度与最小高度拆分为两个合法的 `frame` 修饰器，保持“实时流量 / 快速控制”布局设计不变。
+- 增加源码校验规则，提前拦截固定 `width/height` 与 `min/max/ideal` 尺寸混用的非法 `frame` 调用。
+- 保留 v1.1.3 的统一页面布局、紧凑标题栏和 v1.0.9 菜单栏样式。
 
 ## v1.1.3
 
@@ -92,12 +101,12 @@ xcodebuild \
 
 ## Release
 
-正式 tag `v1.1.3` 成功后生成：
+正式 tag `v1.1.4` 成功后生成：
 
 ```text
-MihomoCoreManager-v1.1.3-arm64.pkg
-MihomoCoreManager-v1.1.3-arm64.zip
-release_v1.1.3_notes_zh-CN.md
+MihomoCoreManager-v1.1.4-arm64.pkg
+MihomoCoreManager-v1.1.4-arm64.zip
+release_v1.1.4_notes_zh-CN.md
 SHA256SUMS.txt
 ```
 

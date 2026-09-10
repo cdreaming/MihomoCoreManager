@@ -34,7 +34,8 @@ struct OverviewView: View {
                 trafficPanel
                     .frame(maxWidth: .infinity, minHeight: 336, alignment: .top)
                 quickActions
-                    .frame(width: 334, minHeight: 336, alignment: .top)
+                    .frame(width: 334)
+                    .frame(minHeight: 336, alignment: .top)
             }
 
             VStack(spacing: 14) {

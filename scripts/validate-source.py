@@ -73,6 +73,25 @@ for marker in ["实时流量", "快速控制", "Canvas(rendersAsynchronously: tr
     if marker not in overview:
         errors.append(f"native dashboard UI marker missing: {marker}")
 
+# SwiftUI exposes separate fixed-size and flexible frame overloads. A call such
+# as `.frame(width: 334, minHeight: 336, alignment: .top)` does not type-check.
+# Catch this source pattern before the Xcode Release build.
+frame_call_pattern = re.compile(r"\.frame\s*\((.*?)\)", re.S)
+fixed_dimension_pattern = re.compile(r"(?<![A-Za-z])(width|height)\s*:")
+flex_dimension_pattern = re.compile(
+    r"\b(minWidth|idealWidth|maxWidth|minHeight|idealHeight|maxHeight)\s*:"
+)
+for swift_path in (root / "MihomoCoreManager").rglob("*.swift"):
+    swift_text = swift_path.read_text(encoding="utf-8")
+    for frame_call in frame_call_pattern.finditer(swift_text):
+        args = frame_call.group(1)
+        if fixed_dimension_pattern.search(args) and flex_dimension_pattern.search(args):
+            line = swift_text.count("\n", 0, frame_call.start()) + 1
+            errors.append(
+                f"invalid mixed SwiftUI frame overload: "
+                f"{swift_path.relative_to(root)}:{line}"
+            )
+
 content = (root / "MihomoCoreManager/Views/ContentView.swift").read_text(encoding="utf-8")
 models = (root / "MihomoCoreManager/Models.swift").read_text(encoding="utf-8")
 subscriptions_view = (root / "MihomoCoreManager/Views/SubscriptionsView.swift").read_text(encoding="utf-8")
