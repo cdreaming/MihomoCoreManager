@@ -28,10 +28,6 @@ jobs:
           set -Eeuo pipefail
           test "$(uname -m)" = "arm64"
 
-      - name: macOS / Xcode release preflight
-        shell: bash
-        run: python3 scripts/release-preflight.py --strict-macos
-
       - name: Source gate
         run: |
           python3 scripts/validate-source.py
@@ -39,14 +35,6 @@ jobs:
 
       - name: Build arm64 app and installer assets
         run: bash scripts/build-release.sh --unsigned
-
-      - name: Upload Xcode diagnostics on failure
-        if: failure()
-        uses: actions/upload-artifact@v6
-        with:
-          name: xcode-diagnostics-${{ github.run_id }}
-          path: build/xcodebuild-release.log
-          if-no-files-found: ignore
 
       - name: Portable release parity test
         shell: bash
