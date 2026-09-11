@@ -1,5 +1,30 @@
 import Foundation
 
+private struct ControllerConfigResponse: Decodable {
+    let mode: String?
+}
+
+private struct ControllerProxiesResponse: Decodable {
+    let proxies: [String: ControllerProxyWire]
+}
+
+private struct ControllerProxyWire: Decodable {
+    let name: String?
+    let type: String?
+    let now: String?
+    let all: [String]?
+    let history: [MihomoProxyDelaySample]?
+    let alive: Bool?
+    let hidden: Bool?
+    let udp: Bool?
+    let xudp: Bool?
+    let tfo: Bool?
+}
+
+private struct ControllerErrorMessage: Decodable {
+    let message: String?
+}
+
 struct MihomoAPIClient {
     private let decoder: JSONDecoder = {
         let decoder = JSONDecoder()
@@ -116,7 +141,6 @@ struct MihomoAPIClient {
         guard !direct.isEmpty else {
             return try await action(.reload, profile: profile, secret: secret)
         }
-        guard !secret.isEmpty else { throw MihomoClientError.missingSecret }
         let url = try makeURL(
             base: direct,
             path: "/configs",
@@ -126,15 +150,79 @@ struct MihomoAPIClient {
         struct Payload: Encodable { let path: String; let payload: String }
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
-        request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
+        if !secret.isEmpty {
+            request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
+        }
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try encoder.encode(Payload(path: profile.configPath, payload: ""))
         let (_, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw MihomoClientError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
+            if http.statusCode == 401 { throw MihomoClientError.controllerUnauthorized }
             throw MihomoClientError.server(status: http.statusCode, message: "Controller 拒绝重载配置")
         }
         return "已通过 Direct Controller 重载 \(profile.configPath)"
+    }
+
+    func proxyMode(profile: ServerProfile, secret: String) async throws -> MihomoRunMode? {
+        let data = try await controllerData(path: "/configs", method: "GET", body: nil, profile: profile, secret: secret)
+        let response: ControllerConfigResponse
+        do {
+            response = try decoder.decode(ControllerConfigResponse.self, from: data)
+        } catch {
+            throw MihomoClientError.invalidResponse
+        }
+        guard let raw = response.mode?.lowercased() else { return nil }
+        return MihomoRunMode(rawValue: raw)
+    }
+
+    func setProxyMode(_ mode: MihomoRunMode, profile: ServerProfile, secret: String) async throws {
+        struct Payload: Encodable { let mode: String }
+        let body = try encoder.encode(Payload(mode: mode.rawValue))
+        _ = try await controllerData(path: "/configs", method: "PATCH", body: body, profile: profile, secret: secret)
+    }
+
+    func proxies(profile: ServerProfile, secret: String) async throws -> [MihomoProxy] {
+        let data = try await controllerData(path: "/proxies", method: "GET", body: nil, profile: profile, secret: secret)
+        let response: ControllerProxiesResponse
+        do {
+            response = try decoder.decode(ControllerProxiesResponse.self, from: data)
+        } catch {
+            throw MihomoClientError.invalidResponse
+        }
+
+        return response.proxies.map { key, value in
+            MihomoProxy(
+                name: value.name ?? key,
+                type: value.type ?? "Unknown",
+                now: value.now,
+                all: value.all ?? [],
+                history: value.history ?? [],
+                alive: value.alive,
+                hidden: value.hidden,
+                udp: value.udp,
+                xudp: value.xudp,
+                tfo: value.tfo
+            )
+        }
+        .sorted { lhs, rhs in
+            if lhs.name == "GLOBAL" { return true }
+            if rhs.name == "GLOBAL" { return false }
+            if lhs.isGroup != rhs.isGroup { return lhs.isGroup }
+            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+        }
+    }
+
+    func selectProxy(_ proxyName: String, in groupName: String, profile: ServerProfile, secret: String) async throws {
+        struct Payload: Encodable { let name: String }
+        let body = try encoder.encode(Payload(name: proxyName))
+        let base = try controllerBase(profile: profile, secret: secret)
+        let url = try makeProxyGroupURL(
+            base: base,
+            group: groupName,
+            allowInsecureHTTP: profile.allowInsecureHTTP
+        )
+        _ = try await controllerData(url: url, method: "PUT", body: body, secret: secret)
     }
 
     func logs(lines: Int, profile: ServerProfile, secret: String) async throws -> String {
@@ -204,7 +292,9 @@ struct MihomoAPIClient {
         )
         var request = URLRequest(url: url)
         request.httpMethod = method
-        request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
+        if !secret.isEmpty {
+            request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
+        }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let body {
             request.httpBody = body
@@ -224,6 +314,78 @@ struct MihomoAPIClient {
         } catch {
             throw MihomoClientError.invalidResponse
         }
+    }
+
+    private func controllerBase(profile: ServerProfile, secret: String) throws -> String {
+        let direct = profile.coreControllerURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !direct.isEmpty else { throw MihomoClientError.missingController }
+        return direct
+    }
+
+    private func controllerData(
+        path: String,
+        method: String,
+        body: Data?,
+        profile: ServerProfile,
+        secret: String
+    ) async throws -> Data {
+        let base = try controllerBase(profile: profile, secret: secret)
+        let url = try makeURL(
+            base: base,
+            path: path,
+            allowInsecureHTTP: profile.allowInsecureHTTP
+        )
+        return try await controllerData(url: url, method: method, body: body, secret: secret)
+    }
+
+    private func controllerData(
+        url: URL,
+        method: String,
+        body: Data?,
+        secret: String
+    ) async throws -> Data {
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let body {
+            request.httpBody = body
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw MihomoClientError.invalidResponse }
+        guard (200..<300).contains(http.statusCode) else {
+            if http.statusCode == 401 { throw MihomoClientError.controllerUnauthorized }
+            let message = (try? decoder.decode(ControllerErrorMessage.self, from: data).message)
+                ?? String(data: data, encoding: .utf8)
+                ?? "Controller request failed"
+            throw MihomoClientError.server(status: http.statusCode, message: message)
+        }
+        return data
+    }
+
+    private func makeProxyGroupURL(
+        base rawBase: String,
+        group: String,
+        allowInsecureHTTP: Bool
+    ) throws -> URL {
+        let proxiesURL = try makeURL(
+            base: rawBase,
+            path: "/proxies",
+            allowInsecureHTTP: allowInsecureHTTP
+        )
+        guard var components = URLComponents(url: proxiesURL, resolvingAgainstBaseURL: false) else {
+            throw MihomoClientError.invalidURL(rawBase)
+        }
+        let segmentAllowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+        guard let encodedGroup = group.addingPercentEncoding(withAllowedCharacters: segmentAllowed) else {
+            throw MihomoClientError.invalidURL(rawBase)
+        }
+        let basePath = components.percentEncodedPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        components.percentEncodedPath = "/" + [basePath, encodedGroup].filter { !$0.isEmpty }.joined(separator: "/")
+        guard let url = components.url else { throw MihomoClientError.invalidURL(rawBase) }
+        return url
     }
 
     private func makeURL(

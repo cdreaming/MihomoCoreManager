@@ -22,9 +22,10 @@ import (
 )
 
 const (
-	appVersion      = "1.2.2"
-	buildNumber     = "122"
-	keychainService = "cc.kkr.MihomoCoreManager"
+	appVersion                = "1.2.3"
+	buildNumber               = "123"
+	keychainService           = "cc.kkr.MihomoCoreManager"
+	controllerKeychainService = "cc.kkr.MihomoCoreManager.controller-secret"
 )
 
 //go:embed ui/index.html
@@ -66,6 +67,9 @@ type appState struct {
 
 	secretMu    sync.RWMutex
 	secretCache map[string]string
+
+	controllerSecretMu    sync.RWMutex
+	controllerSecretCache map[string]string
 
 	statusMu        sync.RWMutex
 	statusFetchMu   sync.Mutex
@@ -172,29 +176,56 @@ func (s *appState) current() (Profile, error) {
 	return Profile{}, errors.New("尚未配置服务器")
 }
 
-func keychainGet(id string) string {
+func keychainGetWithService(id, service string) string {
 	if runtime.GOOS != "darwin" {
 		return ""
 	}
-	out, err := exec.Command("/usr/bin/security", "find-generic-password", "-a", id, "-s", keychainService, "-w").Output()
+	out, err := exec.Command("/usr/bin/security", "find-generic-password", "-a", id, "-s", service, "-w").Output()
 	if err != nil {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
 }
-func keychainSet(id, secret string) error {
+
+func keychainSetWithService(id, secret, service string) error {
 	if runtime.GOOS != "darwin" {
 		return nil
 	}
 	if secret == "" {
+		_ = exec.Command("/usr/bin/security", "delete-generic-password", "-a", id, "-s", service).Run()
 		return nil
 	}
-	return exec.Command("/usr/bin/security", "add-generic-password", "-U", "-a", id, "-s", keychainService, "-w", secret).Run()
+	return exec.Command("/usr/bin/security", "add-generic-password", "-U", "-a", id, "-s", service, "-w", secret).Run()
 }
-func keychainDelete(id string) {
+
+func keychainDeleteWithService(id, service string) {
 	if runtime.GOOS == "darwin" {
-		_ = exec.Command("/usr/bin/security", "delete-generic-password", "-a", id, "-s", keychainService).Run()
+		_ = exec.Command("/usr/bin/security", "delete-generic-password", "-a", id, "-s", service).Run()
 	}
+}
+
+func keychainGet(id string) string {
+	return keychainGetWithService(id, keychainService)
+}
+
+func keychainSet(id, secret string) error {
+	return keychainSetWithService(id, secret, keychainService)
+}
+
+func keychainDelete(id string) {
+	keychainDeleteWithService(id, keychainService)
+}
+
+func controllerKeychainGet(id string) string {
+	return keychainGetWithService(id, controllerKeychainService)
+}
+
+func controllerKeychainSet(id, secret string) error {
+	return keychainSetWithService(id, secret, controllerKeychainService)
+}
+
+func controllerKeychainDelete(id string) {
+	keychainDeleteWithService(id, controllerKeychainService)
 }
 
 func (s *appState) secretFor(id string) string {
@@ -221,6 +252,38 @@ func (s *appState) forgetSecret(id string) {
 	s.secretMu.Lock()
 	delete(s.secretCache, id)
 	s.secretMu.Unlock()
+}
+
+func (s *appState) controllerSecretFor(id string) string {
+	s.controllerSecretMu.RLock()
+	secret, ok := s.controllerSecretCache[id]
+	s.controllerSecretMu.RUnlock()
+	if ok {
+		return secret
+	}
+	secret = controllerKeychainGet(id)
+	s.controllerSecretMu.Lock()
+	if s.controllerSecretCache == nil {
+		s.controllerSecretCache = make(map[string]string)
+	}
+	s.controllerSecretCache[id] = secret
+	s.controllerSecretMu.Unlock()
+	return secret
+}
+
+func (s *appState) cacheControllerSecret(id, secret string) {
+	s.controllerSecretMu.Lock()
+	if s.controllerSecretCache == nil {
+		s.controllerSecretCache = make(map[string]string)
+	}
+	s.controllerSecretCache[id] = secret
+	s.controllerSecretMu.Unlock()
+}
+
+func (s *appState) forgetControllerSecret(id string) {
+	s.controllerSecretMu.Lock()
+	delete(s.controllerSecretCache, id)
+	s.controllerSecretMu.Unlock()
 }
 
 func (s *appState) invalidateStatusCache() {
@@ -396,26 +459,39 @@ func (s *appState) remote(method, path string, body []byte, query url.Values, di
 	if err != nil {
 		return nil, 0, err
 	}
-	secret := s.secretFor(p.ID)
-	if secret == "" {
-		return nil, 0, errors.New("当前服务器尚未配置 Core Secret")
-	}
+	coreSecret := s.secretFor(p.ID)
+	secret := coreSecret
 	base := p.ManagementURL
 	if direct {
 		base = p.CoreControllerURL
 		if strings.TrimSpace(base) == "" {
 			return nil, 0, errors.New("未配置 Direct Core Controller URL")
 		}
+		if controllerSecret := s.controllerSecretFor(p.ID); controllerSecret != "" {
+			secret = controllerSecret
+		}
+	} else if secret == "" {
+		return nil, 0, errors.New("当前服务器尚未配置 Core Secret")
 	}
 	target, err := joinURL(base, path, p.AllowInsecureHTTP, query)
 	if err != nil {
 		return nil, 0, err
 	}
+	data, code, requestErr := s.remoteRequest(method, target, body, secret)
+	if direct && code == http.StatusUnauthorized {
+		return data, code, errors.New("Mihomo Controller HTTP 401：认证失败。请在设置的 Controller Secret 中填写 config.yaml 的 secret；它可以与管理面板的 Core Secret 不同")
+	}
+	return data, code, requestErr
+}
+
+func (s *appState) remoteRequest(method, target string, body []byte, secret string) ([]byte, int, error) {
 	req, err := http.NewRequest(method, target, strings.NewReader(string(body)))
 	if err != nil {
 		return nil, 0, err
 	}
-	req.Header.Set("Authorization", "Bearer "+secret)
+	if secret != "" {
+		req.Header.Set("Authorization", "Bearer "+secret)
+	}
 	req.Header.Set("Accept", "application/json")
 	if len(body) > 0 {
 		req.Header.Set("Content-Type", "application/json")
@@ -430,13 +506,43 @@ func (s *appState) remote(method, path string, body []byte, query url.Values, di
 		return nil, resp.StatusCode, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		msg := strings.TrimSpace(string(data))
-		if msg == "" {
-			msg = resp.Status
+		msg := remoteMessage(data, nil)
+		if msg == "未知错误" {
+			msg = strings.TrimSpace(string(data))
+			if msg == "" {
+				msg = resp.Status
+			}
 		}
 		return data, resp.StatusCode, fmt.Errorf("远端 HTTP %d：%s", resp.StatusCode, msg)
 	}
 	return data, resp.StatusCode, nil
+}
+
+func joinProxyURL(baseRaw, group string, allowHTTP bool) (string, error) {
+	u, err := normalizeBase(baseRaw, allowHTTP)
+	if err != nil {
+		return "", err
+	}
+	group = strings.TrimSpace(group)
+	if group == "" {
+		return "", errors.New("代理组不能为空")
+	}
+
+	baseDecoded := strings.Trim(u.Path, "/")
+	baseEscaped := strings.Trim(u.EscapedPath(), "/")
+	decodedParts := []string{}
+	escapedParts := []string{}
+	if baseDecoded != "" {
+		decodedParts = append(decodedParts, baseDecoded)
+		escapedParts = append(escapedParts, baseEscaped)
+	}
+	decodedParts = append(decodedParts, "proxies", group)
+	escapedParts = append(escapedParts, "proxies", url.PathEscape(group))
+	u.Path = "/" + strings.Join(decodedParts, "/")
+	u.RawPath = "/" + strings.Join(escapedParts, "/")
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String(), nil
 }
 
 func jsonReply(w http.ResponseWriter, status int, v any) {
@@ -475,19 +581,21 @@ func (s *appState) handleProfiles(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.RUnlock()
 	type view struct {
 		Profile
-		HasSecret bool `json:"hasSecret"`
+		HasSecret           bool `json:"hasSecret"`
+		HasControllerSecret bool `json:"hasControllerSecret"`
 	}
 	out := make([]view, 0, len(s.settings.Profiles))
 	for _, p := range s.settings.Profiles {
-		out = append(out, view{p, s.secretFor(p.ID) != ""})
+		out = append(out, view{p, s.secretFor(p.ID) != "", s.controllerSecretFor(p.ID) != ""})
 	}
 	jsonReply(w, 200, map[string]any{"ok": true, "selectedID": s.settings.SelectedID, "profiles": out, "version": appVersion, "build": buildNumber})
 }
 
 func (s *appState) handleProfileSave(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Profile Profile `json:"profile"`
-		Secret  string  `json:"secret"`
+		Profile          Profile `json:"profile"`
+		Secret           string  `json:"secret"`
+		ControllerSecret string  `json:"controllerSecret"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
 		errReply(w, err)
@@ -533,8 +641,30 @@ func (s *appState) handleProfileSave(w http.ResponseWriter, r *http.Request) {
 		}
 		s.cacheSecret(p.ID, in.Secret)
 	}
+	if in.ControllerSecret != "" {
+		if err := controllerKeychainSet(p.ID, in.ControllerSecret); err != nil {
+			errReply(w, fmt.Errorf("Controller Secret Keychain 保存失败：%w", err))
+			return
+		}
+		s.cacheControllerSecret(p.ID, in.ControllerSecret)
+	}
 	s.invalidateStatusCache()
 	jsonReply(w, 200, map[string]any{"ok": true, "message": "设置已保存", "id": p.ID})
+}
+
+func (s *appState) handleControllerSecretClear(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonReply(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "message": "method not allowed"})
+		return
+	}
+	p, err := s.current()
+	if err != nil {
+		errReply(w, err)
+		return
+	}
+	controllerKeychainDelete(p.ID)
+	s.cacheControllerSecret(p.ID, "")
+	jsonReply(w, http.StatusOK, map[string]any{"ok": true, "message": "Controller Secret 已清除，将回退使用 Core Secret"})
 }
 
 func (s *appState) handleProfileSelect(w http.ResponseWriter, r *http.Request) {
@@ -587,7 +717,9 @@ func (s *appState) handleProfileDelete(w http.ResponseWriter, r *http.Request) {
 	err := s.saveLocked()
 	s.mu.Unlock()
 	keychainDelete(in.ID)
+	controllerKeychainDelete(in.ID)
 	s.forgetSecret(in.ID)
+	s.forgetControllerSecret(in.ID)
 	s.invalidateStatusCache()
 	if err != nil {
 		errReply(w, err)
@@ -638,6 +770,105 @@ func subscriptionReloadTimedOut(data []byte, err error) bool {
 func (s *appState) coreLifecycleAction(action string) ([]byte, int, error) {
 	body, _ := json.Marshal(map[string]string{"action": action})
 	return s.remote(http.MethodPost, "/api/action", body, nil, false)
+}
+
+func (s *appState) handleProxyMode(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		data, code, err := s.remote(http.MethodGet, "/configs", nil, nil, true)
+		if err != nil {
+			errReply(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(code)
+		_, _ = w.Write(data)
+	case http.MethodPost:
+		var in struct {
+			Mode string `json:"mode"`
+		}
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
+			jsonReply(w, http.StatusBadRequest, map[string]any{"ok": false, "message": "无效请求"})
+			return
+		}
+		mode := strings.ToLower(strings.TrimSpace(in.Mode))
+		if mode != "rule" && mode != "global" && mode != "direct" {
+			jsonReply(w, http.StatusBadRequest, map[string]any{"ok": false, "message": "运行模式仅支持 rule/global/direct"})
+			return
+		}
+		body, _ := json.Marshal(map[string]string{"mode": mode})
+		if _, _, err := s.remote(http.MethodPatch, "/configs", body, nil, true); err != nil {
+			errReply(w, err)
+			return
+		}
+		jsonReply(w, http.StatusOK, map[string]any{"ok": true, "mode": mode})
+	default:
+		jsonReply(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "message": "method not allowed"})
+	}
+}
+
+func (s *appState) handleProxies(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonReply(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "message": "method not allowed"})
+		return
+	}
+	data, code, err := s.remote(http.MethodGet, "/proxies", nil, nil, true)
+	if err != nil {
+		errReply(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(code)
+	_, _ = w.Write(data)
+}
+
+func (s *appState) handleProxySelect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonReply(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "message": "method not allowed"})
+		return
+	}
+	var in struct {
+		Group string `json:"group"`
+		Name  string `json:"name"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
+		jsonReply(w, http.StatusBadRequest, map[string]any{"ok": false, "message": "无效请求"})
+		return
+	}
+	in.Group = strings.TrimSpace(in.Group)
+	in.Name = strings.TrimSpace(in.Name)
+	if in.Group == "" || in.Name == "" {
+		jsonReply(w, http.StatusBadRequest, map[string]any{"ok": false, "message": "代理组和代理名称不能为空"})
+		return
+	}
+	profile, err := s.current()
+	if err != nil {
+		errReply(w, err)
+		return
+	}
+	secret := s.controllerSecretFor(profile.ID)
+	if secret == "" {
+		secret = s.secretFor(profile.ID)
+	}
+	if strings.TrimSpace(profile.CoreControllerURL) == "" {
+		errReply(w, errors.New("未配置 Direct Core Controller URL"))
+		return
+	}
+	target, err := joinProxyURL(profile.CoreControllerURL, in.Group, profile.AllowInsecureHTTP)
+	if err != nil {
+		errReply(w, err)
+		return
+	}
+	body, _ := json.Marshal(map[string]string{"name": in.Name})
+	if _, code, err := s.remoteRequest(http.MethodPut, target, body, secret); err != nil {
+		if code == http.StatusUnauthorized {
+			errReply(w, errors.New("Mihomo Controller HTTP 401：认证失败。请在设置的 Controller Secret 中填写 config.yaml 的 secret；它可以与管理面板的 Core Secret 不同"))
+		} else {
+			errReply(w, err)
+		}
+		return
+	}
+	jsonReply(w, http.StatusOK, map[string]any{"ok": true, "group": in.Group, "name": in.Name})
 }
 
 func (s *appState) handleSubscriptions(w http.ResponseWriter, r *http.Request) {
@@ -849,6 +1080,10 @@ func (s *appState) routes() http.Handler {
 	mux.HandleFunc("/local/status", s.auth(s.handleStatus))
 	mux.HandleFunc("/local/action", s.auth(s.handleAction))
 	mux.HandleFunc("/local/reload-config", s.auth(s.handleReload))
+	mux.HandleFunc("/local/proxy-mode", s.auth(s.handleProxyMode))
+	mux.HandleFunc("/local/proxies", s.auth(s.handleProxies))
+	mux.HandleFunc("/local/proxy-select", s.auth(s.handleProxySelect))
+	mux.HandleFunc("/local/controller-secret/clear", s.auth(s.handleControllerSecretClear))
 	mux.HandleFunc("/local/subscriptions", s.auth(s.handleSubscriptions))
 	mux.HandleFunc("/local/logs", s.auth(s.proxy("/api/logs")))
 	mux.HandleFunc("/local/update/check", s.auth(s.proxy("/api/project-update/check")))

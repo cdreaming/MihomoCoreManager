@@ -3,6 +3,7 @@ import Foundation
 enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
     case overview
     case core
+    case proxies
     case subscriptions
     case logs
     case updates
@@ -14,6 +15,7 @@ enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .overview: "概览"
         case .core: "Core 控制"
+        case .proxies: "代理切换"
         case .subscriptions: "订阅管理"
         case .logs: "运行日志"
         case .updates: "项目升级"
@@ -25,6 +27,7 @@ enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .overview: "gauge.with.dots.needle.50percent"
         case .core: "bolt.horizontal.circle"
+        case .proxies: "arrow.triangle.branch"
         case .subscriptions: "arrow.triangle.2.circlepath"
         case .logs: "doc.text.magnifyingglass"
         case .updates: "arrow.down.circle"
@@ -167,6 +170,84 @@ struct ProjectUpdateInfo: Decodable {
     let installerVersion: String?
 }
 
+
+enum MihomoRunMode: String, CaseIterable, Identifiable, Codable {
+    case rule
+    case global
+    case direct
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .rule: "规则"
+        case .global: "全局"
+        case .direct: "直连"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .rule: "list.bullet.rectangle"
+        case .global: "globe"
+        case .direct: "arrow.right.circle"
+        }
+    }
+}
+
+struct MihomoProxyDelaySample: Decodable, Hashable {
+    let time: String?
+    let delay: Int?
+}
+
+struct MihomoProxy: Identifiable, Hashable {
+    let name: String
+    let type: String
+    let now: String?
+    let all: [String]
+    let history: [MihomoProxyDelaySample]
+    let alive: Bool?
+    let hidden: Bool?
+    let udp: Bool?
+    let xudp: Bool?
+    let tfo: Bool?
+
+    var id: String { name }
+    var isGroup: Bool { !all.isEmpty }
+    var latestDelay: Int? { history.last?.delay }
+
+    var isSelectableGroup: Bool {
+        switch type.lowercased() {
+        case "selector", "urltest", "fallback": true
+        default: false
+        }
+    }
+
+    init(
+        name: String,
+        type: String,
+        now: String?,
+        all: [String],
+        history: [MihomoProxyDelaySample],
+        alive: Bool?,
+        hidden: Bool?,
+        udp: Bool?,
+        xudp: Bool?,
+        tfo: Bool?
+    ) {
+        self.name = name
+        self.type = type
+        self.now = now
+        self.all = all
+        self.history = history
+        self.alive = alive
+        self.hidden = hidden
+        self.udp = udp
+        self.xudp = xudp
+        self.tfo = tfo
+    }
+}
+
 struct TrafficSample: Identifiable {
     let id = UUID()
     let date: Date
@@ -194,6 +275,9 @@ enum CoreAction: String, Equatable {
 
 enum AppOperation: Equatable {
     case core(CoreAction)
+    case fetchProxies
+    case setProxyMode(MihomoRunMode)
+    case selectProxy(group: String, proxy: String)
     case fetchSubscriptions
     case saveSubscriptions
     case fetchLogs
@@ -212,6 +296,8 @@ enum MihomoClientError: LocalizedError {
     case invalidURL(String)
     case insecureHTTPDisabled
     case missingSecret
+    case missingController
+    case controllerUnauthorized
     case invalidResponse
     case server(status: Int, message: String)
     case operationFailed(String)
@@ -221,6 +307,8 @@ enum MihomoClientError: LocalizedError {
         case .invalidURL(let value): "无效 URL：\(value)"
         case .insecureHTTPDisabled: "该服务器未允许明文 HTTP。请在设置中启用“允许不安全 HTTP”，或改用 HTTPS。"
         case .missingSecret: "尚未为当前服务器配置 Mihomo Core Secret。"
+        case .missingController: "尚未配置 Direct Core Controller URL，无法连接 Mihomo Core API。"
+        case .controllerUnauthorized: "Mihomo Controller HTTP 401：认证失败。请在设置 > Core 配置中填写 config.yaml 的 secret（Controller Secret）；它可以与管理面板的 Core Secret 不同。"
         case .invalidResponse: "服务器返回了无法识别的响应。"
         case .server(let status, let message): "服务器错误 HTTP \(status)：\(message)"
         case .operationFailed(let message): message

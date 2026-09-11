@@ -39,6 +39,8 @@ final class AppModel: ObservableObject {
     @Published var profiles: [ServerProfile]
     @Published var selectedProfileID: UUID?
     @Published var selectedSection: SidebarSection = .overview
+    @Published var proxyMode: MihomoRunMode?
+    @Published var proxies: [MihomoProxy] = []
     @Published var subscriptions: [String: String] = [:]
     @Published var logs: String = ""
     @Published var updateInfo: ProjectUpdateInfo?
@@ -82,6 +84,8 @@ final class AppModel: ObservableObject {
     private let api = MihomoAPIClient()
     private var pollingTask: Task<Void, Never>?
     private var secretCache: [UUID: String] = [:]
+    private var controllerSecretCache: [UUID: String] = [:]
+    private var proxiesLoadedFor: UUID?
     private var subscriptionsLoadedFor: UUID?
     private var logsLoadedFor: UUID?
     private var noticeDismissTask: Task<Void, Never>?
@@ -141,6 +145,14 @@ final class AppModel: ObservableObject {
         let secret = KeychainStore.readSecret(profileID: id)
         secretCache[id] = secret
         return secret
+    }
+
+    var currentControllerSecret: String {
+        guard let id = selectedProfileID else { return "" }
+        if let cached = controllerSecretCache[id], !cached.isEmpty { return cached }
+        let controllerSecret = KeychainStore.readControllerSecret(profileID: id)
+        controllerSecretCache[id] = controllerSecret
+        return controllerSecret.isEmpty ? currentSecret : controllerSecret
     }
 
     var menuBarIconOnly: Bool {
@@ -235,10 +247,13 @@ final class AppModel: ObservableObject {
         selectedProfileID = id
         UserDefaults.standard.set(id.uuidString, forKey: Self.selectedProfileKey)
         live.reset()
+        proxyMode = nil
+        proxies = []
         subscriptions = [:]
         logs = ""
         updateInfo = nil
         updateLogs = ""
+        proxiesLoadedFor = nil
         subscriptionsLoadedFor = nil
         logsLoadedFor = nil
         Task { await refreshStatus(silent: true) }
@@ -257,7 +272,9 @@ final class AppModel: ObservableObject {
             return
         }
         KeychainStore.deleteSecret(profileID: id)
+        KeychainStore.deleteControllerSecret(profileID: id)
         secretCache.removeValue(forKey: id)
+        controllerSecretCache.removeValue(forKey: id)
         profiles.removeAll { $0.id == id }
         persistProfiles()
         if selectedProfileID == id, let first = profiles.first {
@@ -289,6 +306,19 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func saveControllerSecret(_ secret: String, for id: UUID) {
+        do {
+            try KeychainStore.writeControllerSecret(secret, profileID: id)
+            controllerSecretCache[id] = secret
+            show(secret.isEmpty ? "已清除 Controller Secret，将回退使用 Core Secret" : "Controller Secret 已保存到 Keychain")
+            if selectedProfileID == id {
+                proxiesLoadedFor = nil
+            }
+        } catch {
+            show("Controller Secret 写入 Keychain 失败：\(error.localizedDescription)", error: true)
+        }
+    }
+
     func refreshStatus(silent: Bool = false) async {
         guard !isBusy || silent, let profile = selectedProfile else { return }
         let profileID = profile.id
@@ -299,6 +329,13 @@ final class AppModel: ObservableObject {
         } catch {
             if !silent { show(error.localizedDescription, error: true) }
         }
+    }
+
+    func ensureProxiesLoaded() async {
+        guard let id = selectedProfileID, proxiesLoadedFor != id else { return }
+        try? await Task.sleep(nanoseconds: 90_000_000)
+        guard !Task.isCancelled, selectedProfileID == id else { return }
+        await fetchProxies()
     }
 
     func ensureSubscriptionsLoaded() async {
@@ -320,13 +357,56 @@ final class AppModel: ObservableObject {
         await busyOperation(.core(action)) {
             let message: String
             if action == .reload {
-                message = try await api.reloadConfiguredPath(profile: profile, secret: currentSecret)
+                let direct = !profile.coreControllerURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                message = try await api.reloadConfiguredPath(
+                    profile: profile,
+                    secret: direct ? currentControllerSecret : currentSecret
+                )
             } else {
                 message = try await api.action(action, profile: profile, secret: currentSecret)
             }
             show(message)
             try? await Task.sleep(nanoseconds: 250_000_000)
             await refreshStatus(silent: true)
+        }
+    }
+
+    func fetchProxies() async {
+        guard let profile = selectedProfile else { return }
+        let profileID = profile.id
+        await busyOperation(.fetchProxies) {
+            async let fetchedMode = api.proxyMode(profile: profile, secret: currentControllerSecret)
+            async let fetchedProxies = api.proxies(profile: profile, secret: currentControllerSecret)
+            let (mode, values) = try await (fetchedMode, fetchedProxies)
+            guard selectedProfileID == profileID else { return }
+            proxyMode = mode
+            proxies = values
+            proxiesLoadedFor = profileID
+        }
+    }
+
+    func setProxyMode(_ mode: MihomoRunMode) async {
+        guard let profile = selectedProfile else { return }
+        let profileID = profile.id
+        await busyOperation(.setProxyMode(mode)) {
+            try await api.setProxyMode(mode, profile: profile, secret: currentControllerSecret)
+            guard selectedProfileID == profileID else { return }
+            proxyMode = mode
+            proxiesLoadedFor = profileID
+            show("运行模式已切换为\(mode.title)")
+        }
+    }
+
+    func selectProxy(_ proxyName: String, in groupName: String) async {
+        guard let profile = selectedProfile else { return }
+        let profileID = profile.id
+        await busyOperation(.selectProxy(group: groupName, proxy: proxyName)) {
+            try await api.selectProxy(proxyName, in: groupName, profile: profile, secret: currentControllerSecret)
+            let refreshed = try await api.proxies(profile: profile, secret: currentControllerSecret)
+            guard selectedProfileID == profileID else { return }
+            proxies = refreshed
+            proxiesLoadedFor = profileID
+            show("代理组“\(groupName)”已切换到“\(proxyName)”")
         }
     }
 

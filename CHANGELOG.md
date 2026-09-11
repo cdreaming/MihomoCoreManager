@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.2.3
+
+- 修复代理页错误复用管理面板 Core Secret 导致 Mihomo Controller 返回 HTTP 401 的问题；新增独立 Controller Secret，并在未设置时兼容回退 Core Secret。
+- Controller Secret 与 Core Secret 分开保存到 macOS Keychain；Mihomo `secret: ''` 的无鉴权 Controller 也可正常访问。
+- Controller HTTP 401 现在给出明确的 `config.yaml secret` 配置提示。
+- 新增“代理切换”页面，连接 Mihomo Core Direct Controller API。
+- 支持规则 / 全局 / 直连三种运行模式读取与切换。
+- 展示代理组、当前代理、组内详细代理、类型、存活状态、最近延迟及 UDP / XUDP / TFO 能力。
+- 支持 Selector / URLTest / Fallback 代理组直接切换节点。
+- 原生 SwiftUI 与 portable arm64 版本同步实现；portable 新增 Controller API 回归测试。
+- 版本升级为 v1.2.3 / build 123。
+
 ## v1.2.2
 
 - 修复 v1.2.1 GitHub Release 在 portable 安装包阶段因 macOS Runner 未预装 Go 而报 `Go is required`、exit code 1 的问题。

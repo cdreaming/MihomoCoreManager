@@ -56,6 +56,7 @@ struct ContentView: View {
         ZStack {
             persistentPage(.overview) { OverviewView() }
             persistentPage(.core) { CoreView() }
+            persistentPage(.proxies) { ProxiesView() }
             persistentPage(.subscriptions) { SubscriptionsView() }
             persistentPage(.logs) { LogsView() }
             persistentPage(.updates) { UpdateView() }
@@ -111,7 +112,7 @@ private struct DashboardSidebar: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var live: LiveStatusStore
 
-    private let visibleSections: [SidebarSection] = [.overview, .core, .subscriptions, .logs, .settings]
+    private let visibleSections: [SidebarSection] = [.overview, .core, .proxies, .subscriptions, .logs, .settings]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -217,6 +218,7 @@ private struct DashboardSidebar: View {
         switch section {
         case .overview: "arrow.up.left.and.arrow.down.right"
         case .core: "dot.circle"
+        case .proxies: "arrow.triangle.branch"
         case .subscriptions: "arrow.left.arrow.right"
         case .logs: "command"
         case .updates: "arrow.down.circle"
@@ -704,5 +706,404 @@ private struct DashboardNotice: View {
                 .stroke(DashboardPalette.separator, lineWidth: 1)
         }
         .shadow(color: .black.opacity(0.32), radius: 18, y: 8)
+    }
+}
+
+
+struct ProxiesView: View {
+    @EnvironmentObject private var model: AppModel
+    @State private var selectedGroupName: String?
+    @State private var searchText = ""
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: DashboardLayout.pageSpacing) {
+                DashboardPageHeader(
+                    title: "代理切换",
+                    subtitle: "直接连接 Mihomo Core Controller，切换运行模式并管理代理组当前节点。"
+                )
+
+                runModePanel
+                proxyWorkspace
+            }
+            .padding(.horizontal, DashboardLayout.pageHorizontalPadding)
+            .padding(.vertical, DashboardLayout.pageVerticalPadding)
+        }
+        .task(id: loadTaskID) {
+            guard model.selectedSection == .proxies else { return }
+            await model.ensureProxiesLoaded()
+            normalizeSelection()
+        }
+        .onChange(of: groupNames) { _, _ in normalizeSelection() }
+    }
+
+    private var runModePanel: some View {
+        DashboardPanel {
+            VStack(alignment: .leading, spacing: 14) {
+                DashboardPanelHeader(
+                    title: "运行模式",
+                    trailing: controllerConfigured ? "Direct Controller" : "未配置 Controller"
+                )
+
+                HStack(spacing: 10) {
+                    ForEach(MihomoRunMode.allCases) { mode in
+                        let selected = model.proxyMode == mode
+                        let busy = model.activeOperation == .setProxyMode(mode)
+                        Button {
+                            Task { await model.setProxyMode(mode) }
+                        } label: {
+                            HStack(spacing: 8) {
+                                if busy {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                        .tint(.white)
+                                } else {
+                                    Image(systemName: mode.systemImage)
+                                        .font(.system(size: 12, weight: .semibold))
+                                }
+                                Text(mode.title)
+                                    .font(.system(size: 13, weight: .semibold))
+                                Spacer(minLength: 0)
+                                if selected {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.system(size: 12, weight: .semibold))
+                                }
+                            }
+                            .foregroundStyle(selected ? .white : DashboardPalette.secondary)
+                            .padding(.horizontal, 13)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 42)
+                            .background(selected ? DashboardPalette.accent : DashboardPalette.field)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .stroke(selected ? DashboardPalette.accent : DashboardPalette.separator, lineWidth: 1)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(model.isBusy)
+                    }
+                }
+
+                HStack(spacing: 7) {
+                    Image(systemName: "network")
+                    Text(controllerText)
+                        .textSelection(.enabled)
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(DashboardPalette.tertiary)
+            }
+        }
+    }
+
+    private var proxyWorkspace: some View {
+        HStack(alignment: .top, spacing: DashboardLayout.sectionSpacing) {
+            DashboardPanel {
+                VStack(alignment: .leading, spacing: 12) {
+                    DashboardPanelHeader(title: "代理组", trailing: "\(groups.count) groups")
+
+                    if groups.isEmpty {
+                        emptyState(
+                            icon: "arrow.triangle.branch",
+                            title: "尚未读取到代理组",
+                            detail: "确认 Core 正在运行，并检查 Controller URL 与 Core Secret。"
+                        )
+                    } else {
+                        LazyVStack(spacing: 6) {
+                            ForEach(groups) { group in
+                                groupRow(group)
+                            }
+                        }
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Button {
+                        Task {
+                            await model.fetchProxies()
+                            normalizeSelection()
+                        }
+                    } label: {
+                        DashboardBusyLabel(
+                            title: "刷新代理",
+                            busyTitle: "刷新中…",
+                            isBusy: model.activeOperation == .fetchProxies
+                        )
+                    }
+                    .buttonStyle(DashboardActionButtonStyle(busy: model.activeOperation == .fetchProxies))
+                    .disabled(model.isBusy && model.activeOperation != .fetchProxies)
+                }
+                .frame(maxWidth: .infinity, minHeight: 430, alignment: .topLeading)
+            }
+            .frame(width: 310)
+
+            DashboardPanel {
+                if let group = selectedGroup {
+                    groupDetail(group)
+                        .frame(maxWidth: .infinity, minHeight: 430, alignment: .topLeading)
+                } else {
+                    emptyState(
+                        icon: "point.3.connected.trianglepath.dotted",
+                        title: "请选择代理组",
+                        detail: "从左侧选择一个代理组查看并切换详细代理。"
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 430)
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    private func groupRow(_ group: MihomoProxy) -> some View {
+        let selected = selectedGroupName == group.name
+        return Button {
+            selectedGroupName = group.name
+            searchText = ""
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Text(group.name)
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    Text(group.type)
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundStyle(selected ? Color.white.opacity(0.8) : DashboardPalette.tertiary)
+                }
+
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(group.alive == false ? DashboardPalette.red : DashboardPalette.green)
+                        .frame(width: 6, height: 6)
+                    Text(group.now ?? "未选择")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(selected ? Color.white.opacity(0.88) : DashboardPalette.secondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 6)
+                    Text("\(group.all.count)")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(selected ? Color.white.opacity(0.75) : DashboardPalette.tertiary)
+                }
+            }
+            .padding(.horizontal, 11)
+            .frame(maxWidth: .infinity)
+            .frame(height: 58)
+            .background(selected ? DashboardPalette.accent : DashboardPalette.field.opacity(0.7))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(selected ? DashboardPalette.accent : DashboardPalette.separator, lineWidth: 1)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func groupDetail(_ group: MihomoProxy) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(group.name)
+                        .font(.system(size: 18, weight: .bold))
+                    HStack(spacing: 8) {
+                        detailBadge(group.type, accent: false)
+                        detailBadge(group.isSelectableGroup ? "可切换" : "自动策略", accent: group.isSelectableGroup)
+                        if let now = group.now {
+                            detailBadge("当前 · \(now)", accent: true)
+                        }
+                    }
+                }
+                Spacer(minLength: 12)
+                Text("\(filteredMembers.count) / \(group.all.count) 个代理")
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(DashboardPalette.tertiary)
+            }
+
+            TextField("筛选代理…", text: $searchText)
+                .textFieldStyle(DashboardTextFieldStyle())
+
+            Rectangle()
+                .fill(DashboardPalette.separator)
+                .frame(height: 1)
+
+            if filteredMembers.isEmpty {
+                emptyState(icon: "magnifyingglass", title: "没有匹配的代理", detail: "调整筛选关键字后重试。")
+                    .frame(maxWidth: .infinity, minHeight: 250)
+            } else {
+                LazyVStack(spacing: 7) {
+                    ForEach(filteredMembers, id: \.self) { name in
+                        proxyRow(name: name, group: group)
+                    }
+                }
+            }
+        }
+    }
+
+    private func proxyRow(name: String, group: MihomoProxy) -> some View {
+        let proxy = proxyByName[name]
+        let selected = group.now == name
+        let operation = AppOperation.selectProxy(group: group.name, proxy: name)
+        let busy = model.activeOperation == operation
+
+        return Button {
+            guard group.isSelectableGroup, !selected else { return }
+            Task { await model.selectProxy(name, in: group.name) }
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(selected ? DashboardPalette.accent : DashboardPalette.field)
+                    if busy {
+                        ProgressView()
+                            .controlSize(.mini)
+                            .tint(.white)
+                    } else if selected {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.white)
+                    } else {
+                        Circle()
+                            .fill(proxy?.alive == false ? DashboardPalette.red : DashboardPalette.green)
+                            .frame(width: 7, height: 7)
+                    }
+                }
+                .frame(width: 24, height: 24)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(name)
+                        .font(.system(size: 12.5, weight: selected ? .bold : .semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    HStack(spacing: 9) {
+                        Text(proxy?.type ?? "Unknown")
+                        capabilityText("UDP", enabled: proxy?.udp)
+                        capabilityText("XUDP", enabled: proxy?.xudp)
+                        capabilityText("TFO", enabled: proxy?.tfo)
+                    }
+                    .font(.system(size: 9.5, weight: .medium))
+                    .foregroundStyle(DashboardPalette.tertiary)
+                }
+
+                Spacer(minLength: 12)
+
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text(delayText(proxy?.latestDelay))
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(delayColor(proxy?.latestDelay, alive: proxy?.alive))
+                    Text(selected ? "当前使用" : (group.isSelectableGroup ? "点击切换" : "自动选择"))
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(DashboardPalette.tertiary)
+                }
+            }
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity)
+            .frame(height: 58)
+            .background(selected ? DashboardPalette.accent.opacity(0.09) : DashboardPalette.field.opacity(0.52))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(selected ? DashboardPalette.accent.opacity(0.58) : DashboardPalette.separator, lineWidth: 1)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(model.isBusy || !group.isSelectableGroup || selected)
+        .opacity(group.isSelectableGroup || selected ? 1 : 0.86)
+    }
+
+    private var groups: [MihomoProxy] {
+        model.proxies.filter { $0.isGroup && $0.hidden != true }
+    }
+
+    private var groupNames: [String] { groups.map(\.name) }
+
+    private var selectedGroup: MihomoProxy? {
+        guard let selectedGroupName else { return groups.first }
+        return groups.first(where: { $0.name == selectedGroupName }) ?? groups.first
+    }
+
+    private var proxyByName: [String: MihomoProxy] {
+        model.proxies.reduce(into: [:]) { result, proxy in
+            result[proxy.name] = proxy
+        }
+    }
+
+    private var filteredMembers: [String] {
+        guard let group = selectedGroup else { return [] }
+        let keyword = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !keyword.isEmpty else { return group.all }
+        return group.all.filter { $0.lowercased().contains(keyword) }
+    }
+
+    private var controllerText: String {
+        let value = model.selectedProfile?.coreControllerURL.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return value.isEmpty ? "请先在设置中配置 Direct Core Controller URL" : value
+    }
+
+    private var controllerConfigured: Bool {
+        !controllerText.hasPrefix("请先")
+    }
+
+    private var loadTaskID: String {
+        "\(model.selectedProfileID?.uuidString ?? "none")|\(model.selectedSection.rawValue)"
+    }
+
+    private func normalizeSelection() {
+        if let selectedGroupName, groupNames.contains(selectedGroupName) { return }
+        self.selectedGroupName = groups.first?.name
+    }
+
+    private func capabilityText(_ name: String, enabled: Bool?) -> some View {
+        Group {
+            if enabled == true {
+                Text(name)
+            }
+        }
+    }
+
+    private func detailBadge(_ text: String, accent: Bool) -> some View {
+        Text(text)
+            .font(.system(size: 9.5, weight: .semibold))
+            .foregroundStyle(accent ? DashboardPalette.accent : DashboardPalette.secondary)
+            .padding(.horizontal, 8)
+            .frame(height: 23)
+            .background((accent ? DashboardPalette.accent : DashboardPalette.field).opacity(accent ? 0.12 : 0.8))
+            .clipShape(Capsule())
+            .overlay {
+                Capsule().stroke(accent ? DashboardPalette.accent.opacity(0.32) : DashboardPalette.separator, lineWidth: 1)
+            }
+    }
+
+    private func delayText(_ delay: Int?) -> String {
+        guard let delay, delay > 0 else { return "-- ms" }
+        return "\(delay) ms"
+    }
+
+    private func delayColor(_ delay: Int?, alive: Bool?) -> Color {
+        if alive == false { return DashboardPalette.red }
+        guard let delay, delay > 0 else { return DashboardPalette.tertiary }
+        if delay < 150 { return DashboardPalette.green }
+        if delay < 350 { return Color.orange }
+        return DashboardPalette.red
+    }
+
+    private func emptyState(icon: String, title: String, detail: String) -> some View {
+        VStack(spacing: 9) {
+            Image(systemName: icon)
+                .font(.system(size: 26, weight: .medium))
+                .foregroundStyle(DashboardPalette.tertiary)
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(DashboardPalette.secondary)
+            Text(detail)
+                .font(.system(size: 10.5))
+                .foregroundStyle(DashboardPalette.tertiary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(20)
     }
 }

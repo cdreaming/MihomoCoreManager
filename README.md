@@ -1,6 +1,28 @@
 # Mihomo Core Manager for macOS
 
-基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.2.2 (build 122)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.2.3 (build 123)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+
+## v1.2.3
+
+- **认证修复**：Controller Secret 与原 Core Secret 分离，分别保存到 Keychain；未配置 Controller Secret 时兼容复用 Core Secret，并支持 Mihomo `secret: ''`。
+v1.2.3 在 v1.2.2 稳定发布基线上新增 Mihomo Core 代理切换能力：
+
+- 新增侧栏“代理切换”页，直接连接当前服务器配置的 **Direct Core Controller URL**，使用同一份 Core Secret 进行 Bearer 鉴权。
+- 新增运行模式切换：**规则（rule）/ 全局（global）/ 直连（direct）**。
+- 读取并展示代理组、当前选中代理与组内详细代理；支持代理名称筛选。
+- 详细代理展示类型、存活状态、最近延迟以及 UDP / XUDP / TFO 能力信息。
+- 支持 Selector / URLTest / Fallback 类型代理组的节点切换，并在切换后自动刷新当前选择。
+- 原生 SwiftUI 与 portable arm64 安装版同步实现；portable 增加 Controller 模式、代理读取和代理选择回归测试。
+- 版本升级为 v1.2.3 / build 123。
+
+### v1.2.3 Direct Core Controller API
+
+| 功能 | Mihomo Core API | 客户端行为 |
+| --- | --- | --- |
+| 读取运行模式 | `GET /configs` | 读取 `mode` |
+| 切换运行模式 | `PATCH /configs` | 写入 `rule` / `global` / `direct` |
+| 读取代理 | `GET /proxies` | 展示代理组与详细代理 |
+| 切换代理 | `PUT /proxies/{group}` | 写入目标代理 `name` |
 
 ## v1.2.2
 

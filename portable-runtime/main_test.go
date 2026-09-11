@@ -29,6 +29,145 @@ func TestHTTPGate(t *testing.T) {
 	}
 }
 
+func TestJoinProxyURLEscapesGroupAsSinglePathSegment(t *testing.T) {
+	got, err := joinProxyURL("https://example.com/controller", "HK / Auto", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "https://example.com/controller/proxies/HK%20%2F%20Auto" {
+		t.Fatalf("unexpected proxy URL: %s", got)
+	}
+}
+
+func TestDirectControllerPrefersControllerSecret(t *testing.T) {
+	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer controller-secret" {
+			t.Fatalf("expected controller bearer secret, got %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"mode":"rule"}`))
+	}))
+	defer controller.Close()
+
+	state := &appState{
+		path: filepath.Join(t.TempDir(), "settings.json"),
+		settings: Settings{
+			SelectedID: "test",
+			Profiles: []Profile{{
+				ID: "test", Name: "test", ManagementURL: controller.URL,
+				CoreControllerURL: controller.URL, AllowInsecureHTTP: true,
+			}},
+		},
+		client:                controller.Client(),
+		secretCache:           map[string]string{"test": "management-secret"},
+		controllerSecretCache: map[string]string{"test": "controller-secret"},
+	}
+
+	rec := httptest.NewRecorder()
+	state.handleProxyMode(rec, httptest.NewRequest(http.MethodGet, "/local/proxy-mode", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"mode":"rule"`) {
+		t.Fatalf("controller secret request failed: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDirectControllerAllowsNoAuth(t *testing.T) {
+	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Fatalf("expected no Authorization header, got %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"mode":"direct"}`))
+	}))
+	defer controller.Close()
+
+	state := &appState{
+		path: filepath.Join(t.TempDir(), "settings.json"),
+		settings: Settings{
+			SelectedID: "test",
+			Profiles: []Profile{{
+				ID: "test", Name: "test", ManagementURL: controller.URL,
+				CoreControllerURL: controller.URL, AllowInsecureHTTP: true,
+			}},
+		},
+		client:                controller.Client(),
+		secretCache:           map[string]string{"test": ""},
+		controllerSecretCache: map[string]string{"test": ""},
+	}
+
+	rec := httptest.NewRecorder()
+	state.handleProxyMode(rec, httptest.NewRequest(http.MethodGet, "/local/proxy-mode", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"mode":"direct"`) {
+		t.Fatalf("no-auth controller request failed: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestProxyControllerModeListAndSelection(t *testing.T) {
+	mode := "rule"
+	selected := "A"
+	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer secret" {
+			t.Fatalf("missing bearer secret: %q", r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/configs" && r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`{"mode":"` + mode + `"}`))
+		case r.URL.Path == "/configs" && r.Method == http.MethodPatch:
+			var in map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&in)
+			mode = in["mode"]
+			w.WriteHeader(http.StatusNoContent)
+		case r.URL.Path == "/proxies" && r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`{"proxies":{"GLOBAL":{"name":"GLOBAL","type":"Selector","now":"` + selected + `","all":["A","B"]},"A":{"name":"A","type":"Shadowsocks","alive":true},"B":{"name":"B","type":"Shadowsocks","alive":true}}}`))
+		case r.URL.Path == "/proxies/GLOBAL" && r.Method == http.MethodPut:
+			var in map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&in)
+			selected = in["name"]
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer controller.Close()
+
+	state := &appState{
+		path: filepath.Join(t.TempDir(), "settings.json"),
+		settings: Settings{
+			SelectedID: "test",
+			Profiles: []Profile{{
+				ID: "test", Name: "test", ManagementURL: controller.URL,
+				CoreControllerURL: controller.URL, AllowInsecureHTTP: true,
+			}},
+		},
+		client:      controller.Client(),
+		secretCache: map[string]string{"test": "secret"},
+	}
+
+	rec := httptest.NewRecorder()
+	state.handleProxyMode(rec, httptest.NewRequest(http.MethodGet, "/local/proxy-mode", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"mode":"rule"`) {
+		t.Fatalf("mode GET failed: %d %s", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	state.handleProxyMode(rec, httptest.NewRequest(http.MethodPost, "/local/proxy-mode", strings.NewReader(`{"mode":"global"}`)))
+	if rec.Code != http.StatusOK || mode != "global" {
+		t.Fatalf("mode POST failed: %d mode=%s body=%s", rec.Code, mode, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	state.handleProxies(rec, httptest.NewRequest(http.MethodGet, "/local/proxies", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"GLOBAL"`) {
+		t.Fatalf("proxy list failed: %d %s", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	state.handleProxySelect(rec, httptest.NewRequest(http.MethodPost, "/local/proxy-select", strings.NewReader(`{"group":"GLOBAL","name":"B"}`)))
+	if rec.Code != http.StatusOK || selected != "B" {
+		t.Fatalf("proxy select failed: %d selected=%s body=%s", rec.Code, selected, rec.Body.String())
+	}
+}
+
 func TestMenuPreferences(t *testing.T) {
 	state := &appState{
 		path: filepath.Join(t.TempDir(), "settings.json"),
@@ -271,8 +410,8 @@ func TestPortableInteractionRegressionV118(t *testing.T) {
 	}
 }
 
-func TestPortableVersionV122(t *testing.T) {
-	if appVersion != "1.2.2" || buildNumber != "122" {
+func TestPortableVersionV123(t *testing.T) {
+	if appVersion != "1.2.3" || buildNumber != "123" {
 		t.Fatalf("unexpected portable version/build: %s/%s", appVersion, buildNumber)
 	}
 }

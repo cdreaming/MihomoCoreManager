@@ -36,6 +36,14 @@ if portable.is_file() and not re.search(rf'appVersion\s*=\s*\"{re.escape(version
 client = (root / "MihomoCoreManager/API/MihomoAPIClient.swift").read_text(encoding="utf-8")
 for endpoint in ["/api/status", "/api/action", "/api/subscriptions", "/api/logs", "/api/project-update/check", "/api/project-update/apply", "/api/project-update/log"]:
     if endpoint not in client: errors.append(f"missing API endpoint: {endpoint}")
+for marker in ["/configs", "/proxies", "proxyMode", "setProxyMode", "selectProxy", "ControllerProxiesResponse"]:
+    if marker not in client:
+        errors.append(f"native v1.2.3 proxy API gate missing: {marker}")
+models_auth = (root / "MihomoCoreManager/Models.swift").read_text(encoding="utf-8")
+settings_auth = (root / "MihomoCoreManager/Views/SettingsView.swift").read_text(encoding="utf-8")
+for marker in ["controllerUnauthorized", 'if !secret.isEmpty', "Controller Secret"]:
+    if marker not in client + "\n" + models_auth + "\n" + settings_auth:
+        errors.append(f"native v1.2.3 controller auth-fix gate missing: {marker}")
 if 'Authorization' not in client or 'Bearer' not in client: errors.append("Bearer authentication missing")
 if '.convertToSnakeCase' not in client: errors.append("JSON POST encoding must preserve v4 snake_case keys")
 for marker in ["shouldRetrySubscriptionApplyWithRestart", "热重载超时", "action(.stop", "action(.start", "operationFailed"]:
@@ -47,7 +55,7 @@ for marker in ["图标", "状态", "网速", "仅图标", "启动", "停止", "�
     if marker not in menu: errors.append(f"menu function missing: {marker}")
 
 settings = (root / "MihomoCoreManager/Views/SettingsView.swift").read_text(encoding="utf-8")
-for marker in ["Management URL", "Core Secret", "Direct Core Controller URL", "config.yaml path", "MetaCubeXD URL", "允许不安全 HTTP"]:
+for marker in ["Management URL", "Core Secret", "Controller Secret", "Direct Core Controller URL", "config.yaml path", "MetaCubeXD URL", "允许不安全 HTTP"]:
     if marker not in settings: errors.append(f"settings field missing: {marker}")
 if "NSPasteboard.general.string" not in settings or "doc.on.clipboard" not in settings:
     errors.append("Core Secret explicit paste support missing from native settings")
@@ -63,6 +71,18 @@ for marker in ["'粘贴','paste:','v'", "'复制','copy:','c'", "'全选','selec
 for marker in ["Mihomo Core 管理面板", "实时流量", "快速控制", "brand-mark", "trafficChart"]:
     if marker not in portable_ui:
         errors.append(f"v4 dashboard UI marker missing: {marker}")
+for marker in ['data-nav="proxies"', 'data-view="proxies"', "规则", "全局", "直连", "proxyGroups", "switchProxy"]:
+    if marker not in portable_ui:
+        errors.append(f"portable v1.2.3 proxy UI gate missing: {marker}")
+for marker in ["/local/proxy-mode", "/local/proxies", "/local/proxy-select", "handleProxyMode", "handleProxies", "handleProxySelect", "joinProxyURL"]:
+    if marker not in portable_main:
+        errors.append(f"portable v1.2.3 proxy API gate missing: {marker}")
+for marker in ["controllerKeychainService", "controllerSecretFor", "ControllerSecret", "/local/controller-secret/clear"]:
+    if marker not in portable_main:
+        errors.append(f"portable v1.2.3 controller auth-fix gate missing: {marker}")
+for marker in ["pControllerSecret", "pasteControllerSecret", "clearControllerSecret"]:
+    if marker not in portable_ui:
+        errors.append(f"portable v1.2.3 controller-secret UI gate missing: {marker}")
 for marker in ["/local/menu-preferences", "显示图标", "显示运行状态", "显示网速", "仅显示图标", "scheduledTimerWithTimeIntervalTargetSelectorUserInfoRepeats(1.2"]:
     if marker not in portable_main:
         errors.append(f"portable menu-bar status/speed gate missing: {marker}")
@@ -102,9 +122,15 @@ app_swift = (root / "MihomoCoreManager/MihomoCoreManagerApp.swift").read_text(en
 for marker in ["case settings", 'case .settings: "设置"']:
     if marker not in models:
         errors.append(f"native Settings tab model gate missing: {marker}")
+for marker in ["case proxies", 'case .proxies: "代理切换"', "MihomoRunMode", "MihomoProxy"]:
+    if marker not in models:
+        errors.append(f"native v1.2.3 proxy model gate missing: {marker}")
 for marker in ["persistentDetail", "persistentPage(.settings)", "DashboardSettingsView()"]:
     if marker not in content:
         errors.append(f"native persistent tab/settings gate missing: {marker}")
+for marker in ["persistentPage(.proxies)", "struct ProxiesView", "运行模式", "代理组", "详细代理", "setProxyMode", "selectProxy"]:
+    if marker not in content:
+        errors.append(f"native v1.2.3 proxy UI gate missing: {marker}")
 for marker in [
     "WindowBehaviorConfigurator",
     "window.isMovable = true",
@@ -127,6 +153,9 @@ if "miniBrandMark" in content or 'Text("M")\n                                   
 for marker in ["LiveStatusStore", "secretCache", "ensureSubscriptionsLoaded", "ensureLogsLoaded"]:
     if marker not in app_model:
         errors.append(f"native performance gate missing: {marker}")
+for marker in ["proxyMode", "proxies", "ensureProxiesLoaded", "fetchProxies", "setProxyMode", "selectProxy"]:
+    if marker not in app_model:
+        errors.append(f"native v1.2.3 proxy operation gate missing: {marker}")
 if "guard model.selectedSection == .subscriptions" not in subscriptions_view:
     errors.append("subscriptions must load only when its tab becomes active")
 if "guard model.selectedSection == .logs" not in logs_view:
