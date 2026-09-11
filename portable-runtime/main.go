@@ -16,14 +16,15 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
 const (
-	appVersion                = "1.2.3"
-	buildNumber               = "123"
+	appVersion                = "1.2.4"
+	buildNumber               = "124"
 	keychainService           = "cc.kkr.MihomoCoreManager"
 	controllerKeychainService = "cc.kkr.MihomoCoreManager.controller-secret"
 )
@@ -70,6 +71,18 @@ type appState struct {
 
 	controllerSecretMu    sync.RWMutex
 	controllerSecretCache map[string]string
+
+	proxyDelayMu    sync.RWMutex
+	proxyDelayCache map[string]map[string]int
+
+	proxyMenuMu         sync.RWMutex
+	proxyMenuFetchMu    sync.Mutex
+	proxyMenuData       []byte
+	proxyMenuResponse   []byte
+	proxyMenuProfileID  string
+	proxyMenuGeneration uint64
+	proxyMenuUpdatedAt  time.Time
+	proxyMenuErr        string
 
 	statusMu        sync.RWMutex
 	statusFetchMu   sync.Mutex
@@ -118,11 +131,12 @@ func configPath() string {
 
 func loadState() *appState {
 	s := &appState{
-		path:        configPath(),
-		token:       newToken(),
-		done:        make(chan struct{}),
-		client:      &http.Client{Timeout: 45 * time.Second},
-		secretCache: make(map[string]string),
+		path:            configPath(),
+		token:           newToken(),
+		done:            make(chan struct{}),
+		client:          &http.Client{Timeout: 45 * time.Second},
+		secretCache:     make(map[string]string),
+		proxyDelayCache: make(map[string]map[string]int),
 	}
 	b, err := os.ReadFile(s.path)
 	hadShowIconPreference := false
@@ -284,6 +298,498 @@ func (s *appState) forgetControllerSecret(id string) {
 	s.controllerSecretMu.Lock()
 	delete(s.controllerSecretCache, id)
 	s.controllerSecretMu.Unlock()
+}
+
+func (s *appState) cacheProxyDelays(profileID string, delays map[string]int) {
+	s.proxyDelayMu.Lock()
+	defer s.proxyDelayMu.Unlock()
+	if s.proxyDelayCache == nil {
+		s.proxyDelayCache = make(map[string]map[string]int)
+	}
+	if s.proxyDelayCache[profileID] == nil {
+		s.proxyDelayCache[profileID] = make(map[string]int)
+	}
+	for name, delay := range delays {
+		s.proxyDelayCache[profileID][name] = delay
+	}
+}
+
+func (s *appState) proxyDelaySnapshot(profileID string) map[string]int {
+	s.proxyDelayMu.RLock()
+	defer s.proxyDelayMu.RUnlock()
+	src := s.proxyDelayCache[profileID]
+	out := make(map[string]int, len(src))
+	for name, delay := range src {
+		out[name] = delay
+	}
+	return out
+}
+
+func resolveProxyNameFromMap(proxies map[string]any, name string) string {
+	current := strings.TrimSpace(name)
+	if current == "" {
+		return current
+	}
+	visited := make(map[string]bool)
+	for {
+		raw, ok := proxies[current]
+		if !ok {
+			return current
+		}
+		proxy, ok := raw.(map[string]any)
+		if !ok {
+			return current
+		}
+		next, _ := proxy["now"].(string)
+		next = strings.TrimSpace(next)
+		if next == "" || next == current || visited[current] {
+			return current
+		}
+		if _, exists := proxies[next]; !exists {
+			return current
+		}
+		visited[current] = true
+		current = next
+	}
+}
+
+func (s *appState) resolveProxyNameFromCachedMenu(name string) string {
+	s.proxyMenuMu.RLock()
+	data := append([]byte(nil), s.proxyMenuData...)
+	s.proxyMenuMu.RUnlock()
+	if len(data) == 0 {
+		return strings.TrimSpace(name)
+	}
+	var payload map[string]any
+	if json.Unmarshal(data, &payload) != nil {
+		return strings.TrimSpace(name)
+	}
+	proxies, _ := payload["proxies"].(map[string]any)
+	return resolveProxyNameFromMap(proxies, name)
+}
+
+func (s *appState) controllerSecret(profile Profile) string {
+	secret := s.controllerSecretFor(profile.ID)
+	if secret == "" {
+		secret = s.secretFor(profile.ID)
+	}
+	return secret
+}
+
+func intFromJSONValue(value any) (int, bool) {
+	switch v := value.(type) {
+	case float64:
+		return int(v), true
+	case float32:
+		return int(v), true
+	case int:
+		return v, true
+	case int64:
+		return int(v), true
+	case json.Number:
+		n, err := v.Int64()
+		return int(n), err == nil
+	case string:
+		n, err := strconv.Atoi(strings.TrimSpace(v))
+		return n, err == nil
+	default:
+		return 0, false
+	}
+}
+
+func latestDelayFromSamples(raw any) (delay int, stamp string, found bool) {
+	samples, isArray := raw.([]any)
+	if !isArray || len(samples) == 0 {
+		return 0, "", false
+	}
+	for _, item := range samples {
+		sample, isMap := item.(map[string]any)
+		if !isMap {
+			continue
+		}
+		d, hasDelay := intFromJSONValue(sample["delay"])
+		if !hasDelay {
+			continue
+		}
+		t, _ := sample["time"].(string)
+		if !found || t >= stamp {
+			delay, stamp, found = d, t, true
+		}
+	}
+	return
+}
+
+func latencyFromExtraValue(raw any) (delay int, stamp string, found bool) {
+	// Current Mihomo uses:
+	// extra[url] = {"alive": true, "history": [{time, delay}, ...]}
+	// Keep compatibility with older/third-party implementations that may expose
+	// the history array directly.
+	if extra, ok := raw.(map[string]any); ok {
+		return latestDelayFromSamples(extra["history"])
+	}
+	return latestDelayFromSamples(raw)
+}
+
+func latencyFromProxyObject(proxy map[string]any) (int, bool) {
+	// Match MetaCubeXD's current semantics: delay==0 means NOT_CONNECTED for a
+	// particular test URL. It must not hide a successful (>0) reading under
+	// another URL. When several positive readings exist, choose the newest one
+	// so Go map iteration order never affects the displayed latency.
+	var positiveDelay int
+	var positiveStamp string
+	var hasPositive bool
+	var fallbackDelay int
+	var fallbackStamp string
+	var hasFallback bool
+
+	consider := func(d int, stamp string) {
+		if d > 0 {
+			if !hasPositive || stamp >= positiveStamp {
+				positiveDelay, positiveStamp, hasPositive = d, stamp, true
+			}
+			return
+		}
+		if !hasFallback || stamp >= fallbackStamp {
+			fallbackDelay, fallbackStamp, hasFallback = d, stamp, true
+		}
+	}
+
+	if rawExtra, ok := proxy["extra"].(map[string]any); ok {
+		for _, rawValue := range rawExtra {
+			if d, stamp, has := latencyFromExtraValue(rawValue); has {
+				consider(d, stamp)
+			}
+		}
+	}
+
+	if d, stamp, has := latestDelayFromSamples(proxy["history"]); has {
+		consider(d, stamp)
+	}
+
+	if hasPositive {
+		return positiveDelay, true
+	}
+	return fallbackDelay, hasFallback
+}
+
+func mergeProviderProxyPayload(proxyData, providerData []byte) ([]byte, error) {
+	var payload map[string]any
+	if err := json.Unmarshal(proxyData, &payload); err != nil {
+		return nil, err
+	}
+	proxies, ok := payload["proxies"].(map[string]any)
+	if !ok {
+		return nil, errors.New("Controller /proxies 响应缺少 proxies")
+	}
+
+	if len(providerData) == 0 {
+		return json.Marshal(payload)
+	}
+
+	var providerPayload map[string]any
+	if err := json.Unmarshal(providerData, &providerPayload); err != nil {
+		return json.Marshal(payload)
+	}
+	providers, _ := providerPayload["providers"].(map[string]any)
+
+	for providerName, rawProvider := range providers {
+		provider, ok := rawProvider.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		// MetaCubeXD fills a group test URL from its matching provider when the
+		// group object omits testUrl.
+		if rawGroup, exists := proxies[providerName]; exists {
+			if group, ok := rawGroup.(map[string]any); ok {
+				testURL, _ := group["testUrl"].(string)
+				if strings.TrimSpace(testURL) == "" {
+					if inherited, _ := provider["testUrl"].(string); inherited != "" {
+						group["testUrl"] = inherited
+					}
+				}
+				if _, exists := group["expectedStatus"]; !exists {
+					if expected, ok := provider["expectedStatus"]; ok {
+						group["expectedStatus"] = expected
+					}
+				}
+			}
+		}
+
+		nodes, _ := provider["proxies"].([]any)
+		for _, rawNode := range nodes {
+			node, ok := rawNode.(map[string]any)
+			if !ok {
+				continue
+			}
+			name, _ := node["name"].(string)
+			name = strings.TrimSpace(name)
+			if name == "" {
+				continue
+			}
+			if _, exists := proxies[name]; exists {
+				continue
+			}
+
+			// Provider-only leaf nodes are the important case: a group can list
+			// them in `all` even though /proxies has no object for that name.
+			copyNode := make(map[string]any, len(node)+1)
+			for key, value := range node {
+				copyNode[key] = value
+			}
+			copyNode["provider-name"] = providerName
+			proxies[name] = copyNode
+		}
+	}
+	return json.Marshal(payload)
+}
+
+func (s *appState) fetchMergedProxyPayloadFresh() ([]byte, int, error) {
+	profile, err := s.current()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	proxyData, code, err := s.remote(http.MethodGet, "/proxies", nil, nil, true)
+	if err != nil {
+		return nil, code, err
+	}
+
+	// Provider details are best-effort for backward compatibility, but current
+	// Mihomo + MetaCubeXD depend on them to populate provider-only leaf nodes.
+	providerData, _, providerErr := s.remote(http.MethodGet, "/providers/proxies", nil, nil, true)
+	if providerErr == nil {
+		if merged, mergeErr := mergeProviderProxyPayload(proxyData, providerData); mergeErr == nil {
+			proxyData = merged
+		}
+	}
+
+	decorated, decorateErr := s.decorateProxyPayload(profile.ID, proxyData)
+	if decorateErr == nil {
+		proxyData = decorated
+	}
+	return proxyData, code, nil
+}
+
+func (s *appState) staleProxyPayload(profileID string, reason error) ([]byte, bool) {
+	// First prefer the in-memory snapshot because it is guaranteed to belong to
+	// the currently selected profile when proxyMenuProfileID matches.
+	s.proxyMenuMu.RLock()
+	memoryProfileID := s.proxyMenuProfileID
+	memoryData := append([]byte(nil), s.proxyMenuData...)
+	s.proxyMenuMu.RUnlock()
+
+	var payload map[string]any
+	if memoryProfileID == profileID && len(memoryData) > 0 && json.Unmarshal(memoryData, &payload) == nil {
+		payload["_stale"] = true
+		payload["_warning"] = "Controller 暂时不可达，正在显示最近一次成功的代理数据。"
+		if reason != nil {
+			payload["_staleReason"] = reason.Error()
+		}
+		if encoded, err := json.Marshal(payload); err == nil {
+			return encoded, true
+		}
+	}
+
+	// The portable tray snapshot survives transient tunnel outages and process
+	// restarts. Reuse it only when the embedded profile ID matches.
+	fileData, err := os.ReadFile(s.proxyMenuFilePath())
+	if err != nil || len(fileData) == 0 {
+		return nil, false
+	}
+	payload = nil
+	if json.Unmarshal(fileData, &payload) != nil {
+		return nil, false
+	}
+	snapshotProfileID, _ := payload["_profileID"].(string)
+	if snapshotProfileID != profileID {
+		return nil, false
+	}
+	payload["_stale"] = true
+	payload["_warning"] = "Controller 暂时不可达，正在显示最近一次成功的代理数据。"
+	if reason != nil {
+		payload["_staleReason"] = reason.Error()
+	}
+	if encoded, err := json.Marshal(payload); err == nil {
+		return encoded, true
+	}
+	return nil, false
+}
+
+func (s *appState) fetchMergedProxyPayload() ([]byte, int, error) {
+	profile, err := s.current()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	data, code, err := s.fetchMergedProxyPayloadFresh()
+	if err == nil {
+		return data, code, nil
+	}
+
+	// A temporary Cloudflare/Tunnel/gateway failure should not blank the whole
+	// proxy page if we already have a known-good snapshot.
+	if isTransientGatewayStatus(code) || code == 0 {
+		if stale, ok := s.staleProxyPayload(profile.ID, err); ok {
+			return stale, http.StatusOK, nil
+		}
+	}
+	return nil, code, err
+}
+
+func (s *appState) decorateProxyPayload(profileID string, data []byte) ([]byte, error) {
+	var payload map[string]any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil, err
+	}
+	proxies, ok := payload["proxies"].(map[string]any)
+	if !ok {
+		return nil, errors.New("Controller /proxies 响应缺少 proxies")
+	}
+
+	explicit := s.proxyDelaySnapshot(profileID)
+	for name, raw := range proxies {
+		proxy, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if delay, exists := explicit[name]; exists && delay > 0 {
+			proxy["lastTestDelay"] = delay
+			continue
+		}
+		if delay, exists := latencyFromProxyObject(proxy); exists && delay > 0 {
+			proxy["lastTestDelay"] = delay
+			continue
+		}
+		if delay, exists := explicit[name]; exists {
+			proxy["lastTestDelay"] = delay
+			continue
+		}
+		if delay, exists := latencyFromProxyObject(proxy); exists {
+			// Normalize Mihomo history/extra into one display field so both the
+			// Web UI and status-bar JXA show latency consistently.
+			proxy["lastTestDelay"] = delay
+		}
+	}
+	return json.Marshal(payload)
+}
+
+func (s *appState) invalidateProxyMenuCache() {
+	s.proxyMenuMu.Lock()
+	s.proxyMenuData = nil
+	s.proxyMenuResponse = nil
+	s.proxyMenuProfileID = ""
+	s.proxyMenuUpdatedAt = time.Time{}
+	s.proxyMenuErr = ""
+	s.proxyMenuGeneration++
+	s.proxyMenuMu.Unlock()
+	s.clearProxyMenuFile()
+}
+
+func (s *appState) proxyMenuFilePath() string {
+	return filepath.Join(filepath.Dir(s.path), "Runtime", "proxies.json")
+}
+
+func (s *appState) writeProxyMenuFile(data []byte) {
+	if len(data) == 0 {
+		return
+	}
+	path := s.proxyMenuFilePath()
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0600); err == nil {
+		_ = os.Rename(tmp, path)
+	}
+}
+
+func (s *appState) clearProxyMenuFile() {
+	_ = os.Remove(s.proxyMenuFilePath())
+}
+
+func (s *appState) refreshProxyMenuCache() {
+	s.proxyMenuFetchMu.Lock()
+	defer s.proxyMenuFetchMu.Unlock()
+
+	profile, err := s.current()
+	if err != nil {
+		return
+	}
+	decorated, _, err := s.fetchMergedProxyPayloadFresh()
+	if err != nil {
+		s.proxyMenuMu.Lock()
+		s.proxyMenuErr = err.Error()
+		s.proxyMenuUpdatedAt = time.Now()
+		s.proxyMenuMu.Unlock()
+		return
+	}
+
+	s.proxyMenuMu.Lock()
+	changed := s.proxyMenuProfileID != profile.ID || string(s.proxyMenuData) != string(decorated)
+	if changed {
+		s.proxyMenuGeneration++
+	}
+	s.proxyMenuData = append(s.proxyMenuData[:0], decorated...)
+	s.proxyMenuProfileID = profile.ID
+	s.proxyMenuUpdatedAt = time.Now()
+	s.proxyMenuErr = ""
+
+	var responseCopy []byte
+	var payload map[string]any
+	if json.Unmarshal(decorated, &payload) == nil {
+		payload["ok"] = true
+		payload["generation"] = s.proxyMenuGeneration
+		payload["_profileID"] = profile.ID
+		payload["_snapshot_unix_ms"] = time.Now().UnixMilli()
+		if encoded, encodeErr := json.Marshal(payload); encodeErr == nil {
+			s.proxyMenuResponse = append(s.proxyMenuResponse[:0], encoded...)
+			responseCopy = append(responseCopy, encoded...)
+		}
+	}
+	s.proxyMenuMu.Unlock()
+	s.writeProxyMenuFile(responseCopy)
+}
+
+func (s *appState) startProxyMenuPoller() {
+	go func() {
+		s.refreshProxyMenuCache()
+		ticker := time.NewTicker(4 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				s.refreshProxyMenuCache()
+			case <-s.done:
+				return
+			}
+		}
+	}()
+}
+
+func (s *appState) handleProxyMenuCache(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonReply(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "message": "method not allowed"})
+		return
+	}
+	profile, _ := s.current()
+	s.proxyMenuMu.RLock()
+	response := append([]byte(nil), s.proxyMenuResponse...)
+	profileID := s.proxyMenuProfileID
+	generation := s.proxyMenuGeneration
+	s.proxyMenuMu.RUnlock()
+
+	if len(response) == 0 || (profile.ID != "" && profileID != profile.ID) {
+		go s.refreshProxyMenuCache()
+		jsonReply(w, http.StatusOK, map[string]any{
+			"ok": true, "generation": generation, "proxies": map[string]any{},
+		})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(response)
 }
 
 func (s *appState) invalidateStatusCache() {
@@ -485,37 +991,79 @@ func (s *appState) remote(method, path string, body []byte, query url.Values, di
 }
 
 func (s *appState) remoteRequest(method, target string, body []byte, secret string) ([]byte, int, error) {
-	req, err := http.NewRequest(method, target, strings.NewReader(string(body)))
-	if err != nil {
-		return nil, 0, err
+	maxAttempts := 1
+	if method == http.MethodGet || method == http.MethodHead {
+		maxAttempts = 3
 	}
-	if secret != "" {
-		req.Header.Set("Authorization", "Bearer "+secret)
-	}
-	req.Header.Set("Accept", "application/json")
-	if len(body) > 0 {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
-	if err != nil {
-		return nil, resp.StatusCode, err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+
+	var lastData []byte
+	var lastCode int
+	var lastErr error
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		req, err := http.NewRequest(method, target, strings.NewReader(string(body)))
+		if err != nil {
+			return nil, 0, err
+		}
+		if secret != "" {
+			req.Header.Set("Authorization", "Bearer "+secret)
+		}
+		req.Header.Set("Accept", "application/json")
+		if len(body) > 0 {
+			req.Header.Set("Content-Type", "application/json")
+		}
+
+		resp, err := s.client.Do(req)
+		if err != nil {
+			lastErr = err
+			lastCode = 0
+			if attempt < maxAttempts {
+				time.Sleep(time.Duration(attempt) * 250 * time.Millisecond)
+				continue
+			}
+			return nil, 0, err
+		}
+
+		data, readErr := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+		_ = resp.Body.Close()
+		lastData = data
+		lastCode = resp.StatusCode
+
+		if readErr != nil {
+			lastErr = readErr
+			if attempt < maxAttempts {
+				time.Sleep(time.Duration(attempt) * 250 * time.Millisecond)
+				continue
+			}
+			return data, resp.StatusCode, readErr
+		}
+
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return data, resp.StatusCode, nil
+		}
+
 		msg := remoteMessage(data, nil)
+		rawLower := strings.ToLower(string(data))
+		if resp.StatusCode == 530 &&
+			(strings.Contains(rawLower, "1033") || strings.Contains(rawLower, "cloudflare")) {
+			msg = "Cloudflare Tunnel 暂时断开（Error 1033）。Controller 主机当前不可达，请稍后重试。"
+		}
 		if msg == "未知错误" {
 			msg = strings.TrimSpace(string(data))
 			if msg == "" {
 				msg = resp.Status
 			}
 		}
-		return data, resp.StatusCode, fmt.Errorf("远端 HTTP %d：%s", resp.StatusCode, msg)
+		lastErr = fmt.Errorf("远端 HTTP %d：%s", resp.StatusCode, msg)
+
+		if attempt < maxAttempts && isTransientGatewayStatus(resp.StatusCode) {
+			time.Sleep(time.Duration(attempt) * 250 * time.Millisecond)
+			continue
+		}
+		return data, resp.StatusCode, lastErr
 	}
-	return data, resp.StatusCode, nil
+
+	return lastData, lastCode, lastErr
 }
 
 func joinProxyURL(baseRaw, group string, allowHTTP bool) (string, error) {
@@ -541,6 +1089,37 @@ func joinProxyURL(baseRaw, group string, allowHTTP bool) (string, error) {
 	u.Path = "/" + strings.Join(decodedParts, "/")
 	u.RawPath = "/" + strings.Join(escapedParts, "/")
 	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String(), nil
+}
+
+func joinGroupDelayURL(baseRaw, group string, allowHTTP bool, query url.Values) (string, error) {
+	u, err := normalizeBase(baseRaw, allowHTTP)
+	if err != nil {
+		return "", err
+	}
+	group = strings.TrimSpace(group)
+	if group == "" {
+		return "", errors.New("代理组不能为空")
+	}
+
+	baseDecoded := strings.Trim(u.Path, "/")
+	baseEscaped := strings.Trim(u.EscapedPath(), "/")
+	decodedParts := []string{}
+	escapedParts := []string{}
+	if baseDecoded != "" {
+		decodedParts = append(decodedParts, baseDecoded)
+		escapedParts = append(escapedParts, baseEscaped)
+	}
+	decodedParts = append(decodedParts, "group", group, "delay")
+	escapedParts = append(escapedParts, "group", url.PathEscape(group), "delay")
+	u.Path = "/" + strings.Join(decodedParts, "/")
+	u.RawPath = "/" + strings.Join(escapedParts, "/")
+	if query != nil {
+		u.RawQuery = query.Encode()
+	} else {
+		u.RawQuery = ""
+	}
 	u.Fragment = ""
 	return u.String(), nil
 }
@@ -682,6 +1261,8 @@ func (s *appState) handleProfileSelect(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			s.invalidateStatusCache()
+			s.invalidateProxyMenuCache()
+			go s.refreshProxyMenuCache()
 			jsonReply(w, 200, map[string]any{"ok": true})
 			return
 		}
@@ -721,6 +1302,8 @@ func (s *appState) handleProfileDelete(w http.ResponseWriter, r *http.Request) {
 	s.forgetSecret(in.ID)
 	s.forgetControllerSecret(in.ID)
 	s.invalidateStatusCache()
+	s.invalidateProxyMenuCache()
+	go s.refreshProxyMenuCache()
 	if err != nil {
 		errReply(w, err)
 		return
@@ -745,12 +1328,47 @@ func (s *appState) proxy(path string) http.HandlerFunc {
 	}
 }
 
+func isTransientGatewayStatus(code int) bool {
+	switch code {
+	case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout,
+		520, 521, 522, 523, 524, 525, 526, 530:
+		return true
+	default:
+		return false
+	}
+}
+
 func remoteMessage(data []byte, fallback error) string {
 	var payload struct {
-		Message string `json:"message"`
+		Message   string `json:"message"`
+		Title     string `json:"title"`
+		Detail    string `json:"detail"`
+		ErrorCode int    `json:"error_code"`
+		ErrorName string `json:"error_name"`
+		Retryable any    `json:"retryable"`
 	}
-	if len(data) > 0 && json.Unmarshal(data, &payload) == nil && strings.TrimSpace(payload.Message) != "" {
-		return strings.TrimSpace(payload.Message)
+	if len(data) > 0 && json.Unmarshal(data, &payload) == nil {
+		message := strings.TrimSpace(payload.Message)
+		title := strings.TrimSpace(payload.Title)
+		detail := strings.TrimSpace(payload.Detail)
+
+		if payload.ErrorCode == 1033 ||
+			strings.Contains(strings.ToLower(title), "error 1033") ||
+			strings.Contains(strings.ToLower(detail), "cloudflare tunnel") {
+			return "Cloudflare Tunnel 暂时断开（Error 1033）。Controller 主机当前不可达，请稍后重试。"
+		}
+		if message != "" {
+			return message
+		}
+		if title != "" && detail != "" {
+			return title + "：" + detail
+		}
+		if detail != "" {
+			return detail
+		}
+		if title != "" {
+			return title
+		}
 	}
 	if fallback != nil {
 		return strings.TrimSpace(fallback.Error())
@@ -807,12 +1425,12 @@ func (s *appState) handleProxyMode(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *appState) handleProxies(w http.ResponseWriter, r *http.Request) {
+func (s *appState) handleProxyGroups(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		jsonReply(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "message": "method not allowed"})
 		return
 	}
-	data, code, err := s.remote(http.MethodGet, "/proxies", nil, nil, true)
+	data, code, err := s.remote(http.MethodGet, "/group", nil, nil, true)
 	if err != nil {
 		errReply(w, err)
 		return
@@ -822,15 +1440,204 @@ func (s *appState) handleProxies(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
+func (s *appState) handleProxies(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonReply(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "message": "method not allowed"})
+		return
+	}
+	data, code, err := s.fetchMergedProxyPayload()
+	if err != nil {
+		errReply(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(code)
+	_, _ = w.Write(data)
+}
+
+type proxyDelayRequest struct {
+	Group    string `json:"group"`
+	URL      string `json:"url"`
+	Expected string `json:"expected"`
+	Timeout  int    `json:"timeout"`
+}
+
+func (s *appState) runProxyDelay(in proxyDelayRequest) (map[string]int, error) {
+	in.Group = strings.TrimSpace(in.Group)
+	if in.Group == "" {
+		return nil, errors.New("代理组不能为空")
+	}
+	profile, err := s.current()
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(profile.CoreControllerURL) == "" {
+		return nil, errors.New("未配置 Direct Core Controller URL")
+	}
+
+	testURL := strings.TrimSpace(in.URL)
+	if testURL == "" {
+		testURL = "https://www.gstatic.com/generate_204"
+	}
+	timeout := in.Timeout
+	if timeout <= 0 {
+		timeout = 5000
+	}
+	if timeout < 1000 {
+		timeout = 1000
+	}
+	if timeout > 30000 {
+		timeout = 30000
+	}
+	query := url.Values{
+		"url":     []string{testURL},
+		"timeout": []string{fmt.Sprintf("%d", timeout)},
+	}
+	if expected := strings.TrimSpace(in.Expected); expected != "" {
+		query.Set("expected", expected)
+	}
+
+	target, err := joinGroupDelayURL(profile.CoreControllerURL, in.Group, profile.AllowInsecureHTTP, query)
+	if err != nil {
+		return nil, err
+	}
+	data, code, err := s.remoteRequest(http.MethodGet, target, nil, s.controllerSecret(profile))
+	if err != nil {
+		if code == http.StatusUnauthorized {
+			return nil, errors.New("Mihomo Controller HTTP 401：认证失败。请检查 Controller Secret")
+		}
+		return nil, err
+	}
+
+	// Decode flexibly so compatible cores returning JSON numbers through a
+	// generic encoder cannot produce a false "success but no latency" state.
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, errors.New("Controller 返回了无法识别的测速结果")
+	}
+	delays := make(map[string]int, len(raw))
+	for name, value := range raw {
+		if delay, ok := intFromJSONValue(value); ok {
+			delays[name] = delay
+		}
+	}
+	if len(raw) > 0 && len(delays) == 0 {
+		return nil, errors.New("Controller 测速返回值没有可解析的延时数据")
+	}
+
+	normalized := make(map[string]int, len(delays)*2)
+	for name, delay := range delays {
+		normalized[name] = delay
+		if resolved := s.resolveProxyNameFromCachedMenu(name); resolved != "" && resolved != name {
+			normalized[resolved] = delay
+		}
+	}
+	s.cacheProxyDelays(profile.ID, normalized)
+	go s.refreshProxyMenuCache()
+	return delays, nil
+}
+
+func (s *appState) handleProxyDelay(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonReply(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "message": "method not allowed"})
+		return
+	}
+	var in proxyDelayRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
+		jsonReply(w, http.StatusBadRequest, map[string]any{"ok": false, "message": "无效请求"})
+		return
+	}
+	delays, err := s.runProxyDelay(in)
+	if err != nil {
+		errReply(w, err)
+		return
+	}
+	jsonReply(w, http.StatusOK, map[string]any{
+		"ok": true, "group": strings.TrimSpace(in.Group), "count": len(delays), "delays": delays,
+	})
+}
+
+func (s *appState) handleProxyDelayAsync(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonReply(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "message": "method not allowed"})
+		return
+	}
+	var in proxyDelayRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
+		jsonReply(w, http.StatusBadRequest, map[string]any{"ok": false, "message": "无效请求"})
+		return
+	}
+	in.Group = strings.TrimSpace(in.Group)
+	if in.Group == "" {
+		jsonReply(w, http.StatusBadRequest, map[string]any{"ok": false, "message": "代理组不能为空"})
+		return
+	}
+	go func() {
+		if _, err := s.runProxyDelay(in); err != nil {
+			log.Printf("status menu proxy delay %q: %v", in.Group, err)
+		}
+	}()
+	jsonReply(w, http.StatusAccepted, map[string]any{
+		"ok": true, "message": "已开始测速", "group": in.Group,
+	})
+}
+
+type proxySelectRequest struct {
+	Group string `json:"group"`
+	Name  string `json:"name"`
+}
+
+func (s *appState) runProxySelect(in proxySelectRequest) error {
+	in.Group = strings.TrimSpace(in.Group)
+	in.Name = strings.TrimSpace(in.Name)
+	if in.Group == "" || in.Name == "" {
+		return errors.New("代理组和代理名称不能为空")
+	}
+	profile, err := s.current()
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(profile.CoreControllerURL) == "" {
+		return errors.New("未配置 Direct Core Controller URL")
+	}
+	target, err := joinProxyURL(profile.CoreControllerURL, in.Group, profile.AllowInsecureHTTP)
+	if err != nil {
+		return err
+	}
+	body, _ := json.Marshal(map[string]string{"name": in.Name})
+	if _, code, err := s.remoteRequest(http.MethodPut, target, body, s.controllerSecret(profile)); err != nil {
+		if code == http.StatusUnauthorized {
+			return errors.New("Mihomo Controller HTTP 401：认证失败。请在设置的 Controller Secret 中填写 config.yaml 的 secret；它可以与管理面板的 Core Secret 不同")
+		}
+		return err
+	}
+	go s.refreshProxyMenuCache()
+	return nil
+}
+
 func (s *appState) handleProxySelect(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		jsonReply(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "message": "method not allowed"})
 		return
 	}
-	var in struct {
-		Group string `json:"group"`
-		Name  string `json:"name"`
+	var in proxySelectRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
+		jsonReply(w, http.StatusBadRequest, map[string]any{"ok": false, "message": "无效请求"})
+		return
 	}
+	if err := s.runProxySelect(in); err != nil {
+		errReply(w, err)
+		return
+	}
+	jsonReply(w, http.StatusOK, map[string]any{"ok": true, "group": strings.TrimSpace(in.Group), "name": strings.TrimSpace(in.Name)})
+}
+
+func (s *appState) handleProxySelectAsync(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonReply(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "message": "method not allowed"})
+		return
+	}
+	var in proxySelectRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
 		jsonReply(w, http.StatusBadRequest, map[string]any{"ok": false, "message": "无效请求"})
 		return
@@ -841,34 +1648,14 @@ func (s *appState) handleProxySelect(w http.ResponseWriter, r *http.Request) {
 		jsonReply(w, http.StatusBadRequest, map[string]any{"ok": false, "message": "代理组和代理名称不能为空"})
 		return
 	}
-	profile, err := s.current()
-	if err != nil {
-		errReply(w, err)
-		return
-	}
-	secret := s.controllerSecretFor(profile.ID)
-	if secret == "" {
-		secret = s.secretFor(profile.ID)
-	}
-	if strings.TrimSpace(profile.CoreControllerURL) == "" {
-		errReply(w, errors.New("未配置 Direct Core Controller URL"))
-		return
-	}
-	target, err := joinProxyURL(profile.CoreControllerURL, in.Group, profile.AllowInsecureHTTP)
-	if err != nil {
-		errReply(w, err)
-		return
-	}
-	body, _ := json.Marshal(map[string]string{"name": in.Name})
-	if _, code, err := s.remoteRequest(http.MethodPut, target, body, secret); err != nil {
-		if code == http.StatusUnauthorized {
-			errReply(w, errors.New("Mihomo Controller HTTP 401：认证失败。请在设置的 Controller Secret 中填写 config.yaml 的 secret；它可以与管理面板的 Core Secret 不同"))
-		} else {
-			errReply(w, err)
+	go func() {
+		if err := s.runProxySelect(in); err != nil {
+			log.Printf("status menu proxy select %q -> %q: %v", in.Group, in.Name, err)
 		}
-		return
-	}
-	jsonReply(w, http.StatusOK, map[string]any{"ok": true, "group": in.Group, "name": in.Name})
+	}()
+	jsonReply(w, http.StatusAccepted, map[string]any{
+		"ok": true, "message": "已提交线路切换", "group": in.Group, "name": in.Name,
+	})
 }
 
 func (s *appState) handleSubscriptions(w http.ResponseWriter, r *http.Request) {
@@ -1081,8 +1868,13 @@ func (s *appState) routes() http.Handler {
 	mux.HandleFunc("/local/action", s.auth(s.handleAction))
 	mux.HandleFunc("/local/reload-config", s.auth(s.handleReload))
 	mux.HandleFunc("/local/proxy-mode", s.auth(s.handleProxyMode))
+	mux.HandleFunc("/local/proxy-groups", s.auth(s.handleProxyGroups))
 	mux.HandleFunc("/local/proxies", s.auth(s.handleProxies))
+	mux.HandleFunc("/local/proxy-menu-cache", s.auth(s.handleProxyMenuCache))
+	mux.HandleFunc("/local/proxy-delay", s.auth(s.handleProxyDelay))
+	mux.HandleFunc("/local/proxy-delay-async", s.auth(s.handleProxyDelayAsync))
 	mux.HandleFunc("/local/proxy-select", s.auth(s.handleProxySelect))
+	mux.HandleFunc("/local/proxy-select-async", s.auth(s.handleProxySelectAsync))
 	mux.HandleFunc("/local/controller-secret/clear", s.auth(s.handleControllerSecretClear))
 	mux.HandleFunc("/local/subscriptions", s.auth(s.handleSubscriptions))
 	mux.HandleFunc("/local/logs", s.auth(s.proxy("/api/logs")))
@@ -1107,7 +1899,7 @@ func menuScript(base, token, statusFile string) string {
 	// JXA status item. All commands talk only to the token-protected loopback API.
 	return fmt.Sprintf(`ObjC.import('Cocoa'); ObjC.import('WebKit');
 var std = Application.currentApplication(); std.includeStandardAdditions = true;
-var BASE = %q, TOKEN = %q, STATUS_FILE = %q;
+var BASE = %q, TOKEN = %q, STATUS_FILE = %q; var PROXY_FILE = String(STATUS_FILE).replace(/status\.json$/, 'proxies.json');
 function sh(s){ return "'" + String(s).replace(/'/g, "'\\''") + "'"; }
 function request(path, method, obj, quiet){
   try {
@@ -1151,6 +1943,14 @@ function statusFromFile(){
   } catch(e) { return null; }
 }
 
+function proxyMenuFromFile(){
+  try {
+    var err=Ref(), text=$.NSString.stringWithContentsOfFileEncodingError($(PROXY_FILE),4,err);
+    if(!text) return null;
+    return JSON.parse(ObjC.unwrap(text));
+  } catch(e) { return null; }
+}
+
 // WKWebView consumes mouse events inside a full-size content view, so
 // movableByWindowBackground alone is not enough. A transparent native drag strip
 // sits over the Dashboard title bar and forwards mouse-down to NSWindow's native
@@ -1178,7 +1978,7 @@ win.center;
 function showURL(u){ try{var url=$.NSURL.URLWithString($(u));var req=$.NSURLRequest.requestWithURL(url);web.loadRequest(req);win.makeKeyAndOrderFront(null);cocoaApp.activateIgnoringOtherApps(true);}catch(e){std.displayNotification(String(e),{withTitle:'Mihomo Core Manager'});} }
 function openHash(h){ showURL(BASE+'/#'+h); }
 
-var statusItem=null, statusHeader=null, upHeader=null, downHeader=null, prefIconItem=null, prefStatusItem=null, prefSpeedItem=null, iconOnlyItem=null, startItem=null, stopItem=null, serverMenu=null, serverRoot=null;
+var statusItem=null, statusHeader=null, upHeader=null, downHeader=null, prefIconItem=null, prefStatusItem=null, prefSpeedItem=null, iconOnlyItem=null, startItem=null, stopItem=null, serverMenu=null, serverRoot=null, proxyHeader=null, proxyMenuRoots=[], proxyMenuData={}, proxyMenuGeneration=-1, proxySubmenuBuilt={}, proxyMenuTick=0;
 var showIcon=true, showStatus=true, showSpeed=true, lastRunning=false, lastReachable=false, lastUp=0, lastDown=0, lastCoreVersion='--';
 var appSymbol=null, missingSnapshotTicks=0;
 var statusOverlay=null, statusIconView=null, statusDot=null, upValueLabel=null, upUnitLabel=null, downValueLabel=null, downUnitLabel=null;
@@ -1322,20 +2122,176 @@ function rebuildServers(){
   if(serverRoot) serverRoot.title='服务器  ·  '+selectedName;
 }
 
+function samplesDelay(samples){
+  if(!Array.isArray(samples)||!samples.length) return null;
+  for(var i=samples.length-1;i>=0;i--){var d=Number((samples[i]||{}).delay);if(isFinite(d))return d;}
+  return null;
+}
+function menuExtraHistory(value){
+  if(Array.isArray(value))return value;
+  if(value&&Array.isArray(value.history))return value.history;
+  return [];
+}
+function menuResolvedProxyName(name){
+  var current=String(name||''), seen={};
+  while(current && proxyMenuData[current] && proxyMenuData[current].now && String(proxyMenuData[current].now)!==current){
+    if(seen[current])break;
+    seen[current]=true;
+    var next=String(proxyMenuData[current].now||'');
+    if(!proxyMenuData[next])break;
+    current=next;
+  }
+  return current||String(name||'');
+}
+function menuProxyDelay(p, preferredUrl){
+  if(!p) return null;
+  var failed=false;
+
+  // MetaCubeXD/Mihomo semantics: a zero is NOT_CONNECTED for that URL. Keep
+  // looking for a positive measurement from another URL before showing timeout.
+  if(Object.prototype.hasOwnProperty.call(p,'lastTestDelay')){
+    var x=Number(p.lastTestDelay);
+    if(isFinite(x)&&x>0)return x;
+    if(isFinite(x))failed=true;
+  }
+
+  if(preferredUrl&&p.extra){
+    var pd=samplesDelay(menuExtraHistory(p.extra[preferredUrl]));
+    if(pd!==null&&pd>0)return pd;
+    if(pd!==null)failed=true;
+  }
+
+  if(p.extra&&typeof p.extra==='object'){
+    var keys=Object.keys(p.extra);
+    for(var k=0;k<keys.length;k++){
+      var d=samplesDelay(menuExtraHistory(p.extra[keys[k]]));
+      if(d!==null&&d>0)return d;
+      if(d!==null)failed=true;
+    }
+  }
+
+  var legacy=samplesDelay(p.history);
+  if(legacy!==null&&legacy>0)return legacy;
+  if(legacy!==null)failed=true;
+  return failed?0:null;
+}
+function menuProxyDelayText(p, preferredUrl){
+  var d=menuProxyDelay(p,preferredUrl); if(d===null) return ''; if(d<=0) return '超时'; return d+' ms';
+}
+function proxyConfigOrderedGroups(data){
+  var groups=Object.keys(data||{}).filter(function(name){
+    var p=data[name]; return p&&Array.isArray(p.all)&&p.all.length&&p.hidden!==true;
+  });
+  var order=(data&&data.GLOBAL&&Array.isArray(data.GLOBAL.all))?data.GLOBAL.all:[], positions={};
+  order.forEach(function(name,index){positions[name]=index;});
+  groups.sort(function(a,b){
+    if(a==='GLOBAL'&&b!=='GLOBAL')return 1;
+    if(b==='GLOBAL'&&a!=='GLOBAL')return -1;
+    var ai=Object.prototype.hasOwnProperty.call(positions,a)?positions[a]:2147483647;
+    var bi=Object.prototype.hasOwnProperty.call(positions,b)?positions[b]:2147483647;
+    if(ai!==bi)return ai-bi;
+    return a.localeCompare(b);
+  });
+  return groups;
+}
+function buildProxySubmenu(sub){
+  if(!sub)return;
+  var group=ObjC.unwrap(sub.title), p=proxyMenuData[group];
+  if(!p)return;
+  var key=String(proxyMenuGeneration)+':'+group;
+  if(proxySubmenuBuilt[key])return;
+
+  while(sub.numberOfItems>0)sub.removeItemAtIndex(0);
+  var test=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('测速此组','testProxyGroupMenu:','');
+  test.target=delegate; test.representedObject=$(group); addSymbol(test,'gauge.with.dots.needle.33percent'); sub.addItem(test);
+  sub.addItem($.NSMenuItem.separatorItem);
+
+  var selectable=['selector','urltest','fallback'].indexOf(String(p.type||'').toLowerCase())>=0;
+  if(selectable){
+    (p.all||[]).forEach(function(proxyName){
+      var resolved=menuResolvedProxyName(proxyName);
+      var node=proxyMenuData[resolved]||proxyMenuData[proxyName]||{}, delay=menuProxyDelayText(node,p.testUrl||'');
+      var nodeTitle=proxyName+(delay?'  ·  '+delay:'');
+      var item=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent(nodeTitle,'selectProxyMenu:','');
+      item.target=delegate; item.representedObject=$(JSON.stringify({group:group,name:proxyName}));
+      item.state=(p.now===proxyName)?1:0;
+      sub.addItem(item);
+    });
+  }else{
+    var automatic=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('自动策略组，不支持手动选择','','');
+    automatic.enabled=false; sub.addItem(automatic);
+  }
+
+  sub.addItem($.NSMenuItem.separatorItem);
+  var open=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('打开代理切换…','proxies:','');
+  open.target=delegate; addSymbol(open,'macwindow'); sub.addItem(open);
+  proxySubmenuBuilt[key]=true;
+}
+function rebuildProxyMenus(){
+  if(!menu||!coreRoot)return;
+  // Read the Go-side atomic snapshot directly from disk. No curl, no process
+  // spawn, and no remote controller request can run on AppKit's menu event loop.
+  var data=proxyMenuFromFile(); if(!data||!data.proxies)return;
+  var generation=Number(data.generation||0);
+  if(generation===proxyMenuGeneration)return;
+
+  proxyMenuGeneration=generation;
+  proxyMenuData=data.proxies||{};
+  proxySubmenuBuilt={};
+
+  proxyMenuRoots.forEach(function(root){try{menu.removeItem(root);}catch(e){}});
+  proxyMenuRoots=[];
+
+  var groups=proxyConfigOrderedGroups(proxyMenuData);
+  var index=menu.indexOfItem(coreRoot); if(index<0)index=menu.numberOfItems;
+  groups.forEach(function(name){
+    var p=proxyMenuData[name], current=p.now||p.type||'';
+    var title=name+(current?'  ·  '+current:'');
+    var root=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent(title,'','');
+    var sub=$.NSMenu.alloc.initWithTitle(name);
+    // A one-item placeholder keeps the submenu affordance visible. Real node
+    // items are created lazily only when this one group is opened.
+    var loading=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('载入线路…','','');
+    loading.enabled=false; sub.addItem(loading); sub.delegate=delegate;
+    root.submenu=sub;
+    // No synthetic SF Symbol here: user proxy-group names often already start
+    // with a flag/emoji and the extra icon made the tray visually noisy.
+    menu.insertItemAtIndex(root,index); index++;
+    proxyMenuRoots.push(root);
+  });
+}
 ObjC.registerSubclass({name:'MihomoMenuDelegate', methods:{
 'openManager:':{types:['void',['id']],implementation:function(){showURL(BASE+'/');}},
 'refresh:':{types:['void',['id']],implementation:function(){updateStatus(false);openHash('overview');}},
-'tick:':{types:['void',['id']],implementation:function(){updateStatus(true);}},
+'tick:':{types:['void',['id']],implementation:function(){updateStatus(true);proxyMenuTick++;if(proxyMenuTick%%3===0){try{rebuildProxyMenus();}catch(e){}}}},
+'menuWillOpen:':{types:['void',['id']],implementation:function(sender){}},
+'menuNeedsUpdate:':{types:['void',['id']],implementation:function(sender){try{buildProxySubmenu(sender);}catch(e){}}},
 'toggleShowIcon:':{types:['void',['id']],implementation:function(){showIcon=!showIcon;keepMenuVisible();savePrefs();syncPrefItems();updateStatusTitle();}},
 'toggleShowStatus:':{types:['void',['id']],implementation:function(){showStatus=!showStatus;keepMenuVisible();savePrefs();syncPrefItems();updateStatusTitle();}},
 'toggleShowSpeed:':{types:['void',['id']],implementation:function(){showSpeed=!showSpeed;keepMenuVisible();savePrefs();syncPrefItems();updateStatusTitle();}},
 'iconOnly:':{types:['void',['id']],implementation:function(){showIcon=true;showStatus=false;showSpeed=false;savePrefs();syncPrefItems();updateStatusTitle();}},
-'selectProfile:':{types:['void',['id']],implementation:function(sender){var id=ObjC.unwrap(sender.representedObject);if(post('/local/profile/select',{id:id},false)){rebuildServers();updateStatus(true);openHash('overview');}}},
+'selectProfile:':{types:['void',['id']],implementation:function(sender){var id=ObjC.unwrap(sender.representedObject);if(post('/local/profile/select',{id:id},false)){proxyMenuGeneration=-1;proxySubmenuBuilt={};rebuildServers();updateStatus(true);openHash('overview');}}},
 'startCore:':{types:['void',['id']],implementation:function(){if(post('/local/action',{action:'start'},false)){updateStatus(true);}}},
 'stopCore:':{types:['void',['id']],implementation:function(){if(post('/local/action',{action:'stop'},false)){updateStatus(true);}}},
 'restartCore:':{types:['void',['id']],implementation:function(){if(post('/local/action',{action:'restart'},false)){updateStatus(true);}}},
 'reloadConfig:':{types:['void',['id']],implementation:function(){post('/local/reload-config',{},false);}},
 'applySubs:':{types:['void',['id']],implementation:function(){post('/local/action',{action:'apply_subscriptions'},false);}},
+'proxies:':{types:['void',['id']],implementation:function(){openHash('proxies');}},
+'testProxyGroupMenu:':{types:['void',['id']],implementation:function(sender){
+  var group=ObjC.unwrap(sender.representedObject), p=proxyMenuData[group]||{};
+  var d=post('/local/proxy-delay-async',{group:group,url:p.testUrl||'',expected:p.expectedStatus||'',timeout:5000},false);
+  if(d)std.displayNotification('已开始测速“'+group+'”',{withTitle:'Mihomo Core Manager'});
+}},
+'selectProxyMenu:':{types:['void',['id']],implementation:function(sender){
+  try{
+    var payload=JSON.parse(ObjC.unwrap(sender.representedObject));
+    if(post('/local/proxy-select-async',payload,false)){
+      if(proxyMenuData[payload.group])proxyMenuData[payload.group].now=payload.name;
+      proxySubmenuBuilt={};
+    }
+  }catch(e){std.displayNotification(String(e),{withTitle:'Mihomo Core Manager'});}
+}},
+
 'subscriptions:':{types:['void',['id']],implementation:function(){openHash('subscriptions');}},
 'logs:':{types:['void',['id']],implementation:function(){openHash('logs');}},
 'checkUpdate:':{types:['void',['id']],implementation:function(){openHash('updates');}},
@@ -1396,6 +2352,7 @@ addSymbol(addItem(menu,'刷新状态','refresh:','r'),'arrow.clockwise');
 serverRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('服务器  ·  未选择','', ''); serverMenu=$.NSMenu.alloc.initWithTitle('服务器'); serverRoot.submenu=serverMenu; addSymbol(serverRoot,'server.rack'); menu.addItem(serverRoot); rebuildServers();
 addSep(menu);
 
+proxyHeader=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('代理组','',''); proxyHeader.enabled=false; menu.addItem(proxyHeader);
 var coreRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('Core 控制','', ''); var coreMenu=$.NSMenu.alloc.initWithTitle('Core 控制'); coreRoot.submenu=coreMenu; addSymbol(coreRoot,'cpu'); menu.addItem(coreRoot);
 startItem=addSymbol(addItem(coreMenu,'启动 Core','startCore:',''),'play.fill');
 stopItem=addSymbol(addItem(coreMenu,'停止 Core','stopCore:',''),'stop.fill');
@@ -1416,6 +2373,8 @@ prefIconItem=addItem(displayMenu,'显示图标','toggleShowIcon:',''); prefStatu
 addSep(menu);
 addSymbol(addItem(menu,'设置…','settings:',','),'gearshape');
 addSymbol(addItem(menu,'退出 Mihomo Core Manager','quitApp:','q'),'power');
+menu.delegate=delegate;
+rebuildProxyMenus();
 statusItem.menu=menu;
 updateStatus(true);
 $.NSTimer.scheduledTimerWithTimeIntervalTargetSelectorUserInfoRepeats(1.2,delegate,'tick:',null,true);
@@ -1530,6 +2489,7 @@ func main() {
 		}
 	}()
 	s.startStatusPoller()
+	s.startProxyMenuPoller()
 	if runtime.GOOS == "darwin" {
 		if err := launchMenu(base, s); err != nil {
 			log.Printf("menu: %v", err)

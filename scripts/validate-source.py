@@ -39,6 +39,18 @@ for endpoint in ["/api/status", "/api/action", "/api/subscriptions", "/api/logs"
 for marker in ["/configs", "/proxies", "proxyMode", "setProxyMode", "selectProxy", "ControllerProxiesResponse"]:
     if marker not in client:
         errors.append(f"native v1.2.3 proxy API gate missing: {marker}")
+for marker in ["/group", "proxyGroupOrder", "testProxyGroup", "makeControllerNamedURL", "testUrl", "expectedStatus"]:
+    if marker not in client:
+        errors.append(f"native v1.2.4 proxy delay/order API gate missing: {marker}")
+for marker in ["extra: [String: MihomoProxyDelayExtra]?", "JSONSerialization.jsonObject", "number.intValue"]:
+    if marker not in client:
+        errors.append(f"native v1.2.4 latency hotfix gate missing: {marker}")
+for marker in ["/providers/proxies", "ControllerProvidersResponse", "ControllerProviderWire", "provider.proxies", "merged[name] == nil"]:
+    if marker not in client:
+        errors.append(f"native v1.2.4 provider-leaf latency gate missing: {marker}")
+for marker in ["isTransientControllerStatus", "Cloudflare Tunnel 暂时断开", "Error 1033", "maxAttempts", "Task.sleep"]:
+    if marker not in client:
+        errors.append(f"native v1.2.4 Cloudflare retry gate missing: {marker}")
 models_auth = (root / "MihomoCoreManager/Models.swift").read_text(encoding="utf-8")
 settings_auth = (root / "MihomoCoreManager/Views/SettingsView.swift").read_text(encoding="utf-8")
 for marker in ["controllerUnauthorized", 'if !secret.isEmpty', "Controller Secret"]:
@@ -53,6 +65,14 @@ for marker in ["shouldRetrySubscriptionApplyWithRestart", "热重载超时", "ac
 menu = (root / "MihomoCoreManager/Views/MenuBarView.swift").read_text(encoding="utf-8")
 for marker in ["图标", "状态", "网速", "仅图标", "启动", "停止", "重启", "重载配置", "应用订阅 + 热重载", "订阅管理…", "运行日志…", "检查项目更新", "开始项目升级", "MetaCubeXD", "设置…"]:
     if marker not in menu: errors.append(f"menu function missing: {marker}")
+for marker in ["proxyMenus", "代理组", "测速此组", "proxyGroupsInDefaultOrder", "effectiveProxyDelay", "selectProxy"]:
+    if marker not in menu:
+        errors.append(f"native v1.2.4 status-bar proxy-menu gate missing: {marker}")
+for marker in ["menuProxyTitle(proxyName, group: group)", "preferredTestURL: group.testURL"]:
+    if marker not in menu:
+        errors.append(f"native v1.2.4 tray latency hotfix gate missing: {marker}")
+if 'Image(systemName: "point.3.connected.trianglepath.dotted")' in menu:
+    errors.append("native v1.2.4 hotfix must not add a synthetic symbol before proxy-group names")
 
 settings = (root / "MihomoCoreManager/Views/SettingsView.swift").read_text(encoding="utf-8")
 for marker in ["Management URL", "Core Secret", "Controller Secret", "Direct Core Controller URL", "config.yaml path", "MetaCubeXD URL", "允许不安全 HTTP"]:
@@ -83,6 +103,53 @@ for marker in ["controllerKeychainService", "controllerSecretFor", "ControllerSe
 for marker in ["pControllerSecret", "pasteControllerSecret", "clearControllerSecret"]:
     if marker not in portable_ui:
         errors.append(f"portable v1.2.3 controller-secret UI gate missing: {marker}")
+for marker in ["data-group-sort", "data-proxy-sort", "setGroupSort", "setProxySort", "compareQualityNames", "测速当前组", "/local/proxy-delay", "lastTestDelay"]:
+    if marker not in portable_ui:
+        errors.append(f"portable v1.2.4 proxy sort/delay UI gate missing: {marker}")
+for marker in ["proxyData?.GLOBAL?.all", "Object.values(p.extra)", "lastTestDelay=value", "proxyData[resolved].lastTestDelay=value", "latencyFromSamples", "extraHistory", "value.history", "resolvedProxyName", "latencyItem", "v>0"]:
+    if marker not in portable_ui:
+        errors.append(f"portable v1.2.4 order/latency hotfix UI gate missing: {marker}")
+for marker in ["if(data._stale)", "if(!data._stale)", "Controller 暂时不可达，正在显示最近一次代理数据", "if(proxyData?.[group])proxyData[group].now=name"]:
+    if marker not in portable_ui:
+        errors.append(f"portable v1.2.4 Cloudflare stale-data UI gate missing: {marker}")
+if "groups=await api('/local/proxy-groups')" in portable_ui:
+    errors.append("portable v1.2.4 default order must not depend on /group map iteration")
+for marker in ["/local/proxy-groups", "/local/proxy-delay", "handleProxyGroups", "handleProxyDelay", "proxyDelayCache", "joinGroupDelayURL", "lastTestDelay", "rebuildProxyMenus", "测速此组", "selectProxyMenu"]:
+    if marker not in portable_main:
+        errors.append(f"portable v1.2.4 proxy delay/status-menu gate missing: {marker}")
+for marker in [
+    "decorateProxyPayload",
+    "latencyFromProxyObject",
+    "latencyFromExtraValue",
+    "mergeProviderProxyPayload",
+    "fetchMergedProxyPayload",
+    "resolveProxyNameFromCachedMenu",
+    "/providers/proxies",
+    "menuExtraHistory",
+    "menuResolvedProxyName",
+    "proxyMenuFilePath",
+    '"Runtime", "proxies.json"',
+    "startProxyMenuPoller",
+    "proxyMenuFromFile",
+    "buildProxySubmenu",
+    "menuNeedsUpdate:",
+    "/local/proxy-delay-async",
+    "/local/proxy-select-async",
+    "proxyConfigOrderedGroups",
+    "data.GLOBAL.all",
+]:
+    if marker not in portable_main:
+        errors.append(f"portable v1.2.4 smooth-tray/latency hotfix gate missing: {marker}")
+for marker in ["isTransientGatewayStatus", "Cloudflare Tunnel 暂时断开", "Error 1033", "fetchMergedProxyPayloadFresh", "staleProxyPayload", "_stale", "_warning", "_profileID", "_snapshot_unix_ms"]:
+    if marker not in portable_main:
+        errors.append(f"portable v1.2.4 Cloudflare/stale-cache hotfix gate missing: {marker}")
+for forbidden in [
+    "var data=get('/local/proxies',true)",
+    "var data=get('/local/proxy-menu-cache',true)",
+    "addSymbol(root,'point.3.connected.trianglepath.dotted')",
+]:
+    if forbidden in portable_main:
+        errors.append(f"portable v1.2.4 hotfix forbidden tray pattern remains: {forbidden}")
 for marker in ["/local/menu-preferences", "显示图标", "显示运行状态", "显示网速", "仅显示图标", "scheduledTimerWithTimeIntervalTargetSelectorUserInfoRepeats(1.2"]:
     if marker not in portable_main:
         errors.append(f"portable menu-bar status/speed gate missing: {marker}")
@@ -125,12 +192,21 @@ for marker in ["case settings", 'case .settings: "设置"']:
 for marker in ["case proxies", 'case .proxies: "代理切换"', "MihomoRunMode", "MihomoProxy"]:
     if marker not in models:
         errors.append(f"native v1.2.3 proxy model gate missing: {marker}")
+for marker in ["ProxySortOption", "case defaultOrder", "case delay", "case quality", "case name", "testURL", "expectedStatus", "testProxyGroup"]:
+    if marker not in models:
+        errors.append(f"native v1.2.4 proxy model/sort gate missing: {marker}")
 for marker in ["persistentDetail", "persistentPage(.settings)", "DashboardSettingsView()"]:
     if marker not in content:
         errors.append(f"native persistent tab/settings gate missing: {marker}")
 for marker in ["persistentPage(.proxies)", "struct ProxiesView", "运行模式", "代理组", "详细代理", "setProxyMode", "selectProxy"]:
     if marker not in content:
         errors.append(f"native v1.2.3 proxy UI gate missing: {marker}")
+for marker in ["groupSort", "proxySort", "ProxySortPicker", "groupDetailHeader", "groupDetailToolbar", "groupMemberList", "测速当前组", "qualityLess", "groupDelayLess", "effectiveProxyDelay"]:
+    if marker not in content:
+        errors.append(f"native v1.2.4 proxy sort/delay UI gate missing: {marker}")
+for marker in ["preferredTestURL: group.testURL"]:
+    if marker not in content:
+        errors.append(f"native v1.2.4 proxy latency display hotfix missing: {marker}")
 for marker in [
     "WindowBehaviorConfigurator",
     "window.isMovable = true",
@@ -156,6 +232,18 @@ for marker in ["LiveStatusStore", "secretCache", "ensureSubscriptionsLoaded", "e
 for marker in ["proxyMode", "proxies", "ensureProxiesLoaded", "fetchProxies", "setProxyMode", "selectProxy"]:
     if marker not in app_model:
         errors.append(f"native v1.2.3 proxy operation gate missing: {marker}")
+for marker in ["proxyGroupOrder", "proxyDelayResults", "testProxyGroup", "effectiveProxyDelay", "proxyGroupsInDefaultOrder"]:
+    if marker not in app_model:
+        errors.append(f"native v1.2.4 proxy delay/order model gate missing: {marker}")
+for marker in ['name == "GLOBAL"', "GLOBAL.all", "preferredTestURL", "proxy.extra", 'lhs.name == "GLOBAL"']:
+    if marker not in app_model:
+        errors.append(f"native v1.2.4 order/latency hotfix gate missing: {marker}")
+for marker in ["resolvedProxyName", "positiveDelay", "delay > 0", "proxy.now", "positiveLatencyCandidates"]:
+    if marker not in app_model:
+        errors.append(f"native v1.2.4 provider/nested latency gate missing: {marker}")
+for marker in ["isTransientControllerError", "applyLocalProxySelection", "已保留最近一次代理与延时数据", "Controller 随后暂时断开"]:
+    if marker not in app_model:
+        errors.append(f"native v1.2.4 transient-controller fallback gate missing: {marker}")
 if "guard model.selectedSection == .subscriptions" not in subscriptions_view:
     errors.append("subscriptions must load only when its tab becomes active")
 if "guard model.selectedSection == .logs" not in logs_view:
@@ -377,6 +465,9 @@ build_release = (root / "scripts/build-release.sh").read_text(encoding="utf-8")
 release_text = workflow + "\n" + build_release
 for marker in ["macos-15", "notarytool", "productbuild", "gh release", "SHA256SUMS.txt"]:
     if marker not in release_text: errors.append(f"release gate missing: {marker}")
+for marker in ["SWIFT_ENABLE_BATCH_MODE=NO", "xcodebuild-release.log", "Xcode compiler diagnostics"]:
+    if marker not in build_release:
+        errors.append(f"Xcode compile-diagnostics gate missing: {marker}")
 
 if "run: bash scripts/build-release.sh --unsigned" not in workflow:
     errors.append("release workflow must use --unsigned by default")

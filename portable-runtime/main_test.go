@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,6 +39,473 @@ func TestJoinProxyURLEscapesGroupAsSinglePathSegment(t *testing.T) {
 		t.Fatalf("unexpected proxy URL: %s", got)
 	}
 }
+
+func TestJoinGroupDelayURLEscapesGroupAndQuery(t *testing.T) {
+	got, err := joinGroupDelayURL(
+		"https://example.com/controller",
+		"HK / Auto",
+		false,
+		url.Values{"url": []string{"https://example.com/generate_204"}, "timeout": []string{"5000"}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(got, "https://example.com/controller/group/HK%20%2F%20Auto/delay?") {
+		t.Fatalf("unexpected group delay URL: %s", got)
+	}
+	if !strings.Contains(got, "timeout=5000") || !strings.Contains(got, "url=https%3A%2F%2Fexample.com%2Fgenerate_204") {
+		t.Fatalf("group delay query missing: %s", got)
+	}
+}
+
+func TestGroupDelayCacheDecoratesSharedProxyData(t *testing.T) {
+	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.EscapedPath() == "/group/HK%20%2F%20Auto/delay" && r.Method == http.MethodGet:
+			if r.URL.Query().Get("timeout") != "5000" {
+				t.Fatalf("unexpected timeout: %s", r.URL.RawQuery)
+			}
+			_, _ = w.Write([]byte(`{"Shared-A":88,"Only-HK":143}`))
+		case r.URL.Path == "/proxies" && r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`{"proxies":{"HK / Auto":{"name":"HK / Auto","type":"Selector","now":"Shared-A","all":["Shared-A","Only-HK"]},"US":{"name":"US","type":"Selector","now":"Shared-A","all":["Shared-A"]},"Shared-A":{"name":"Shared-A","type":"Shadowsocks","alive":true},"Only-HK":{"name":"Only-HK","type":"Shadowsocks","alive":true}}}`))
+		case r.URL.Path == "/group" && r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`{"proxies":[{"name":"HK / Auto","type":"Selector","all":["Shared-A","Only-HK"]},{"name":"US","type":"Selector","all":["Shared-A"]}]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer controller.Close()
+
+	state := &appState{
+		path: filepath.Join(t.TempDir(), "settings.json"),
+		settings: Settings{
+			SelectedID: "test",
+			Profiles: []Profile{{
+				ID: "test", Name: "test", ManagementURL: controller.URL,
+				CoreControllerURL: controller.URL, AllowInsecureHTTP: true,
+			}},
+		},
+		client:          controller.Client(),
+		secretCache:     map[string]string{"test": ""},
+		proxyDelayCache: map[string]map[string]int{},
+	}
+
+	rec := httptest.NewRecorder()
+	state.handleProxyDelay(rec, httptest.NewRequest(
+		http.MethodPost,
+		"/local/proxy-delay",
+		strings.NewReader(`{"group":"HK / Auto","url":"https://example.com/generate_204","timeout":5000}`),
+	))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"Shared-A":88`) {
+		t.Fatalf("group delay failed: %d %s", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	state.handleProxies(rec, httptest.NewRequest(http.MethodGet, "/local/proxies", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("proxy fetch failed: %d %s", rec.Code, rec.Body.String())
+	}
+	var payload struct {
+		Proxies map[string]map[string]any `json:"proxies"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if got := int(payload.Proxies["Shared-A"]["lastTestDelay"].(float64)); got != 88 {
+		t.Fatalf("shared delay cache missing, got %d", got)
+	}
+	if _, ok := payload.Proxies["US"]["lastTestDelay"]; ok {
+		t.Fatal("group object should not receive a node delay unless it was measured by name")
+	}
+
+	rec = httptest.NewRecorder()
+	state.handleProxyGroups(rec, httptest.NewRequest(http.MethodGet, "/local/proxy-groups", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"HK / Auto"`) {
+		t.Fatalf("group order fetch failed: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDecorateProxyPayloadUsesExtraLatencyAndExplicitTestWins(t *testing.T) {
+	state := &appState{
+		proxyDelayCache: map[string]map[string]int{},
+	}
+	raw := []byte(`{"proxies":{"Node-A":{"name":"Node-A","history":[],"extra":{"https://a.example/test":{"alive":true,"history":[{"time":"2026-09-11T01:00:00Z","delay":180}]},"https://b.example/test":{"alive":true,"history":[{"time":"2026-09-11T02:00:00Z","delay":95}]}}}}}`)
+	decorated, err := state.decorateProxyPayload("p1", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload struct {
+		Proxies map[string]map[string]any `json:"proxies"`
+	}
+	if err := json.Unmarshal(decorated, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if got := int(payload.Proxies["Node-A"]["lastTestDelay"].(float64)); got != 95 {
+		t.Fatalf("expected newest extra latency 95ms, got %d", got)
+	}
+
+	state.cacheProxyDelays("p1", map[string]int{"Node-A": 61})
+	decorated, err = state.decorateProxyPayload("p1", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(decorated, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if got := int(payload.Proxies["Node-A"]["lastTestDelay"].(float64)); got != 61 {
+		t.Fatalf("explicit group test must override historical extra latency, got %d", got)
+	}
+}
+
+func TestStatusMenuProxyHotfixUsesCacheLazySubmenusAndAsyncActions(t *testing.T) {
+	script := menuScript("http://127.0.0.1:12345", "token", "/tmp/status.json")
+	for _, marker := range []string{
+		"PROXY_FILE",
+		"replace(/status\\.json$/, 'proxies.json')",
+		"function proxyMenuFromFile()",
+		"function proxyConfigOrderedGroups(data)",
+		"data.GLOBAL.all",
+		"function buildProxySubmenu(sub)",
+		"'menuNeedsUpdate:'",
+		"/local/proxy-delay-async",
+		"/local/proxy-select-async",
+		"proxyMenuGeneration",
+		"proxyMenuTick%3===0",
+		"menuProxyDelayText(node,p.testUrl||'')",
+		"function menuExtraHistory(value)",
+		"function menuResolvedProxyName(name)",
+		"Array.isArray(value.history)",
+		"if(isFinite(x)&&x>0)return x",
+	} {
+		if !strings.Contains(script, marker) {
+			t.Fatalf("status-menu proxy hotfix missing marker %q", marker)
+		}
+	}
+	if strings.Contains(script, "addSymbol(root,'point.3.connected.trianglepath.dotted')") {
+		t.Fatal("proxy-group root must not add a synthetic SF Symbol")
+	}
+	if strings.Contains(script, "var data=get('/local/proxies',true)") ||
+		strings.Contains(script, "var data=get('/local/proxy-menu-cache',true)") {
+		t.Fatal("status-menu refresh must not spawn curl or synchronously fetch proxy data")
+	}
+}
+
+func TestPortableProxyPageHotfixUsesGlobalOrderAndImmediateLatencyMerge(t *testing.T) {
+	page, err := assets.ReadFile("ui/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(page)
+	for _, marker := range []string{
+		"proxyData?.GLOBAL?.all",
+		"Object.values(p.extra)",
+		"function extraHistory(value)",
+		"function resolvedProxyName(name)",
+		"Array.isArray(value.history)",
+		"if(Number.isFinite(v)&&v>0)return v",
+		"proxyData[name].lastTestDelay=value",
+		"proxyData[resolved].lastTestDelay=value",
+		"if(data._stale)",
+		"Controller 暂时不可达，正在显示最近一次代理数据",
+		"if(proxyData?.[group])proxyData[group].now=name",
+		"测速完成，共 '+Object.keys(delays).length",
+	} {
+		if !strings.Contains(text, marker) {
+			t.Fatalf("portable proxy hotfix missing marker %q", marker)
+		}
+	}
+	if strings.Contains(text, "groups=await api('/local/proxy-groups')") {
+		t.Fatal("proxy page default order must not depend on Mihomo /group map iteration")
+	}
+}
+
+func TestProviderOnlyLeafNodesAreMergedWithLatency(t *testing.T) {
+	state := &appState{proxyDelayCache: map[string]map[string]int{}}
+
+	proxyData := []byte(`{
+		"proxies": {
+			"🇭🇰 香港": {
+				"name": "🇭🇰 香港",
+				"type": "Selector",
+				"now": "HK-Provider-01",
+				"all": ["HK-Provider-01"]
+			},
+			"GLOBAL": {
+				"name": "GLOBAL",
+				"type": "Selector",
+				"now": "🇭🇰 香港",
+				"all": ["🇭🇰 香港"]
+			}
+		}
+	}`)
+	providerData := []byte(`{
+		"providers": {
+			"机场订阅": {
+				"name": "机场订阅",
+				"testUrl": "https://provider.example/generate_204",
+				"proxies": [
+					{
+						"name": "HK-Provider-01",
+						"type": "VLESS",
+						"alive": true,
+						"history": [],
+						"extra": {
+							"https://provider.example/generate_204": {
+								"alive": true,
+								"history": [
+									{"time": "2026-09-11T03:00:00Z", "delay": 87}
+								]
+							}
+						}
+					}
+				]
+			}
+		}
+	}`)
+
+	merged, err := mergeProviderProxyPayload(proxyData, providerData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decorated, err := state.decorateProxyPayload("profile-1", merged)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var payload struct {
+		Proxies map[string]map[string]any `json:"proxies"`
+	}
+	if err := json.Unmarshal(decorated, &payload); err != nil {
+		t.Fatal(err)
+	}
+
+	leaf, ok := payload.Proxies["HK-Provider-01"]
+	if !ok {
+		t.Fatal("provider-only leaf node was not merged into /proxies payload")
+	}
+	if got := int(leaf["lastTestDelay"].(float64)); got != 87 {
+		t.Fatalf("provider leaf latency mismatch: got %d want 87", got)
+	}
+	if got, _ := leaf["provider-name"].(string); got != "机场订阅" {
+		t.Fatalf("provider name was not retained: %q", got)
+	}
+}
+
+func TestZeroLatencyDoesNotMaskPositiveProviderLatency(t *testing.T) {
+	proxy := map[string]any{
+		"name": "Node-A",
+		"extra": map[string]any{
+			"https://global.example/204": map[string]any{
+				"alive": false,
+				"history": []any{
+					map[string]any{"time": "2026-09-11T03:10:00Z", "delay": float64(0)},
+				},
+			},
+			"https://provider.example/204": map[string]any{
+				"alive": true,
+				"history": []any{
+					map[string]any{"time": "2026-09-11T03:00:00Z", "delay": float64(123)},
+				},
+			},
+		},
+	}
+	delay, ok := latencyFromProxyObject(proxy)
+	if !ok || delay != 123 {
+		t.Fatalf("zero placeholder masked positive latency: ok=%v delay=%d", ok, delay)
+	}
+
+	state := &appState{
+		proxyDelayCache: map[string]map[string]int{
+			"profile-1": {"Node-A": 0},
+		},
+	}
+	raw, _ := json.Marshal(map[string]any{"proxies": map[string]any{"Node-A": proxy}})
+	decorated, err := state.decorateProxyPayload("profile-1", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload struct {
+		Proxies map[string]map[string]any `json:"proxies"`
+	}
+	if err := json.Unmarshal(decorated, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if got := int(payload.Proxies["Node-A"]["lastTestDelay"].(float64)); got != 123 {
+		t.Fatalf("explicit zero must not mask positive provider latency: got %d", got)
+	}
+}
+
+func TestHandleProxiesFetchesProviderLeafNodes(t *testing.T) {
+	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/proxies":
+			_, _ = w.Write([]byte(`{
+				"proxies": {
+					"Group-A": {"name":"Group-A","type":"Selector","now":"Leaf-A","all":["Leaf-A"]},
+					"GLOBAL": {"name":"GLOBAL","type":"Selector","now":"Group-A","all":["Group-A"]}
+				}
+			}`))
+		case "/providers/proxies":
+			_, _ = w.Write([]byte(`{
+				"providers": {
+					"Provider-A": {
+						"name":"Provider-A",
+						"testUrl":"https://provider.example/204",
+						"proxies":[{
+							"name":"Leaf-A",
+							"type":"VLESS",
+							"alive":true,
+							"extra":{
+								"https://provider.example/204":{
+									"alive":true,
+									"history":[{"time":"2026-09-11T03:00:00Z","delay":66}]
+								}
+							}
+						}]
+					}
+				}
+			}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer controller.Close()
+
+	state := &appState{
+		path: filepath.Join(t.TempDir(), "settings.json"),
+		settings: Settings{
+			SelectedID: "test",
+			Profiles: []Profile{{
+				ID: "test", Name: "test",
+				ManagementURL:     controller.URL,
+				CoreControllerURL: controller.URL,
+				AllowInsecureHTTP: true,
+			}},
+		},
+		client:          controller.Client(),
+		secretCache:     map[string]string{"test": ""},
+		proxyDelayCache: map[string]map[string]int{},
+	}
+
+	rec := httptest.NewRecorder()
+	state.handleProxies(rec, httptest.NewRequest(http.MethodGet, "/local/proxies", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("handleProxies failed: %d %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"Leaf-A"`) ||
+		!strings.Contains(rec.Body.String(), `"lastTestDelay":66`) {
+		t.Fatalf("provider leaf latency missing from merged proxy payload: %s", rec.Body.String())
+	}
+}
+
+func TestCloudflare1033MessageIsConcise(t *testing.T) {
+	data := []byte(`{
+		"title":"Error 1033: Cloudflare Tunnel error",
+		"status":530,
+		"detail":"The host is configured as a Cloudflare Tunnel, but Cloudflare is currently unable to reach it.",
+		"error_code":1033
+	}`)
+	got := remoteMessage(data, nil)
+	want := "Cloudflare Tunnel 暂时断开（Error 1033）。Controller 主机当前不可达，请稍后重试。"
+	if got != want {
+		t.Fatalf("unexpected Cloudflare message: %q", got)
+	}
+}
+
+func TestRemoteRequestRetriesTransient530GET(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.Header().Set("Content-Type", "application/json")
+		if attempts < 3 {
+			w.WriteHeader(530)
+			_, _ = w.Write([]byte(`{"title":"Error 1033: Cloudflare Tunnel error","error_code":1033}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	state := &appState{client: server.Client()}
+	data, code, err := state.remoteRequest(http.MethodGet, server.URL, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code != http.StatusOK || !strings.Contains(string(data), `"ok":true`) {
+		t.Fatalf("unexpected response after retry: code=%d body=%s", code, data)
+	}
+	if attempts != 3 {
+		t.Fatalf("expected 3 GET attempts, got %d", attempts)
+	}
+}
+
+func TestTransient530UsesPersistentProxySnapshot(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(530)
+		_, _ = w.Write([]byte(`{
+			"title":"Error 1033: Cloudflare Tunnel error",
+			"error_code":1033,
+			"detail":"Cloudflare Tunnel unavailable"
+		}`))
+	}))
+	defer server.Close()
+
+	state := &appState{
+		path: filepath.Join(t.TempDir(), "MihomoCoreManager", "settings.json"),
+		settings: Settings{
+			SelectedID: "test",
+			Profiles: []Profile{{
+				ID: "test", Name: "test",
+				ManagementURL:     controllerURLForTest(server.URL),
+				CoreControllerURL: controllerURLForTest(server.URL),
+				AllowInsecureHTTP: true,
+			}},
+		},
+		client:          server.Client(),
+		secretCache:     map[string]string{"test": ""},
+		proxyDelayCache: map[string]map[string]int{},
+	}
+
+	snapshot := []byte(`{
+		"ok":true,
+		"_profileID":"test",
+		"generation":7,
+		"proxies":{
+			"GLOBAL":{"name":"GLOBAL","type":"Selector","now":"Group-A","all":["Group-A"]},
+			"Group-A":{"name":"Group-A","type":"Selector","now":"Leaf-A","all":["Leaf-A"]},
+			"Leaf-A":{"name":"Leaf-A","type":"VLESS","lastTestDelay":77}
+		}
+	}`)
+	state.writeProxyMenuFile(snapshot)
+
+	data, code, err := state.fetchMergedProxyPayload()
+	if err != nil {
+		t.Fatalf("expected stale snapshot fallback, got error: %v", err)
+	}
+	if code != http.StatusOK {
+		t.Fatalf("stale fallback should be local HTTP 200, got %d", code)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if stale, _ := payload["_stale"].(bool); !stale {
+		t.Fatalf("stale marker missing: %s", data)
+	}
+	if warning, _ := payload["_warning"].(string); !strings.Contains(warning, "最近一次") {
+		t.Fatalf("stale warning missing: %s", data)
+	}
+	proxies, _ := payload["proxies"].(map[string]any)
+	leaf, _ := proxies["Leaf-A"].(map[string]any)
+	if got := int(leaf["lastTestDelay"].(float64)); got != 77 {
+		t.Fatalf("cached leaf latency lost: got %d", got)
+	}
+}
+
+func controllerURLForTest(raw string) string { return raw }
 
 func TestDirectControllerPrefersControllerSecret(t *testing.T) {
 	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -410,8 +878,8 @@ func TestPortableInteractionRegressionV118(t *testing.T) {
 	}
 }
 
-func TestPortableVersionV123(t *testing.T) {
-	if appVersion != "1.2.3" || buildNumber != "123" {
+func TestPortableVersionV124(t *testing.T) {
+	if appVersion != "1.2.4" || buildNumber != "124" {
 		t.Fatalf("unexpected portable version/build: %s/%s", appVersion, buildNumber)
 	}
 }
