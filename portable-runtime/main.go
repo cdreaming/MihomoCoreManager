@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"crypto/rand"
 	"embed"
 	"encoding/hex"
@@ -23,8 +25,8 @@ import (
 )
 
 const (
-	appVersion                = "1.2.6"
-	buildNumber               = "126"
+	appVersion                = "1.2.7"
+	buildNumber               = "127"
 	keychainService           = "cc.kkr.MihomoCoreManager"
 	controllerKeychainService = "cc.kkr.MihomoCoreManager.controller-secret"
 )
@@ -64,6 +66,10 @@ type appState struct {
 	done     chan struct{}
 	doneOnce sync.Once
 
+	// Own short-lived asynchronous cache/status work so tests can quiesce it
+	// before temporary Runtime directories are removed on macOS/APFS.
+	backgroundWG sync.WaitGroup
+
 	client *http.Client
 
 	secretMu    sync.RWMutex
@@ -91,36 +97,6 @@ type appState struct {
 	statusUpdatedAt time.Time
 	statusErr       string
 	statusReachable bool
-
-	// Short-lived fire-and-forget work is tracked so tests and shutdown can
-	// wait for file/cache refreshes to finish before temporary state disappears.
-	// Long-lived pollers/server loops intentionally stay outside this WaitGroup.
-	backgroundMu     sync.Mutex
-	backgroundWG     sync.WaitGroup
-	backgroundClosed bool
-}
-
-func (s *appState) goBackground(work func()) {
-	s.backgroundMu.Lock()
-	if s.backgroundClosed {
-		s.backgroundMu.Unlock()
-		return
-	}
-	s.backgroundWG.Add(1)
-	s.backgroundMu.Unlock()
-
-	go func() {
-		defer s.backgroundWG.Done()
-		work()
-	}()
-}
-
-func (s *appState) waitBackground() {
-	// Close registration before waiting so no new Add can race a zero-counter Wait.
-	s.backgroundMu.Lock()
-	s.backgroundClosed = true
-	s.backgroundMu.Unlock()
-	s.backgroundWG.Wait()
 }
 
 func defaultProfile() Profile {
@@ -159,12 +135,25 @@ func configPath() string {
 	return filepath.Join(d, "MihomoCoreManager", "settings.json")
 }
 
+func newHTTPClient() *http.Client {
+	// Clone the standard transport so TLS verification and proxy behavior stay
+	// identical to Go defaults, while allowing the status poller, proxy cache and
+	// foreground UI to reuse more keep-alive connections instead of repeatedly
+	// paying connection/TLS setup cost.
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConns = 32
+	transport.MaxIdleConnsPerHost = 8
+	transport.IdleConnTimeout = 90 * time.Second
+	transport.TLSHandshakeTimeout = 10 * time.Second
+	return &http.Client{Transport: transport, Timeout: 45 * time.Second}
+}
+
 func loadState() *appState {
 	s := &appState{
 		path:            configPath(),
 		token:           newToken(),
 		done:            make(chan struct{}),
-		client:          &http.Client{Timeout: 45 * time.Second},
+		client:          newHTTPClient(),
 		secretCache:     make(map[string]string),
 		proxyDelayCache: make(map[string]map[string]int),
 	}
@@ -193,6 +182,21 @@ func loadState() *appState {
 		_ = s.saveLocked()
 	}
 	return s
+}
+
+// goBackground owns application asynchronous work that can touch state-backed
+// Runtime files. Tests can wait for these jobs before TempDir cleanup, avoiding
+// the v1.2.5 macOS/APFS directory-not-empty race.
+func (s *appState) goBackground(fn func()) {
+	s.backgroundWG.Add(1)
+	go func() {
+		defer s.backgroundWG.Done()
+		fn()
+	}()
+}
+
+func (s *appState) waitBackground() {
+	s.backgroundWG.Wait()
 }
 
 func (s *appState) saveLocked() error {
@@ -574,20 +578,36 @@ func mergeProviderProxyPayload(proxyData, providerData []byte) ([]byte, error) {
 	return json.Marshal(payload)
 }
 
-func (s *appState) fetchMergedProxyPayloadFresh() ([]byte, int, error) {
+func (s *appState) fetchMergedProxyPayloadFresh(background bool) ([]byte, int, error) {
 	profile, err := s.current()
 	if err != nil {
 		return nil, 0, err
 	}
 
-	proxyData, code, err := s.remote(http.MethodGet, "/proxies", nil, nil, true)
-	if err != nil {
-		return nil, code, err
+	var proxyData []byte
+	var code int
+	var fetchErr error
+	if background {
+		// Tray cache refreshes must never sit on a dead tunnel for the foreground
+		// client's full timeout. These are read-only requests, so a short bounded
+		// retry is safe and the previous known-good snapshot remains available.
+		proxyData, code, fetchErr = s.remoteWithPolicy(http.MethodGet, "/proxies", nil, nil, true, 8*time.Second, 2)
+	} else {
+		proxyData, code, fetchErr = s.remote(http.MethodGet, "/proxies", nil, nil, true)
+	}
+	if fetchErr != nil {
+		return nil, code, fetchErr
 	}
 
 	// Provider details are best-effort for backward compatibility, but current
 	// Mihomo + MetaCubeXD depend on them to populate provider-only leaf nodes.
-	providerData, _, providerErr := s.remote(http.MethodGet, "/providers/proxies", nil, nil, true)
+	var providerData []byte
+	var providerErr error
+	if background {
+		providerData, _, providerErr = s.remoteWithPolicy(http.MethodGet, "/providers/proxies", nil, nil, true, 6*time.Second, 1)
+	} else {
+		providerData, _, providerErr = s.remote(http.MethodGet, "/providers/proxies", nil, nil, true)
+	}
 	if providerErr == nil {
 		if merged, mergeErr := mergeProviderProxyPayload(proxyData, providerData); mergeErr == nil {
 			proxyData = merged
@@ -652,7 +672,7 @@ func (s *appState) fetchMergedProxyPayload() ([]byte, int, error) {
 		return nil, 0, err
 	}
 
-	data, code, err := s.fetchMergedProxyPayloadFresh()
+	data, code, err := s.fetchMergedProxyPayloadFresh(false)
 	if err == nil {
 		return data, code, nil
 	}
@@ -746,7 +766,7 @@ func (s *appState) refreshProxyMenuCache() {
 	if err != nil {
 		return
 	}
-	decorated, _, err := s.fetchMergedProxyPayloadFresh()
+	decorated, _, err := s.fetchMergedProxyPayloadFresh(true)
 	if err != nil {
 		s.proxyMenuMu.Lock()
 		s.proxyMenuErr = err.Error()
@@ -782,7 +802,7 @@ func (s *appState) refreshProxyMenuCache() {
 }
 
 func (s *appState) startProxyMenuPoller() {
-	go func() {
+	s.goBackground(func() {
 		s.refreshProxyMenuCache()
 		ticker := time.NewTicker(4 * time.Second)
 		defer ticker.Stop()
@@ -794,7 +814,7 @@ func (s *appState) startProxyMenuPoller() {
 				return
 			}
 		}
-	}()
+	})
 }
 
 func (s *appState) handleProxyMenuCache(w http.ResponseWriter, r *http.Request) {
@@ -867,7 +887,10 @@ func (s *appState) clearStatusFile() {
 func (s *appState) refreshStatusCache() {
 	s.statusFetchMu.Lock()
 	defer s.statusFetchMu.Unlock()
+	s.refreshStatusCacheLocked()
+}
 
+func (s *appState) refreshStatusCacheLocked() {
 	p, err := s.current()
 	if err != nil {
 		s.statusMu.Lock()
@@ -880,22 +903,56 @@ func (s *appState) refreshStatusCache() {
 		return
 	}
 
-	data, _, remoteErr := s.remote(http.MethodGet, "/api/status", nil, nil, false)
-	s.statusMu.Lock()
-	defer s.statusMu.Unlock()
-	s.statusProfileID = p.ID
-	s.statusUpdatedAt = time.Now()
+	// Status is sampled every 1.2 s. A dead route should be detected quickly and
+	// must not occupy the cache worker for the 45 s foreground-operation timeout.
+	data, _, remoteErr := s.remoteWithPolicy(http.MethodGet, "/api/status", nil, nil, false, 4*time.Second, 1)
+	now := time.Now()
 	if remoteErr != nil {
+		s.statusMu.Lock()
+		// One dropped telemetry request should not make the whole UI flash Offline.
+		// Keep only a very recent same-profile successful snapshot; its original
+		// timestamp remains unchanged, so repeated failures expire this grace in a
+		// few seconds rather than hiding a real outage indefinitely.
+		hasRecentGood := s.statusProfileID == p.ID && s.statusReachable && len(s.statusData) > 0 &&
+			!s.statusUpdatedAt.IsZero() && now.Sub(s.statusUpdatedAt) <= 4*time.Second
+		if hasRecentGood {
+			s.statusErr = remoteErr.Error()
+			s.statusMu.Unlock()
+			return
+		}
 		s.statusData = nil
+		s.statusProfileID = p.ID
+		s.statusUpdatedAt = now
 		s.statusErr = remoteErr.Error()
 		s.statusReachable = false
+		s.statusMu.Unlock()
 		s.clearStatusFile()
 		return
 	}
+
+	s.statusMu.Lock()
 	s.statusData = append(s.statusData[:0], data...)
+	s.statusProfileID = p.ID
+	s.statusUpdatedAt = now
 	s.statusErr = ""
 	s.statusReachable = true
+	s.statusMu.Unlock()
+
+	// File I/O is intentionally outside statusMu so local /status reads and the
+	// menu process never wait on an atomic snapshot write.
 	s.writeStatusFile(data)
+}
+
+func (s *appState) kickStatusRefresh() {
+	// Do not queue multiple local requests behind one slow network fetch. The
+	// poller owns regular refreshes; this is only an opportunistic freshness kick.
+	if !s.statusFetchMu.TryLock() {
+		return
+	}
+	s.goBackground(func() {
+		defer s.statusFetchMu.Unlock()
+		s.refreshStatusCacheLocked()
+	})
 }
 
 func (s *appState) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -913,19 +970,17 @@ func (s *appState) handleStatus(w http.ResponseWriter, r *http.Request) {
 	data := append([]byte(nil), s.statusData...)
 	s.statusMu.RUnlock()
 
+	// Serve an existing same-profile snapshot immediately and refresh it in the
+	// background when stale. This keeps the WKWebView and tray responsive even if
+	// the remote management endpoint is currently slow. Profile-mismatched data is
+	// never served.
 	if profileID != p.ID || updatedAt.IsZero() || time.Since(updatedAt) > 3*time.Second {
-		s.refreshStatusCache()
-		s.statusMu.RLock()
-		profileID = s.statusProfileID
-		reachable = s.statusReachable
-		errText = s.statusErr
-		data = append(data[:0], s.statusData...)
-		s.statusMu.RUnlock()
+		s.kickStatusRefresh()
 	}
 
 	if profileID != p.ID || !reachable || len(data) == 0 {
 		if errText == "" {
-			errText = "状态暂不可用"
+			errText = "状态正在刷新"
 		}
 		errReply(w, errors.New(errText))
 		return
@@ -937,7 +992,7 @@ func (s *appState) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *appState) startStatusPoller() {
-	go func() {
+	s.goBackground(func() {
 		s.refreshStatusCache()
 		ticker := time.NewTicker(1200 * time.Millisecond)
 		defer ticker.Stop()
@@ -949,7 +1004,7 @@ func (s *appState) startStatusPoller() {
 				return
 			}
 		}
-	}()
+	})
 }
 
 func normalizeBase(raw string, allowHTTP bool) (*url.URL, error) {
@@ -991,6 +1046,17 @@ func joinURL(baseRaw, path string, allowHTTP bool, query url.Values) (string, er
 }
 
 func (s *appState) remote(method, path string, body []byte, query url.Values, direct bool) ([]byte, int, error) {
+	return s.remoteWithPolicy(method, path, body, query, direct, 0, 0)
+}
+
+func (s *appState) remoteWithPolicy(
+	method, path string,
+	body []byte,
+	query url.Values,
+	direct bool,
+	attemptTimeout time.Duration,
+	maxAttempts int,
+) ([]byte, int, error) {
 	p, err := s.current()
 	if err != nil {
 		return nil, 0, err
@@ -1013,7 +1079,7 @@ func (s *appState) remote(method, path string, body []byte, query url.Values, di
 	if err != nil {
 		return nil, 0, err
 	}
-	data, code, requestErr := s.remoteRequest(method, target, body, secret)
+	data, code, requestErr := s.remoteRequestWithPolicy(method, target, body, secret, attemptTimeout, maxAttempts)
 	if direct && code == http.StatusUnauthorized {
 		return data, code, errors.New("Mihomo Controller HTTP 401：认证失败。请在设置的 Controller Secret 中填写 config.yaml 的 secret；它可以与管理面板的 Core Secret 不同")
 	}
@@ -1021,9 +1087,21 @@ func (s *appState) remote(method, path string, body []byte, query url.Values, di
 }
 
 func (s *appState) remoteRequest(method, target string, body []byte, secret string) ([]byte, int, error) {
-	maxAttempts := 1
-	if method == http.MethodGet || method == http.MethodHead {
-		maxAttempts = 3
+	return s.remoteRequestWithPolicy(method, target, body, secret, 0, 0)
+}
+
+func (s *appState) remoteRequestWithPolicy(
+	method, target string,
+	body []byte,
+	secret string,
+	attemptTimeout time.Duration,
+	maxAttempts int,
+) ([]byte, int, error) {
+	if maxAttempts <= 0 {
+		maxAttempts = 1
+		if method == http.MethodGet || method == http.MethodHead {
+			maxAttempts = 3
+		}
 	}
 
 	var lastData []byte
@@ -1031,7 +1109,7 @@ func (s *appState) remoteRequest(method, target string, body []byte, secret stri
 	var lastErr error
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		req, err := http.NewRequest(method, target, strings.NewReader(string(body)))
+		req, err := http.NewRequest(method, target, bytes.NewReader(body))
 		if err != nil {
 			return nil, 0, err
 		}
@@ -1043,12 +1121,22 @@ func (s *appState) remoteRequest(method, target string, body []byte, secret stri
 			req.Header.Set("Content-Type", "application/json")
 		}
 
+		var cancel context.CancelFunc
+		if attemptTimeout > 0 {
+			ctx, cancelFn := context.WithTimeout(req.Context(), attemptTimeout)
+			cancel = cancelFn
+			req = req.WithContext(ctx)
+		}
+
 		resp, err := s.client.Do(req)
 		if err != nil {
+			if cancel != nil {
+				cancel()
+			}
 			lastErr = err
 			lastCode = 0
 			if attempt < maxAttempts {
-				time.Sleep(time.Duration(attempt) * 250 * time.Millisecond)
+				time.Sleep(time.Duration(attempt) * 180 * time.Millisecond)
 				continue
 			}
 			return nil, 0, err
@@ -1056,13 +1144,16 @@ func (s *appState) remoteRequest(method, target string, body []byte, secret stri
 
 		data, readErr := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 		_ = resp.Body.Close()
+		if cancel != nil {
+			cancel()
+		}
 		lastData = data
 		lastCode = resp.StatusCode
 
 		if readErr != nil {
 			lastErr = readErr
 			if attempt < maxAttempts {
-				time.Sleep(time.Duration(attempt) * 250 * time.Millisecond)
+				time.Sleep(time.Duration(attempt) * 180 * time.Millisecond)
 				continue
 			}
 			return data, resp.StatusCode, readErr
@@ -1087,7 +1178,7 @@ func (s *appState) remoteRequest(method, target string, body []byte, secret stri
 		lastErr = fmt.Errorf("远端 HTTP %d：%s", resp.StatusCode, msg)
 
 		if attempt < maxAttempts && isTransientGatewayStatus(resp.StatusCode) {
-			time.Sleep(time.Duration(attempt) * 250 * time.Millisecond)
+			time.Sleep(time.Duration(attempt) * 180 * time.Millisecond)
 			continue
 		}
 		return data, resp.StatusCode, lastErr
@@ -2070,7 +2161,7 @@ win.center;
 function showURL(u){ try{var url=$.NSURL.URLWithString($(u));var req=$.NSURLRequest.requestWithURL(url);web.loadRequest(req);win.makeKeyAndOrderFront(null);cocoaApp.activateIgnoringOtherApps(true);}catch(e){std.displayNotification(String(e),{withTitle:'Mihomo Core Manager'});} }
 function openHash(h){ showURL(BASE+'/#'+h); }
 
-var statusItem=null, statusHeader=null, speedHeader=null, prefIconItem=null, prefStatusItem=null, prefSpeedItem=null, iconOnlyItem=null, startItem=null, stopItem=null, serverMenu=null, serverRoot=null, proxyHeader=null, proxyEndSeparator=null, proxyMenuRoots=[], proxyMenuRootByGroup={}, proxyMenuData={}, proxyMenuGeneration=-1, proxySubmenuBuilt={}, proxyMenuTick=0;
+var statusItem=null, statusHeader=null, speedHeader=null, prefIconItem=null, prefStatusItem=null, prefSpeedItem=null, iconOnlyItem=null, startItem=null, stopItem=null, serverMenu=null, serverRoot=null, proxyHeader=null, proxyEndSeparator=null, proxyMenuRoots=[], proxyMenuRootByGroup={}, proxyMenuData={}, proxyMenuGeneration=-1, proxyMenuStructureKey='', proxyPendingReconcile={}, proxySubmenuBuilt={}, proxyMenuTick=0;
 var showIcon=true, showStatus=true, showSpeed=true, lastRunning=false, lastReachable=false, lastUp=0, lastDown=0, lastCoreVersion='--';
 var appSymbol=null, missingSnapshotTicks=0;
 var statusOverlay=null, statusIconView=null, statusDot=null, upValueLabel=null, upUnitLabel=null, downValueLabel=null, downUnitLabel=null;
@@ -2328,24 +2419,51 @@ function refreshProxyMenuRootTitle(group){
     if(root)root.title=proxyMenuRootTitle(group);
   }catch(e){}
 }
+function proxyMenuStructureSignature(data){
+  // Latency/history and now change frequently. They must not force AppKit to
+  // remove/reinsert every proxy root while the user has the status menu open.
+  // Rebuild roots only when the ordered group structure itself changed.
+  return proxyConfigOrderedGroups(data).map(function(name){
+    var p=data[name]||{}, members=Array.isArray(p.all)?p.all:[];
+    return name+'\u001f'+String(p.type||'')+'\u001f'+members.join('\u001e');
+  }).join('\u001d');
+}
 function rebuildProxyMenus(){
   if(!menu||!coreRoot)return;
   // Read the Go-side atomic snapshot directly from disk. No curl, no process
   // spawn, and no remote controller request can run on AppKit's menu event loop.
   var data=proxyMenuFromFile(); if(!data||!data.proxies)return;
-  var generation=Number(data.generation||0);
+  var generation=Number(data.generation||0), nextData=data.proxies||{};
   if(generation===proxyMenuGeneration){
-    // Reconcile optimistic menu labels even when an async selection failed and
-    // the Go snapshot generation therefore did not advance. This prevents a
-    // queued-but-failed choice from leaving a wrong suffix indefinitely.
-    proxyMenuData=data.proxies||{};
-    Object.keys(proxyMenuRootByGroup).forEach(refreshProxyMenuRootTitle);
+    // Only groups with an optimistic async selection need same-generation
+    // reconciliation. Avoid touching every NSMenuItem on normal 3.6 s ticks.
+    var pending=Object.keys(proxyPendingReconcile);
+    if(pending.length){
+      proxyMenuData=nextData;
+      pending.forEach(function(group){refreshProxyMenuRootTitle(group);});
+      proxyPendingReconcile={};
+      proxySubmenuBuilt={};
+    }
     return;
   }
 
+  var oldData=proxyMenuData, nextStructure=proxyMenuStructureSignature(nextData);
   proxyMenuGeneration=generation;
-  proxyMenuData=data.proxies||{};
+  proxyMenuData=nextData;
   proxySubmenuBuilt={};
+
+  // The Go cache generation also advances for latency/history and confirmed
+  // route changes. When group order/membership did not change, keep the existing
+  // native menu tree and update only suffixes whose current route changed.
+  if(proxyMenuStructureKey!=='' && nextStructure===proxyMenuStructureKey && proxyMenuRoots.length){
+    Object.keys(proxyMenuRootByGroup).forEach(function(group){
+      var oldProxy=oldData[group]||{}, newProxy=proxyMenuData[group]||{};
+      var oldCurrent=String(oldProxy.now||oldProxy.type||''), newCurrent=String(newProxy.now||newProxy.type||'');
+      if(oldCurrent!==newCurrent)refreshProxyMenuRootTitle(group);
+    });
+    proxyPendingReconcile={};
+    return;
+  }
 
   proxyMenuRoots.forEach(function(root){try{menu.removeItem(root);}catch(e){}});
   proxyMenuRoots=[];
@@ -2354,7 +2472,6 @@ function rebuildProxyMenus(){
   var groups=proxyConfigOrderedGroups(proxyMenuData);
   var index=proxyEndSeparator?menu.indexOfItem(proxyEndSeparator):menu.indexOfItem(coreRoot); if(index<0)index=menu.numberOfItems;
   groups.forEach(function(name){
-    var p=proxyMenuData[name];
     var root=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent(proxyMenuRootTitle(name),'','');
     var sub=$.NSMenu.alloc.initWithTitle(name);
     // A one-item placeholder keeps the submenu affordance visible. Real node
@@ -2368,6 +2485,8 @@ function rebuildProxyMenus(){
     proxyMenuRoots.push(root);
     proxyMenuRootByGroup[name]=root;
   });
+  proxyMenuStructureKey=nextStructure;
+  proxyPendingReconcile={};
 }
 ObjC.registerSubclass({name:'MihomoMenuDelegate', methods:{
 'openManager:':{types:['void',['id']],implementation:function(){showURL(BASE+'/');}},
@@ -2379,7 +2498,7 @@ ObjC.registerSubclass({name:'MihomoMenuDelegate', methods:{
 'toggleShowStatus:':{types:['void',['id']],implementation:function(){showStatus=!showStatus;keepMenuVisible();savePrefs();syncPrefItems();updateStatusTitle();}},
 'toggleShowSpeed:':{types:['void',['id']],implementation:function(){showSpeed=!showSpeed;keepMenuVisible();savePrefs();syncPrefItems();updateStatusTitle();}},
 'iconOnly:':{types:['void',['id']],implementation:function(){showIcon=true;showStatus=false;showSpeed=false;savePrefs();syncPrefItems();updateStatusTitle();}},
-'selectProfile:':{types:['void',['id']],implementation:function(sender){var id=ObjC.unwrap(sender.representedObject);if(post('/local/profile/select',{id:id},false)){proxyMenuGeneration=-1;proxySubmenuBuilt={};rebuildServers();updateStatus(true);openHash('overview');}}},
+'selectProfile:':{types:['void',['id']],implementation:function(sender){var id=ObjC.unwrap(sender.representedObject);if(post('/local/profile/select',{id:id},false)){proxyMenuGeneration=-1;proxyMenuStructureKey='';proxyPendingReconcile={};proxySubmenuBuilt={};rebuildServers();updateStatus(true);openHash('overview');}}},
 'startCore:':{types:['void',['id']],implementation:function(){if(post('/local/action',{action:'start'},false)){updateStatus(true);}}},
 'stopCore:':{types:['void',['id']],implementation:function(){if(post('/local/action',{action:'stop'},false)){updateStatus(true);}}},
 'restartCore:':{types:['void',['id']],implementation:function(){if(post('/local/action',{action:'restart'},false)){updateStatus(true);}}},
@@ -2396,6 +2515,7 @@ ObjC.registerSubclass({name:'MihomoMenuDelegate', methods:{
     var payload=JSON.parse(ObjC.unwrap(sender.representedObject));
     if(post('/local/proxy-select-async',payload,false)){
       if(proxyMenuData[payload.group])proxyMenuData[payload.group].now=payload.name;
+      proxyPendingReconcile[payload.group]=true;
       refreshProxyMenuRootTitle(payload.group);
       proxySubmenuBuilt={};
     }
@@ -2606,5 +2726,4 @@ func main() {
 		}
 	}
 	<-s.done
-	s.waitBackground()
 }
