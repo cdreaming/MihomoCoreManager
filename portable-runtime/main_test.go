@@ -30,6 +30,7 @@ func TestHTTPGate(t *testing.T) {
 	}
 }
 
+<<<<<<< HEAD
 func TestJoinProxyURLEscapesGroupAsSinglePathSegment(t *testing.T) {
 	got, err := joinProxyURL("https://example.com/controller", "HK / Auto", false)
 	if err != nil {
@@ -636,6 +637,8 @@ func TestProxyControllerModeListAndSelection(t *testing.T) {
 	}
 }
 
+=======
+>>>>>>> parent of 7d39e5c (v1.2.3)
 func TestMenuPreferences(t *testing.T) {
 	state := &appState{
 		path: filepath.Join(t.TempDir(), "settings.json"),
@@ -878,8 +881,13 @@ func TestPortableInteractionRegressionV118(t *testing.T) {
 	}
 }
 
+<<<<<<< HEAD
 func TestPortableVersionV124(t *testing.T) {
 	if appVersion != "1.2.4" || buildNumber != "124" {
+=======
+func TestPortableVersionV122(t *testing.T) {
+	if appVersion != "1.2.2" || buildNumber != "122" {
+>>>>>>> parent of 7d39e5c (v1.2.3)
 		t.Fatalf("unexpected portable version/build: %s/%s", appVersion, buildNumber)
 	}
 }

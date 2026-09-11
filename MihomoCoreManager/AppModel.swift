@@ -39,10 +39,13 @@ final class AppModel: ObservableObject {
     @Published var profiles: [ServerProfile]
     @Published var selectedProfileID: UUID?
     @Published var selectedSection: SidebarSection = .overview
+<<<<<<< HEAD
     @Published var proxyMode: MihomoRunMode?
     @Published var proxies: [MihomoProxy] = []
     @Published var proxyGroupOrder: [String] = []
     @Published var proxyDelayResults: [String: Int] = [:]
+=======
+>>>>>>> parent of 7d39e5c (v1.2.3)
     @Published var subscriptions: [String: String] = [:]
     @Published var logs: String = ""
     @Published var updateInfo: ProjectUpdateInfo?
@@ -86,8 +89,6 @@ final class AppModel: ObservableObject {
     private let api = MihomoAPIClient()
     private var pollingTask: Task<Void, Never>?
     private var secretCache: [UUID: String] = [:]
-    private var controllerSecretCache: [UUID: String] = [:]
-    private var proxiesLoadedFor: UUID?
     private var subscriptionsLoadedFor: UUID?
     private var logsLoadedFor: UUID?
     private var noticeDismissTask: Task<Void, Never>?
@@ -147,14 +148,6 @@ final class AppModel: ObservableObject {
         let secret = KeychainStore.readSecret(profileID: id)
         secretCache[id] = secret
         return secret
-    }
-
-    var currentControllerSecret: String {
-        guard let id = selectedProfileID else { return "" }
-        if let cached = controllerSecretCache[id], !cached.isEmpty { return cached }
-        let controllerSecret = KeychainStore.readControllerSecret(profileID: id)
-        controllerSecretCache[id] = controllerSecret
-        return controllerSecret.isEmpty ? currentSecret : controllerSecret
     }
 
     var menuBarIconOnly: Bool {
@@ -249,15 +242,17 @@ final class AppModel: ObservableObject {
         selectedProfileID = id
         UserDefaults.standard.set(id.uuidString, forKey: Self.selectedProfileKey)
         live.reset()
+<<<<<<< HEAD
         proxyMode = nil
         proxies = []
         proxyGroupOrder = []
         proxyDelayResults = [:]
+=======
+>>>>>>> parent of 7d39e5c (v1.2.3)
         subscriptions = [:]
         logs = ""
         updateInfo = nil
         updateLogs = ""
-        proxiesLoadedFor = nil
         subscriptionsLoadedFor = nil
         logsLoadedFor = nil
         Task { await refreshStatus(silent: true) }
@@ -276,9 +271,7 @@ final class AppModel: ObservableObject {
             return
         }
         KeychainStore.deleteSecret(profileID: id)
-        KeychainStore.deleteControllerSecret(profileID: id)
         secretCache.removeValue(forKey: id)
-        controllerSecretCache.removeValue(forKey: id)
         profiles.removeAll { $0.id == id }
         persistProfiles()
         if selectedProfileID == id, let first = profiles.first {
@@ -310,19 +303,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func saveControllerSecret(_ secret: String, for id: UUID) {
-        do {
-            try KeychainStore.writeControllerSecret(secret, profileID: id)
-            controllerSecretCache[id] = secret
-            show(secret.isEmpty ? "已清除 Controller Secret，将回退使用 Core Secret" : "Controller Secret 已保存到 Keychain")
-            if selectedProfileID == id {
-                proxiesLoadedFor = nil
-            }
-        } catch {
-            show("Controller Secret 写入 Keychain 失败：\(error.localizedDescription)", error: true)
-        }
-    }
-
     func refreshStatus(silent: Bool = false) async {
         guard !isBusy || silent, let profile = selectedProfile else { return }
         let profileID = profile.id
@@ -333,13 +313,6 @@ final class AppModel: ObservableObject {
         } catch {
             if !silent { show(error.localizedDescription, error: true) }
         }
-    }
-
-    func ensureProxiesLoaded() async {
-        guard let id = selectedProfileID, proxiesLoadedFor != id else { return }
-        try? await Task.sleep(nanoseconds: 90_000_000)
-        guard !Task.isCancelled, selectedProfileID == id else { return }
-        await fetchProxies()
     }
 
     func ensureSubscriptionsLoaded() async {
@@ -361,11 +334,7 @@ final class AppModel: ObservableObject {
         await busyOperation(.core(action)) {
             let message: String
             if action == .reload {
-                let direct = !profile.coreControllerURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                message = try await api.reloadConfiguredPath(
-                    profile: profile,
-                    secret: direct ? currentControllerSecret : currentSecret
-                )
+                message = try await api.reloadConfiguredPath(profile: profile, secret: currentSecret)
             } else {
                 message = try await api.action(action, profile: profile, secret: currentSecret)
             }
@@ -375,6 +344,7 @@ final class AppModel: ObservableObject {
         }
     }
 
+<<<<<<< HEAD
     func fetchProxies() async {
         guard let profile = selectedProfile else { return }
         let profileID = profile.id
@@ -581,6 +551,8 @@ final class AppModel: ObservableObject {
         }
     }
 
+=======
+>>>>>>> parent of 7d39e5c (v1.2.3)
     func fetchSubscriptions() async {
         guard let profile = selectedProfile else { return }
         let profileID = profile.id

@@ -23,10 +23,16 @@ import (
 )
 
 const (
+<<<<<<< HEAD
 	appVersion                = "1.2.4"
 	buildNumber               = "124"
 	keychainService           = "cc.kkr.MihomoCoreManager"
 	controllerKeychainService = "cc.kkr.MihomoCoreManager.controller-secret"
+=======
+	appVersion      = "1.2.2"
+	buildNumber     = "122"
+	keychainService = "cc.kkr.MihomoCoreManager"
+>>>>>>> parent of 7d39e5c (v1.2.3)
 )
 
 //go:embed ui/index.html
@@ -69,6 +75,7 @@ type appState struct {
 	secretMu    sync.RWMutex
 	secretCache map[string]string
 
+<<<<<<< HEAD
 	controllerSecretMu    sync.RWMutex
 	controllerSecretCache map[string]string
 
@@ -84,6 +91,8 @@ type appState struct {
 	proxyMenuUpdatedAt  time.Time
 	proxyMenuErr        string
 
+=======
+>>>>>>> parent of 7d39e5c (v1.2.3)
 	statusMu        sync.RWMutex
 	statusFetchMu   sync.Mutex
 	statusData      []byte
@@ -190,56 +199,29 @@ func (s *appState) current() (Profile, error) {
 	return Profile{}, errors.New("尚未配置服务器")
 }
 
-func keychainGetWithService(id, service string) string {
+func keychainGet(id string) string {
 	if runtime.GOOS != "darwin" {
 		return ""
 	}
-	out, err := exec.Command("/usr/bin/security", "find-generic-password", "-a", id, "-s", service, "-w").Output()
+	out, err := exec.Command("/usr/bin/security", "find-generic-password", "-a", id, "-s", keychainService, "-w").Output()
 	if err != nil {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
 }
-
-func keychainSetWithService(id, secret, service string) error {
+func keychainSet(id, secret string) error {
 	if runtime.GOOS != "darwin" {
 		return nil
 	}
 	if secret == "" {
-		_ = exec.Command("/usr/bin/security", "delete-generic-password", "-a", id, "-s", service).Run()
 		return nil
 	}
-	return exec.Command("/usr/bin/security", "add-generic-password", "-U", "-a", id, "-s", service, "-w", secret).Run()
+	return exec.Command("/usr/bin/security", "add-generic-password", "-U", "-a", id, "-s", keychainService, "-w", secret).Run()
 }
-
-func keychainDeleteWithService(id, service string) {
-	if runtime.GOOS == "darwin" {
-		_ = exec.Command("/usr/bin/security", "delete-generic-password", "-a", id, "-s", service).Run()
-	}
-}
-
-func keychainGet(id string) string {
-	return keychainGetWithService(id, keychainService)
-}
-
-func keychainSet(id, secret string) error {
-	return keychainSetWithService(id, secret, keychainService)
-}
-
 func keychainDelete(id string) {
-	keychainDeleteWithService(id, keychainService)
-}
-
-func controllerKeychainGet(id string) string {
-	return keychainGetWithService(id, controllerKeychainService)
-}
-
-func controllerKeychainSet(id, secret string) error {
-	return keychainSetWithService(id, secret, controllerKeychainService)
-}
-
-func controllerKeychainDelete(id string) {
-	keychainDeleteWithService(id, controllerKeychainService)
+	if runtime.GOOS == "darwin" {
+		_ = exec.Command("/usr/bin/security", "delete-generic-password", "-a", id, "-s", keychainService).Run()
+	}
 }
 
 func (s *appState) secretFor(id string) string {
@@ -268,6 +250,7 @@ func (s *appState) forgetSecret(id string) {
 	s.secretMu.Unlock()
 }
 
+<<<<<<< HEAD
 func (s *appState) controllerSecretFor(id string) string {
 	s.controllerSecretMu.RLock()
 	secret, ok := s.controllerSecretCache[id]
@@ -792,6 +775,8 @@ func (s *appState) handleProxyMenuCache(w http.ResponseWriter, r *http.Request) 
 	_, _ = w.Write(response)
 }
 
+=======
+>>>>>>> parent of 7d39e5c (v1.2.3)
 func (s *appState) invalidateStatusCache() {
 	s.statusMu.Lock()
 	s.statusData = nil
@@ -965,24 +950,22 @@ func (s *appState) remote(method, path string, body []byte, query url.Values, di
 	if err != nil {
 		return nil, 0, err
 	}
-	coreSecret := s.secretFor(p.ID)
-	secret := coreSecret
+	secret := s.secretFor(p.ID)
+	if secret == "" {
+		return nil, 0, errors.New("当前服务器尚未配置 Core Secret")
+	}
 	base := p.ManagementURL
 	if direct {
 		base = p.CoreControllerURL
 		if strings.TrimSpace(base) == "" {
 			return nil, 0, errors.New("未配置 Direct Core Controller URL")
 		}
-		if controllerSecret := s.controllerSecretFor(p.ID); controllerSecret != "" {
-			secret = controllerSecret
-		}
-	} else if secret == "" {
-		return nil, 0, errors.New("当前服务器尚未配置 Core Secret")
 	}
 	target, err := joinURL(base, path, p.AllowInsecureHTTP, query)
 	if err != nil {
 		return nil, 0, err
 	}
+<<<<<<< HEAD
 	data, code, requestErr := s.remoteRequest(method, target, body, secret)
 	if direct && code == http.StatusUnauthorized {
 		return data, code, errors.New("Mihomo Controller HTTP 401：认证失败。请在设置的 Controller Secret 中填写 config.yaml 的 secret；它可以与管理面板的 Core Secret 不同")
@@ -1053,6 +1036,30 @@ func (s *appState) remoteRequest(method, target string, body []byte, secret stri
 			if msg == "" {
 				msg = resp.Status
 			}
+=======
+	req, err := http.NewRequest(method, target, strings.NewReader(string(body)))
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Header.Set("Authorization", "Bearer "+secret)
+	req.Header.Set("Accept", "application/json")
+	if len(body) > 0 {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if err != nil {
+		return nil, resp.StatusCode, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		msg := strings.TrimSpace(string(data))
+		if msg == "" {
+			msg = resp.Status
+>>>>>>> parent of 7d39e5c (v1.2.3)
 		}
 		lastErr = fmt.Errorf("远端 HTTP %d：%s", resp.StatusCode, msg)
 
@@ -1066,6 +1073,7 @@ func (s *appState) remoteRequest(method, target string, body []byte, secret stri
 	return lastData, lastCode, lastErr
 }
 
+<<<<<<< HEAD
 func joinProxyURL(baseRaw, group string, allowHTTP bool) (string, error) {
 	u, err := normalizeBase(baseRaw, allowHTTP)
 	if err != nil {
@@ -1124,6 +1132,8 @@ func joinGroupDelayURL(baseRaw, group string, allowHTTP bool, query url.Values) 
 	return u.String(), nil
 }
 
+=======
+>>>>>>> parent of 7d39e5c (v1.2.3)
 func jsonReply(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
@@ -1160,21 +1170,19 @@ func (s *appState) handleProfiles(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.RUnlock()
 	type view struct {
 		Profile
-		HasSecret           bool `json:"hasSecret"`
-		HasControllerSecret bool `json:"hasControllerSecret"`
+		HasSecret bool `json:"hasSecret"`
 	}
 	out := make([]view, 0, len(s.settings.Profiles))
 	for _, p := range s.settings.Profiles {
-		out = append(out, view{p, s.secretFor(p.ID) != "", s.controllerSecretFor(p.ID) != ""})
+		out = append(out, view{p, s.secretFor(p.ID) != ""})
 	}
 	jsonReply(w, 200, map[string]any{"ok": true, "selectedID": s.settings.SelectedID, "profiles": out, "version": appVersion, "build": buildNumber})
 }
 
 func (s *appState) handleProfileSave(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Profile          Profile `json:"profile"`
-		Secret           string  `json:"secret"`
-		ControllerSecret string  `json:"controllerSecret"`
+		Profile Profile `json:"profile"`
+		Secret  string  `json:"secret"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
 		errReply(w, err)
@@ -1220,30 +1228,8 @@ func (s *appState) handleProfileSave(w http.ResponseWriter, r *http.Request) {
 		}
 		s.cacheSecret(p.ID, in.Secret)
 	}
-	if in.ControllerSecret != "" {
-		if err := controllerKeychainSet(p.ID, in.ControllerSecret); err != nil {
-			errReply(w, fmt.Errorf("Controller Secret Keychain 保存失败：%w", err))
-			return
-		}
-		s.cacheControllerSecret(p.ID, in.ControllerSecret)
-	}
 	s.invalidateStatusCache()
 	jsonReply(w, 200, map[string]any{"ok": true, "message": "设置已保存", "id": p.ID})
-}
-
-func (s *appState) handleControllerSecretClear(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		jsonReply(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "message": "method not allowed"})
-		return
-	}
-	p, err := s.current()
-	if err != nil {
-		errReply(w, err)
-		return
-	}
-	controllerKeychainDelete(p.ID)
-	s.cacheControllerSecret(p.ID, "")
-	jsonReply(w, http.StatusOK, map[string]any{"ok": true, "message": "Controller Secret 已清除，将回退使用 Core Secret"})
 }
 
 func (s *appState) handleProfileSelect(w http.ResponseWriter, r *http.Request) {
@@ -1298,9 +1284,7 @@ func (s *appState) handleProfileDelete(w http.ResponseWriter, r *http.Request) {
 	err := s.saveLocked()
 	s.mu.Unlock()
 	keychainDelete(in.ID)
-	controllerKeychainDelete(in.ID)
 	s.forgetSecret(in.ID)
-	s.forgetControllerSecret(in.ID)
 	s.invalidateStatusCache()
 	s.invalidateProxyMenuCache()
 	go s.refreshProxyMenuCache()
@@ -1390,6 +1374,7 @@ func (s *appState) coreLifecycleAction(action string) ([]byte, int, error) {
 	return s.remote(http.MethodPost, "/api/action", body, nil, false)
 }
 
+<<<<<<< HEAD
 func (s *appState) handleProxyMode(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -1658,6 +1643,8 @@ func (s *appState) handleProxySelectAsync(w http.ResponseWriter, r *http.Request
 	})
 }
 
+=======
+>>>>>>> parent of 7d39e5c (v1.2.3)
 func (s *appState) handleSubscriptions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		s.proxy("/api/subscriptions")(w, r)
@@ -1867,6 +1854,7 @@ func (s *appState) routes() http.Handler {
 	mux.HandleFunc("/local/status", s.auth(s.handleStatus))
 	mux.HandleFunc("/local/action", s.auth(s.handleAction))
 	mux.HandleFunc("/local/reload-config", s.auth(s.handleReload))
+<<<<<<< HEAD
 	mux.HandleFunc("/local/proxy-mode", s.auth(s.handleProxyMode))
 	mux.HandleFunc("/local/proxy-groups", s.auth(s.handleProxyGroups))
 	mux.HandleFunc("/local/proxies", s.auth(s.handleProxies))
@@ -1876,6 +1864,8 @@ func (s *appState) routes() http.Handler {
 	mux.HandleFunc("/local/proxy-select", s.auth(s.handleProxySelect))
 	mux.HandleFunc("/local/proxy-select-async", s.auth(s.handleProxySelectAsync))
 	mux.HandleFunc("/local/controller-secret/clear", s.auth(s.handleControllerSecretClear))
+=======
+>>>>>>> parent of 7d39e5c (v1.2.3)
 	mux.HandleFunc("/local/subscriptions", s.auth(s.handleSubscriptions))
 	mux.HandleFunc("/local/logs", s.auth(s.proxy("/api/logs")))
 	mux.HandleFunc("/local/update/check", s.auth(s.proxy("/api/project-update/check")))

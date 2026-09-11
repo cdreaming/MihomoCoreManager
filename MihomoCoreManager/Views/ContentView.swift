@@ -56,7 +56,6 @@ struct ContentView: View {
         ZStack {
             persistentPage(.overview) { OverviewView() }
             persistentPage(.core) { CoreView() }
-            persistentPage(.proxies) { ProxiesView() }
             persistentPage(.subscriptions) { SubscriptionsView() }
             persistentPage(.logs) { LogsView() }
             persistentPage(.updates) { UpdateView() }
@@ -112,7 +111,7 @@ private struct DashboardSidebar: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var live: LiveStatusStore
 
-    private let visibleSections: [SidebarSection] = [.overview, .core, .proxies, .subscriptions, .logs, .settings]
+    private let visibleSections: [SidebarSection] = [.overview, .core, .subscriptions, .logs, .settings]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -218,7 +217,6 @@ private struct DashboardSidebar: View {
         switch section {
         case .overview: "arrow.up.left.and.arrow.down.right"
         case .core: "dot.circle"
-        case .proxies: "arrow.triangle.branch"
         case .subscriptions: "arrow.left.arrow.right"
         case .logs: "command"
         case .updates: "arrow.down.circle"
@@ -708,6 +706,7 @@ private struct DashboardNotice: View {
         .shadow(color: .black.opacity(0.32), radius: 18, y: 8)
     }
 }
+<<<<<<< HEAD
 
 
 struct ProxiesView: View {
@@ -1294,3 +1293,5 @@ struct ProxiesView: View {
         .padding(20)
     }
 }
+=======
+>>>>>>> parent of 7d39e5c (v1.2.3)

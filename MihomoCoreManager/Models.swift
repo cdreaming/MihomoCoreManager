@@ -3,7 +3,6 @@ import Foundation
 enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
     case overview
     case core
-    case proxies
     case subscriptions
     case logs
     case updates
@@ -15,7 +14,6 @@ enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .overview: "概览"
         case .core: "Core 控制"
-        case .proxies: "代理切换"
         case .subscriptions: "订阅管理"
         case .logs: "运行日志"
         case .updates: "项目升级"
@@ -27,7 +25,6 @@ enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .overview: "gauge.with.dots.needle.50percent"
         case .core: "bolt.horizontal.circle"
-        case .proxies: "arrow.triangle.branch"
         case .subscriptions: "arrow.triangle.2.circlepath"
         case .logs: "doc.text.magnifyingglass"
         case .updates: "arrow.down.circle"
@@ -170,6 +167,7 @@ struct ProjectUpdateInfo: Decodable {
     let installerVersion: String?
 }
 
+<<<<<<< HEAD
 
 enum MihomoRunMode: String, CaseIterable, Identifiable, Codable {
     case rule
@@ -301,6 +299,8 @@ struct MihomoProxy: Identifiable, Hashable {
     }
 }
 
+=======
+>>>>>>> parent of 7d39e5c (v1.2.3)
 struct TrafficSample: Identifiable {
     let id = UUID()
     let date: Date
@@ -328,10 +328,13 @@ enum CoreAction: String, Equatable {
 
 enum AppOperation: Equatable {
     case core(CoreAction)
+<<<<<<< HEAD
     case fetchProxies
     case setProxyMode(MihomoRunMode)
     case selectProxy(group: String, proxy: String)
     case testProxyGroup(String)
+=======
+>>>>>>> parent of 7d39e5c (v1.2.3)
     case fetchSubscriptions
     case saveSubscriptions
     case fetchLogs
@@ -350,8 +353,6 @@ enum MihomoClientError: LocalizedError {
     case invalidURL(String)
     case insecureHTTPDisabled
     case missingSecret
-    case missingController
-    case controllerUnauthorized
     case invalidResponse
     case server(status: Int, message: String)
     case operationFailed(String)
@@ -361,8 +362,6 @@ enum MihomoClientError: LocalizedError {
         case .invalidURL(let value): "无效 URL：\(value)"
         case .insecureHTTPDisabled: "该服务器未允许明文 HTTP。请在设置中启用“允许不安全 HTTP”，或改用 HTTPS。"
         case .missingSecret: "尚未为当前服务器配置 Mihomo Core Secret。"
-        case .missingController: "尚未配置 Direct Core Controller URL，无法连接 Mihomo Core API。"
-        case .controllerUnauthorized: "Mihomo Controller HTTP 401：认证失败。请在设置 > Core 配置中填写 config.yaml 的 secret（Controller Secret）；它可以与管理面板的 Core Secret 不同。"
         case .invalidResponse: "服务器返回了无法识别的响应。"
         case .server(let status, let message): "服务器错误 HTTP \(status)：\(message)"
         case .operationFailed(let message): message

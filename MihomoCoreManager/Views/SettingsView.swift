@@ -7,7 +7,6 @@ struct DashboardSettingsView: View {
     @AppStorage("showMenuBarExtra") private var showMenuBarExtra = true
     @State private var draft: ServerProfile?
     @State private var secret = ""
-    @State private var controllerSecret = ""
 
     var body: some View {
         ScrollView {
@@ -94,17 +93,6 @@ struct DashboardSettingsView: View {
             VStack(alignment: .leading, spacing: DashboardLayout.panelSpacing) {
                 DashboardPanelHeader(title: "Core 配置", trailing: "v4.0.0 API baseline")
                 settingRow("Direct Core Controller URL") { TextField("可选", text: profile.coreControllerURL).textContentType(.URL).textFieldStyle(DashboardTextFieldStyle()) }
-                settingRow("Controller Secret") {
-                    HStack(spacing: 8) {
-                        SecureField("留空时复用 Core Secret", text: $controllerSecret).textFieldStyle(DashboardTextFieldStyle())
-                        Button("粘贴") { pasteControllerSecret() }.buttonStyle(DashboardActionButtonStyle()).frame(width: 76)
-                        Button("清除") {
-                            controllerSecret = ""
-                            if let id = model.selectedProfileID { model.saveControllerSecret("", for: id) }
-                        }
-                        .buttonStyle(DashboardActionButtonStyle(destructive: true)).frame(width: 76)
-                    }
-                }
                 settingRow("config.yaml path") { TextField("/etc/mihomo/config.yaml", text: profile.configPath).textFieldStyle(DashboardTextFieldStyle()) }
                 settingRow("MetaCubeXD URL") { TextField("可选", text: profile.metaCubeXDURL).textContentType(.URL).textFieldStyle(DashboardTextFieldStyle()) }
                 toggleRow("项目升级时保留现有设置", isOn: profile.preserveSettingsOnUpdate, detail: "升级参数与当前服务器配置保持一致。")
@@ -154,7 +142,7 @@ struct DashboardSettingsView: View {
 
     private var footerActions: some View {
         HStack(spacing: 10) {
-            Text("Core Secret 与 Controller Secret 均仅保存到 macOS Keychain；Controller Secret 留空时兼容复用 Core Secret。")
+            Text("Core Secret 仅保存到 macOS Keychain；Profile 文件不包含 Secret。")
                 .font(.system(size: 11)).foregroundStyle(DashboardPalette.tertiary)
             Spacer()
             Button("测试连接") { saveDraft(); Task { await model.refreshStatus() } }
@@ -204,19 +192,12 @@ struct DashboardSettingsView: View {
     private var loadTaskID: String { "\(model.selectedProfileID?.uuidString ?? "none")|\(model.selectedSection.rawValue)" }
     private func loadDraft() {
         draft = model.selectedProfile
-        if let id = model.selectedProfileID {
-            secret = KeychainStore.readSecret(profileID: id)
-            controllerSecret = KeychainStore.readControllerSecret(profileID: id)
-        } else {
-            secret = ""
-            controllerSecret = ""
-        }
+        if let id = model.selectedProfileID { secret = KeychainStore.readSecret(profileID: id) } else { secret = "" }
     }
     private func saveDraft() {
         guard let draft else { return }
         model.updateProfile(draft)
         if !secret.isEmpty { model.saveSecret(secret, for: draft.id) }
-        if !controllerSecret.isEmpty { model.saveControllerSecret(controllerSecret, for: draft.id) }
         model.show("设置已保存")
     }
     private func pasteSecret() {
@@ -224,13 +205,6 @@ struct DashboardSettingsView: View {
             model.show("剪贴板中没有可粘贴的文本。", error: true); return
         }
         secret = value.trimmingCharacters(in: .newlines)
-    }
-
-    private func pasteControllerSecret() {
-        guard let value = NSPasteboard.general.string(forType: .string), !value.isEmpty else {
-            model.show("剪贴板中没有可粘贴的文本。", error: true); return
-        }
-        controllerSecret = value.trimmingCharacters(in: .newlines)
     }
 }
 
@@ -313,7 +287,6 @@ private struct ProfileEditorView: View {
     @EnvironmentObject private var model: AppModel
     @Binding var profile: ServerProfile
     @State private var secret = ""
-    @State private var controllerSecret = ""
 
     var body: some View {
         Form {
@@ -359,29 +332,6 @@ private struct ProfileEditorView: View {
                         .textContentType(.URL)
                         .frame(minWidth: 300)
                 }
-                LabeledContent("Controller Secret") {
-                    HStack(spacing: 6) {
-                        SecureField("留空时复用 Core Secret", text: $controllerSecret)
-                            .frame(minWidth: 230)
-                        Button {
-                            pasteControllerSecret()
-                        } label: {
-                            Image(systemName: "doc.on.clipboard")
-                        }
-                        .help("从剪贴板粘贴 config.yaml 的 secret")
-                        Button("保存") { model.saveControllerSecret(controllerSecret, for: profile.id) }
-                    }
-                }
-                HStack {
-                    Text("填写 Mihomo config.yaml 的 secret；留空时兼容复用 Core Secret。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("清除 Controller Secret", role: .destructive) {
-                        controllerSecret = ""
-                        model.saveControllerSecret("", for: profile.id)
-                    }
-                }
                 LabeledContent("config.yaml path") {
                     TextField("/etc/mihomo/config.yaml", text: $profile.configPath)
                         .frame(minWidth: 300)
@@ -406,10 +356,7 @@ private struct ProfileEditorView: View {
             }
         }
         .formStyle(.grouped)
-        .task(id: profile.id) {
-            secret = KeychainStore.readSecret(profileID: profile.id)
-            controllerSecret = KeychainStore.readControllerSecret(profileID: profile.id)
-        }
+        .task(id: profile.id) { secret = KeychainStore.readSecret(profileID: profile.id) }
     }
 
     private func pasteSecret() {
@@ -418,14 +365,6 @@ private struct ProfileEditorView: View {
             return
         }
         secret = value.trimmingCharacters(in: .newlines)
-    }
-
-    private func pasteControllerSecret() {
-        guard let value = NSPasteboard.general.string(forType: .string), !value.isEmpty else {
-            model.show("剪贴板中没有可粘贴的文本。", error: true)
-            return
-        }
-        controllerSecret = value.trimmingCharacters(in: .newlines)
     }
 }
 
@@ -458,7 +397,7 @@ private struct GeneralSettingsView: View {
             }
 
             Section("安全") {
-                Text("Core Secret 与 Controller Secret 均使用 macOS Keychain 保存。Controller Secret 对应 Mihomo config.yaml 的 secret，留空时回退复用 Core Secret。原生 URLSession 不受浏览器 CORS 限制，同时保留系统 TLS 证书验证。")
+                Text("Core Secret 使用 macOS Keychain 保存。服务器 Profile 不包含 Secret。原生 URLSession 不受浏览器 CORS 限制，同时保留系统 TLS 证书验证。")
                     .foregroundStyle(.secondary)
             }
 

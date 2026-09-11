@@ -7,7 +7,6 @@
 - 主进程仅监听随机 `127.0.0.1` 端口，并用每次启动随机 token 保护本地 API。
 - JXA + AppKit/WebKit 提供窗口与状态栏；远端 Mihomo 请求由 Go 进程发送，因此不受 WebKit CORS 限制。
 - Profile 非敏感字段写入 `~/Library/Application Support/MihomoCoreManager/settings.json`；Core Secret 使用 macOS Keychain。
-- v1.2.3 新增代理切换页：通过 Direct Core Controller URL 读取/切换 rule、global、direct 模式，并展示代理组及详细代理；代理选择由本地 Go bridge 转发到 Mihomo Controller，避免 WebKit CORS 限制。
 - v1.2.0 使用 Mihomo Core 管理面板 v4.0.0 Dashboard UI，并继续保留 v1.0.7 菜单栏 JXA 启动稳定性保护。
 - v1.2.0 状态栏本体不再依赖 `NSStatusBarButton` 多行 title；改用按钮内 click-forwarding AppKit overlay 与上下两组 `NSTextField`，确保实时网速可见。
 - 上传在上、下载在下并靠底部对齐；只显示数字 + 自动单位，不显示箭头。数字列左对齐并固定预留 4 个等宽字符位，单位列独立。
@@ -24,4 +23,8 @@
 - 下拉菜单中的上传/下载速度使用两个独立只读菜单项。
 - 主菜单栏 JXA shell 异常退出时自动启动最小恢复 shell，并记录 `Runtime/menubar.log`；标题栏 drag strip、集中状态缓存、标准 Edit responder chain、`⌘V`/显式粘贴继续保留。
 
+<<<<<<< HEAD
 正式 GitHub Release 由 `.github/workflows/release.yml` 在 macOS arm64 Runner 上构建 SwiftUI App；v1.2.4 会先通过 `actions/setup-go@v6` 按 `go.mod` 显式配置 Go，再测试并构建本 portable arm64 安装包，默认使用无需 Apple Developer 凭据的 `--unsigned` 发布路径。普通 macOS CI 也执行相同 portable 构建脚本，避免 Release 阶段才发现工具链缺失。
+=======
+正式 GitHub Release 由 `.github/workflows/release.yml` 在 macOS arm64 Runner 上构建 SwiftUI App；v1.2.2 会先通过 `actions/setup-go@v6` 按 `go.mod` 显式配置 Go，再测试并构建本 portable arm64 安装包，默认使用无需 Apple Developer 凭据的 `--unsigned` 发布路径。普通 macOS CI 也执行相同 portable 构建脚本，避免 Release 阶段才发现工具链缺失。
+>>>>>>> parent of 7d39e5c (v1.2.3)
