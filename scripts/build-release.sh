@@ -18,13 +18,8 @@ NOTES="$DIST/release_v${VERSION}_notes_zh-CN.md"
 
 python3 "$ROOT/scripts/validate-source.py"
 rm -rf "$DIST" "$ROOT/build"
-mkdir -p "$DIST" "$ROOT/build"
+mkdir -p "$DIST"
 
-# Compile Swift files individually instead of batching the large SwiftUI views.
-# Besides avoiding Xcode 16 batch/type-checker edge cases, preserve the real
-# compiler diagnostics at the end of the GitHub Actions step when a build fails.
-XCODE_LOG="$ROOT/build/xcodebuild-release.log"
-set +e
 xcodebuild \
   -project "$ROOT/MihomoCoreManager.xcodeproj" \
   -scheme MihomoCoreManager \
@@ -34,16 +29,7 @@ xcodebuild \
   ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
   MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
   CODE_SIGNING_ALLOWED=NO \
-  SWIFT_ENABLE_BATCH_MODE=NO \
-  clean build 2>&1 | tee "$XCODE_LOG"
-XCODE_STATUS=${PIPESTATUS[0]}
-set -e
-if [[ "$XCODE_STATUS" -ne 0 ]]; then
-  echo "::group::Xcode compiler diagnostics"
-  grep -nE '(^|[[:space:]])(error:|fatal error:)' "$XCODE_LOG" | tail -n 120 || true
-  echo "::endgroup::"
-  exit "$XCODE_STATUS"
-fi
+  clean build
 
 [[ -d "$APP" && -x "$BINARY" ]] || { echo "App build missing: $APP" >&2; exit 1; }
 ARCHS="$(lipo -archs "$BINARY" | xargs)"

@@ -710,39 +710,17 @@ private struct DashboardNotice: View {
 }
 
 
-// Keep the segmented sort control in its own small View.  Xcode 16 can spend
-// a disproportionate amount of time type-checking large SwiftUI result-builder
-// expressions, especially when a generic Picker/ForEach helper is embedded in
-// an already large view.  Isolating it also gives each tag an explicit enum
-// type, which keeps Release builds deterministic across Swift compiler versions.
-private struct ProxySortPicker: View {
-    @Binding var selection: ProxySortOption
-
-    var body: some View {
-        Picker("排序", selection: $selection) {
-            Text("默认").tag(ProxySortOption.defaultOrder)
-            Text("延时").tag(ProxySortOption.delay)
-            Text("质量").tag(ProxySortOption.quality)
-            Text("名字").tag(ProxySortOption.name)
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-    }
-}
-
 struct ProxiesView: View {
     @EnvironmentObject private var model: AppModel
     @State private var selectedGroupName: String?
     @State private var searchText = ""
-    @State private var groupSort: ProxySortOption = .defaultOrder
-    @State private var proxySort: ProxySortOption = .defaultOrder
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DashboardLayout.pageSpacing) {
                 DashboardPageHeader(
                     title: "代理切换",
-                    subtitle: "直接连接 Mihomo Core Controller，支持分组排序、组内测速与线路切换。"
+                    subtitle: "直接连接 Mihomo Core Controller，切换运行模式并管理代理组当前节点。"
                 )
 
                 runModePanel
@@ -824,13 +802,12 @@ struct ProxiesView: View {
             DashboardPanel {
                 VStack(alignment: .leading, spacing: 12) {
                     DashboardPanelHeader(title: "代理组", trailing: "\(groups.count) groups")
-                    ProxySortPicker(selection: $groupSort)
 
                     if groups.isEmpty {
                         emptyState(
                             icon: "arrow.triangle.branch",
                             title: "尚未读取到代理组",
-                            detail: "确认 Core 正在运行，并检查 Controller URL 与 Controller Secret。"
+                            detail: "确认 Core 正在运行，并检查 Controller URL 与 Core Secret。"
                         )
                     } else {
                         LazyVStack(spacing: 6) {
@@ -857,21 +834,21 @@ struct ProxiesView: View {
                     .buttonStyle(DashboardActionButtonStyle(busy: model.activeOperation == .fetchProxies))
                     .disabled(model.isBusy && model.activeOperation != .fetchProxies)
                 }
-                .frame(maxWidth: .infinity, minHeight: 470, alignment: .topLeading)
+                .frame(maxWidth: .infinity, minHeight: 430, alignment: .topLeading)
             }
             .frame(width: 310)
 
             DashboardPanel {
                 if let group = selectedGroup {
                     groupDetail(group)
-                        .frame(maxWidth: .infinity, minHeight: 470, alignment: .topLeading)
+                        .frame(maxWidth: .infinity, minHeight: 430, alignment: .topLeading)
                 } else {
                     emptyState(
                         icon: "point.3.connected.trianglepath.dotted",
                         title: "请选择代理组",
-                        detail: "从左侧选择一个代理组查看、测速并切换详细代理。"
+                        detail: "从左侧选择一个代理组查看并切换详细代理。"
                     )
-                    .frame(maxWidth: .infinity, minHeight: 470)
+                    .frame(maxWidth: .infinity, minHeight: 430)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -880,8 +857,6 @@ struct ProxiesView: View {
 
     private func groupRow(_ group: MihomoProxy) -> some View {
         let selected = selectedGroupName == group.name
-        let currentDelay = groupCurrentDelay(group)
-
         return Button {
             selectedGroupName = group.name
             searchText = ""
@@ -907,9 +882,6 @@ struct ProxiesView: View {
                         .foregroundStyle(selected ? Color.white.opacity(0.88) : DashboardPalette.secondary)
                         .lineLimit(1)
                     Spacer(minLength: 6)
-                    Text(delayText(currentDelay))
-                        .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(selected ? Color.white.opacity(0.78) : delayColor(currentDelay, alive: currentProxy(for: group)?.alive))
                     Text("\(group.all.count)")
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .foregroundStyle(selected ? Color.white.opacity(0.75) : DashboardPalette.tertiary)
@@ -931,77 +903,39 @@ struct ProxiesView: View {
 
     private func groupDetail(_ group: MihomoProxy) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            groupDetailHeader(group)
-            groupDetailToolbar
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(group.name)
+                        .font(.system(size: 18, weight: .bold))
+                    HStack(spacing: 8) {
+                        detailBadge(group.type, accent: false)
+                        detailBadge(group.isSelectableGroup ? "可切换" : "自动策略", accent: group.isSelectableGroup)
+                        if let now = group.now {
+                            detailBadge("当前 · \(now)", accent: true)
+                        }
+                    }
+                }
+                Spacer(minLength: 12)
+                Text("\(filteredMembers.count) / \(group.all.count) 个代理")
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(DashboardPalette.tertiary)
+            }
+
+            TextField("筛选代理…", text: $searchText)
+                .textFieldStyle(DashboardTextFieldStyle())
 
             Rectangle()
                 .fill(DashboardPalette.separator)
                 .frame(height: 1)
 
-            groupMemberList(group)
-        }
-    }
-
-    private func groupDetailHeader(_ group: MihomoProxy) -> some View {
-        let speedOperation = AppOperation.testProxyGroup(group.name)
-
-        return HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(group.name)
-                    .font(.system(size: 18, weight: .bold))
-                HStack(spacing: 8) {
-                    detailBadge(group.type, accent: false)
-                    detailBadge(group.isSelectableGroup ? "可切换" : "自动策略", accent: group.isSelectableGroup)
-                    if let now = group.now {
-                        detailBadge("当前 · \(now)", accent: true)
+            if filteredMembers.isEmpty {
+                emptyState(icon: "magnifyingglass", title: "没有匹配的代理", detail: "调整筛选关键字后重试。")
+                    .frame(maxWidth: .infinity, minHeight: 250)
+            } else {
+                LazyVStack(spacing: 7) {
+                    ForEach(filteredMembers, id: \.self) { name in
+                        proxyRow(name: name, group: group)
                     }
-                }
-            }
-
-            Spacer(minLength: 12)
-
-            VStack(alignment: .trailing, spacing: 8) {
-                Button {
-                    Task { await model.testProxyGroup(group.name) }
-                } label: {
-                    DashboardBusyLabel(
-                        title: "测速当前组",
-                        busyTitle: "测速中…",
-                        isBusy: model.activeOperation == speedOperation
-                    )
-                }
-                .buttonStyle(DashboardActionButtonStyle(
-                    primary: true,
-                    busy: model.activeOperation == speedOperation
-                ))
-                .frame(width: 126)
-                .disabled(model.isBusy && model.activeOperation != speedOperation)
-
-                Text("\(filteredMembers.count) / \(group.all.count) 个代理")
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(DashboardPalette.tertiary)
-            }
-        }
-    }
-
-    private var groupDetailToolbar: some View {
-        HStack(spacing: 10) {
-            TextField("筛选代理…", text: $searchText)
-                .textFieldStyle(DashboardTextFieldStyle())
-            ProxySortPicker(selection: $proxySort)
-                .frame(width: 300)
-        }
-    }
-
-    @ViewBuilder
-    private func groupMemberList(_ group: MihomoProxy) -> some View {
-        if filteredMembers.isEmpty {
-            emptyState(icon: "magnifyingglass", title: "没有匹配的代理", detail: "调整筛选关键字后重试。")
-                .frame(maxWidth: .infinity, minHeight: 250)
-        } else {
-            LazyVStack(spacing: 7) {
-                ForEach(filteredMembers, id: \.self) { name in
-                    proxyRow(name: name, group: group)
                 }
             }
         }
@@ -1012,7 +946,6 @@ struct ProxiesView: View {
         let selected = group.now == name
         let operation = AppOperation.selectProxy(group: group.name, proxy: name)
         let busy = model.activeOperation == operation
-        let effectiveDelay = model.effectiveProxyDelay(name, preferredTestURL: group.testURL)
 
         return Button {
             guard group.isSelectableGroup, !selected else { return }
@@ -1056,9 +989,9 @@ struct ProxiesView: View {
                 Spacer(minLength: 12)
 
                 VStack(alignment: .trailing, spacing: 3) {
-                    Text(delayText(effectiveDelay))
+                    Text(delayText(proxy?.latestDelay))
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(delayColor(effectiveDelay, alive: proxy?.alive))
+                        .foregroundStyle(delayColor(proxy?.latestDelay, alive: proxy?.alive))
                     Text(selected ? "当前使用" : (group.isSelectableGroup ? "点击切换" : "自动选择"))
                         .font(.system(size: 9.5))
                         .foregroundStyle(DashboardPalette.tertiary)
@@ -1080,30 +1013,15 @@ struct ProxiesView: View {
         .opacity(group.isSelectableGroup || selected ? 1 : 0.86)
     }
 
-    private var defaultGroups: [MihomoProxy] {
-        model.proxyGroupsInDefaultOrder
-    }
-
     private var groups: [MihomoProxy] {
-        switch groupSort {
-        case .defaultOrder:
-            return defaultGroups
-        case .delay:
-            return defaultGroups.sorted { groupDelayLess($0, $1) }
-        case .quality:
-            return defaultGroups.sorted { qualityLess(groupProxyName($0), groupProxyName($1)) }
-        case .name:
-            return defaultGroups.sorted {
-                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-            }
-        }
+        model.proxies.filter { $0.isGroup && $0.hidden != true }
     }
 
-    private var groupNames: [String] { defaultGroups.map(\.name) }
+    private var groupNames: [String] { groups.map(\.name) }
 
     private var selectedGroup: MihomoProxy? {
-        guard let selectedGroupName else { return defaultGroups.first }
-        return defaultGroups.first(where: { $0.name == selectedGroupName }) ?? defaultGroups.first
+        guard let selectedGroupName else { return groups.first }
+        return groups.first(where: { $0.name == selectedGroupName }) ?? groups.first
     }
 
     private var proxyByName: [String: MihomoProxy] {
@@ -1115,20 +1033,8 @@ struct ProxiesView: View {
     private var filteredMembers: [String] {
         guard let group = selectedGroup else { return [] }
         let keyword = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let filtered = group.all.filter { keyword.isEmpty || $0.lowercased().contains(keyword) }
-
-        switch proxySort {
-        case .defaultOrder:
-            return filtered
-        case .delay:
-            return filtered.sorted { delayLess($0, $1) }
-        case .quality:
-            return filtered.sorted { qualityLess($0, $1) }
-        case .name:
-            return filtered.sorted {
-                $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
-            }
-        }
+        guard !keyword.isEmpty else { return group.all }
+        return group.all.filter { $0.lowercased().contains(keyword) }
     }
 
     private var controllerText: String {
@@ -1146,127 +1052,7 @@ struct ProxiesView: View {
 
     private func normalizeSelection() {
         if let selectedGroupName, groupNames.contains(selectedGroupName) { return }
-        self.selectedGroupName = defaultGroups.first?.name
-    }
-
-
-    private func groupProxyName(_ group: MihomoProxy) -> String {
-        group.now ?? group.name
-    }
-
-    private func currentProxy(for group: MihomoProxy) -> MihomoProxy? {
-        guard let now = group.now else { return proxyByName[group.name] }
-        return proxyByName[now] ?? proxyByName[group.name]
-    }
-
-    private func groupCurrentDelay(_ group: MihomoProxy) -> Int? {
-        if let now = group.now {
-            return model.effectiveProxyDelay(now, preferredTestURL: group.testURL)
-        }
-        return model.effectiveProxyDelay(group.name, preferredTestURL: group.testURL)
-    }
-
-    private func groupDelayLess(_ lhs: MihomoProxy, _ rhs: MihomoProxy) -> Bool {
-        let l = groupCurrentDelay(lhs)
-        let r = groupCurrentDelay(rhs)
-        switch (validDelay(l), validDelay(r)) {
-        case let (lv?, rv?):
-            if lv != rv { return lv < rv }
-        case (_?, nil):
-            return true
-        case (nil, _?):
-            return false
-        case (nil, nil):
-            break
-        }
-        return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-    }
-
-    private func delayLess(_ lhs: String, _ rhs: String) -> Bool {
-        let l = validDelay(model.effectiveProxyDelay(lhs))
-        let r = validDelay(model.effectiveProxyDelay(rhs))
-        switch (l, r) {
-        case let (lv?, rv?):
-            if lv != rv { return lv < rv }
-        case (_?, nil):
-            return true
-        case (nil, _?):
-            return false
-        case (nil, nil):
-            break
-        }
-        return lhs.localizedCaseInsensitiveCompare(rhs) == .orderedAscending
-    }
-
-    private func validDelay(_ delay: Int?) -> Int? {
-        guard let delay, delay > 0 else { return nil }
-        return delay
-    }
-
-    private struct QualityKey {
-        let aliveRank: Int
-        let failureCount: Int
-        let jitter: Int
-        let averageDelay: Double
-        let latestDelay: Int
-        let name: String
-    }
-
-    private func qualityKey(_ name: String) -> QualityKey {
-        let proxy = proxyByName[name]
-        let preferredTestURL = selectedGroup?.testURL
-        let aliveRank: Int
-        switch proxy?.alive {
-        case true: aliveRank = 0
-        case nil: aliveRank = 1
-        case false: aliveRank = 2
-        }
-
-        let history: [MihomoProxyDelaySample]
-        if let proxy {
-            history = Array(proxy.history.suffix(6))
-        } else {
-            history = []
-        }
-        let recentDelays = history.compactMap { sample in sample.delay }
-        var positive = recentDelays.filter { $0 > 0 }
-        var failures = recentDelays.filter { $0 <= 0 }.count
-
-        if let tested = model.proxyDelayResults[name] {
-            if tested > 0 {
-                positive.append(tested)
-            } else {
-                failures += 1
-            }
-        }
-
-        let average = positive.isEmpty
-            ? Double.greatestFiniteMagnitude
-            : Double(positive.reduce(0, +)) / Double(positive.count)
-        let jitter = positive.count >= 2
-            ? (positive.max() ?? 0) - (positive.min() ?? 0)
-            : (positive.isEmpty ? Int.max : 0)
-        let latest = validDelay(model.effectiveProxyDelay(name, preferredTestURL: preferredTestURL)) ?? Int.max
-
-        return QualityKey(
-            aliveRank: aliveRank,
-            failureCount: failures,
-            jitter: jitter,
-            averageDelay: average,
-            latestDelay: latest,
-            name: name
-        )
-    }
-
-    private func qualityLess(_ lhs: String, _ rhs: String) -> Bool {
-        let l = qualityKey(lhs)
-        let r = qualityKey(rhs)
-        if l.aliveRank != r.aliveRank { return l.aliveRank < r.aliveRank }
-        if l.failureCount != r.failureCount { return l.failureCount < r.failureCount }
-        if l.jitter != r.jitter { return l.jitter < r.jitter }
-        if l.averageDelay != r.averageDelay { return l.averageDelay < r.averageDelay }
-        if l.latestDelay != r.latestDelay { return l.latestDelay < r.latestDelay }
-        return l.name.localizedCaseInsensitiveCompare(r.name) == .orderedAscending
+        self.selectedGroupName = groups.first?.name
     }
 
     private func capabilityText(_ name: String, enabled: Bool?) -> some View {
@@ -1291,15 +1077,13 @@ struct ProxiesView: View {
     }
 
     private func delayText(_ delay: Int?) -> String {
-        guard let delay else { return "-- ms" }
-        if delay <= 0 { return "超时" }
+        guard let delay, delay > 0 else { return "-- ms" }
         return "\(delay) ms"
     }
 
     private func delayColor(_ delay: Int?, alive: Bool?) -> Color {
         if alive == false { return DashboardPalette.red }
-        guard let delay else { return DashboardPalette.tertiary }
-        if delay <= 0 { return DashboardPalette.red }
+        guard let delay, delay > 0 else { return DashboardPalette.tertiary }
         if delay < 150 { return DashboardPalette.green }
         if delay < 350 { return Color.orange }
         return DashboardPalette.red
