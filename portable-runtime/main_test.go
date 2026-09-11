@@ -64,7 +64,9 @@ func TestGroupDelayCacheDecoratesSharedProxyData(t *testing.T) {
 		switch {
 		case r.URL.EscapedPath() == "/group/HK%20%2F%20Auto/delay" && r.Method == http.MethodGet:
 			if r.URL.Query().Get("timeout") != "5000" {
-				t.Fatalf("unexpected timeout: %s", r.URL.RawQuery)
+				t.Errorf("unexpected timeout: %s", r.URL.RawQuery)
+				http.Error(w, "unexpected timeout", http.StatusBadRequest)
+				return
 			}
 			_, _ = w.Write([]byte(`{"Shared-A":88,"Only-HK":143}`))
 		case r.URL.Path == "/proxies" && r.Method == http.MethodGet:
@@ -90,6 +92,7 @@ func TestGroupDelayCacheDecoratesSharedProxyData(t *testing.T) {
 		secretCache:     map[string]string{"test": ""},
 		proxyDelayCache: map[string]map[string]int{},
 	}
+	defer state.waitBackground()
 
 	rec := httptest.NewRecorder()
 	state.handleProxyDelay(rec, httptest.NewRequest(
@@ -610,6 +613,7 @@ func TestProxyControllerModeListAndSelection(t *testing.T) {
 		client:      controller.Client(),
 		secretCache: map[string]string{"test": "secret"},
 	}
+	defer state.waitBackground()
 
 	rec := httptest.NewRecorder()
 	state.handleProxyMode(rec, httptest.NewRequest(http.MethodGet, "/local/proxy-mode", nil))
@@ -731,6 +735,7 @@ func TestSubscriptionReloadTimeoutFallsBackToSafeRestart(t *testing.T) {
 		client:      remote.Client(),
 		secretCache: map[string]string{"test": "secret"},
 	}
+	defer state.waitBackground()
 
 	req := httptest.NewRequest(http.MethodPost, "/local/subscriptions", strings.NewReader(`{"subscriptions":{"BYG":"https://example.com/sub"}}`))
 	rec := httptest.NewRecorder()
@@ -810,8 +815,9 @@ func TestMenuScriptUsesCachedSnapshotNativeDragAndV120StatusSpeed(t *testing.T) 
 		"downValueLabel.stringValue=$(down.value)",
 		"button.image=null; button.imagePosition=0; button.title=''",
 		"Never allow a cosmetic status-bar failure to terminate the whole App",
-		"upHeader.title='↑  上传                     '+fmtRate(lastUp)",
-		"downHeader.title='↓  下载                     '+fmtRate(lastDown)",
+		"speedHeader.title='↑  上传  '+fmtRate(lastUp)+'      ↓  下载  '+fmtRate(lastDown)",
+		"proxyEndSeparator=$.NSMenuItem.separatorItem; menu.addItem(proxyEndSeparator)",
+		"var index=proxyEndSeparator?menu.indexOfItem(proxyEndSeparator):menu.indexOfItem(coreRoot)",
 		"var coreRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('Core 控制'",
 		"var toolsRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('管理与工具'",
 		"var displayRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('状态栏显示'",
@@ -878,8 +884,8 @@ func TestPortableInteractionRegressionV118(t *testing.T) {
 	}
 }
 
-func TestPortableVersionV124(t *testing.T) {
-	if appVersion != "1.2.4" || buildNumber != "124" {
+func TestPortableVersionV125(t *testing.T) {
+	if appVersion != "1.2.5" || buildNumber != "125" {
 		t.Fatalf("unexpected portable version/build: %s/%s", appVersion, buildNumber)
 	}
 }

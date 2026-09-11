@@ -10,9 +10,9 @@ permissions:
 
 jobs:
   arm64-build:
-    name: Apple Silicon arm64 build
+    name: Apple Silicon arm64 full release simulation
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
 
@@ -27,32 +27,25 @@ jobs:
         run: |
           set -Eeuo pipefail
           test "$(uname -m)" = "arm64"
+          xcodebuild -version
+          go version
 
-      - name: Source gate
-        run: |
-          python3 scripts/validate-source.py
-          python3 scripts/build-source-manifest.py --check
-
-      - name: Build arm64 app and installer assets
-        run: bash scripts/build-release.sh --unsigned
-
-      - name: Portable release parity test
+      - name: 真实 macOS arm64 发布全链路模拟
         shell: bash
-        run: |
-          set -Eeuo pipefail
-          (cd portable-runtime && CGO_ENABLED=0 go test ./...)
-          bash scripts/build-portable-installer.sh
+        run: bash scripts/simulate-release.sh
 
-      - name: Verify binary architecture
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          BIN="build/DerivedData/Build/Products/Release/MihomoCoreManager.app/Contents/MacOS/MihomoCoreManager"
-          test "$(lipo -archs "$BIN" | xargs)" = "arm64"
+      - name: Upload Xcode diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: xcode-diagnostics-${{ github.run_id }}
+          path: build/xcodebuild-release.log
+          if-no-files-found: ignore
 
       - uses: actions/upload-artifact@v6
         with:
-          name: MihomoCoreManager-arm64-unsigned
+          name: MihomoCoreManager-arm64-release-simulation
           path: |
             dist/
             dist-portable/
+            build/release-simulation-verify/

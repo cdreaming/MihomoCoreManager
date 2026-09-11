@@ -23,8 +23,8 @@ import (
 )
 
 const (
-	appVersion                = "1.2.4"
-	buildNumber               = "124"
+	appVersion                = "1.2.5"
+	buildNumber               = "125"
 	keychainService           = "cc.kkr.MihomoCoreManager"
 	controllerKeychainService = "cc.kkr.MihomoCoreManager.controller-secret"
 )
@@ -63,6 +63,8 @@ type appState struct {
 	server   *http.Server
 	done     chan struct{}
 	doneOnce sync.Once
+
+	backgroundWG sync.WaitGroup
 
 	client *http.Client
 
@@ -163,6 +165,21 @@ func loadState() *appState {
 		_ = s.saveLocked()
 	}
 	return s
+}
+
+// goBackground owns short-lived asynchronous work spawned by request handlers.
+// Tests and shutdown paths can wait for it before removing Runtime files, which
+// prevents background cache refreshes from racing temporary-directory cleanup.
+func (s *appState) goBackground(fn func()) {
+	s.backgroundWG.Add(1)
+	go func() {
+		defer s.backgroundWG.Done()
+		fn()
+	}()
+}
+
+func (s *appState) waitBackground() {
+	s.backgroundWG.Wait()
 }
 
 func (s *appState) saveLocked() error {
@@ -752,7 +769,7 @@ func (s *appState) refreshProxyMenuCache() {
 }
 
 func (s *appState) startProxyMenuPoller() {
-	go func() {
+	s.goBackground(func() {
 		s.refreshProxyMenuCache()
 		ticker := time.NewTicker(4 * time.Second)
 		defer ticker.Stop()
@@ -764,7 +781,7 @@ func (s *appState) startProxyMenuPoller() {
 				return
 			}
 		}
-	}()
+	})
 }
 
 func (s *appState) handleProxyMenuCache(w http.ResponseWriter, r *http.Request) {
@@ -780,7 +797,7 @@ func (s *appState) handleProxyMenuCache(w http.ResponseWriter, r *http.Request) 
 	s.proxyMenuMu.RUnlock()
 
 	if len(response) == 0 || (profile.ID != "" && profileID != profile.ID) {
-		go s.refreshProxyMenuCache()
+		s.goBackground(s.refreshProxyMenuCache)
 		jsonReply(w, http.StatusOK, map[string]any{
 			"ok": true, "generation": generation, "proxies": map[string]any{},
 		})
@@ -907,7 +924,7 @@ func (s *appState) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *appState) startStatusPoller() {
-	go func() {
+	s.goBackground(func() {
 		s.refreshStatusCache()
 		ticker := time.NewTicker(1200 * time.Millisecond)
 		defer ticker.Stop()
@@ -919,7 +936,7 @@ func (s *appState) startStatusPoller() {
 				return
 			}
 		}
-	}()
+	})
 }
 
 func normalizeBase(raw string, allowHTTP bool) (*url.URL, error) {
@@ -1262,7 +1279,7 @@ func (s *appState) handleProfileSelect(w http.ResponseWriter, r *http.Request) {
 			}
 			s.invalidateStatusCache()
 			s.invalidateProxyMenuCache()
-			go s.refreshProxyMenuCache()
+			s.goBackground(s.refreshProxyMenuCache)
 			jsonReply(w, 200, map[string]any{"ok": true})
 			return
 		}
@@ -1303,7 +1320,7 @@ func (s *appState) handleProfileDelete(w http.ResponseWriter, r *http.Request) {
 	s.forgetControllerSecret(in.ID)
 	s.invalidateStatusCache()
 	s.invalidateProxyMenuCache()
-	go s.refreshProxyMenuCache()
+	s.goBackground(s.refreshProxyMenuCache)
 	if err != nil {
 		errReply(w, err)
 		return
@@ -1533,7 +1550,7 @@ func (s *appState) runProxyDelay(in proxyDelayRequest) (map[string]int, error) {
 		}
 	}
 	s.cacheProxyDelays(profile.ID, normalized)
-	go s.refreshProxyMenuCache()
+	s.goBackground(s.refreshProxyMenuCache)
 	return delays, nil
 }
 
@@ -1572,11 +1589,11 @@ func (s *appState) handleProxyDelayAsync(w http.ResponseWriter, r *http.Request)
 		jsonReply(w, http.StatusBadRequest, map[string]any{"ok": false, "message": "代理组不能为空"})
 		return
 	}
-	go func() {
+	s.goBackground(func() {
 		if _, err := s.runProxyDelay(in); err != nil {
 			log.Printf("status menu proxy delay %q: %v", in.Group, err)
 		}
-	}()
+	})
 	jsonReply(w, http.StatusAccepted, map[string]any{
 		"ok": true, "message": "已开始测速", "group": in.Group,
 	})
@@ -1611,7 +1628,7 @@ func (s *appState) runProxySelect(in proxySelectRequest) error {
 		}
 		return err
 	}
-	go s.refreshProxyMenuCache()
+	s.goBackground(s.refreshProxyMenuCache)
 	return nil
 }
 
@@ -1648,11 +1665,11 @@ func (s *appState) handleProxySelectAsync(w http.ResponseWriter, r *http.Request
 		jsonReply(w, http.StatusBadRequest, map[string]any{"ok": false, "message": "代理组和代理名称不能为空"})
 		return
 	}
-	go func() {
+	s.goBackground(func() {
 		if err := s.runProxySelect(in); err != nil {
 			log.Printf("status menu proxy select %q -> %q: %v", in.Group, in.Name, err)
 		}
-	}()
+	})
 	jsonReply(w, http.StatusAccepted, map[string]any{
 		"ok": true, "message": "已提交线路切换", "group": in.Group, "name": in.Name,
 	})
@@ -1700,7 +1717,7 @@ func (s *appState) handleSubscriptions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.invalidateStatusCache()
-	go s.refreshStatusCache()
+	s.goBackground(s.refreshStatusCache)
 	jsonReply(w, http.StatusOK, map[string]any{
 		"ok":        true,
 		"message":   "订阅已保存并应用；远端热重载超时，已自动通过安全重启 Core 应用新配置。",
@@ -1727,7 +1744,7 @@ func (s *appState) handleAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.invalidateStatusCache()
-	go s.refreshStatusCache()
+	s.goBackground(s.refreshStatusCache)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_, _ = w.Write(data)
@@ -1754,7 +1771,7 @@ func (s *appState) handleReload(w http.ResponseWriter, r *http.Request) {
 		data = []byte(`{"ok":true,"message":"配置已通过 Direct Controller 重载"}`)
 	}
 	s.invalidateStatusCache()
-	go s.refreshStatusCache()
+	s.goBackground(s.refreshStatusCache)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_, _ = w.Write(data)
@@ -1973,12 +1990,12 @@ var win=$.NSWindow.alloc.initWithContentRectStyleMaskBackingDefer(rect,32783,2,f
 win.title='Mihomo Core 管理面板'; win.titleVisibility=1; win.titlebarAppearsTransparent=true; win.movableByWindowBackground=true;
 var host=$.NSView.alloc.initWithFrame(rect); host.autoresizingMask=18; win.contentView=host;
 var web=$.WKWebView.alloc.initWithFrame(host.bounds); web.autoresizingMask=18; host.addSubview(web);
-var dragStrip=$.MihomoWindowDragView.alloc.initWithFrame($.NSMakeRect(0,rect.size.height-52,rect.size.width,52)); dragStrip.autoresizingMask=10; host.addSubview(dragStrip);
+var dragStrip=$.MihomoWindowDragView.alloc.initWithFrame($.NSMakeRect(0,rect.size.height-36,rect.size.width,36)); dragStrip.autoresizingMask=10; host.addSubview(dragStrip);
 win.center;
 function showURL(u){ try{var url=$.NSURL.URLWithString($(u));var req=$.NSURLRequest.requestWithURL(url);web.loadRequest(req);win.makeKeyAndOrderFront(null);cocoaApp.activateIgnoringOtherApps(true);}catch(e){std.displayNotification(String(e),{withTitle:'Mihomo Core Manager'});} }
 function openHash(h){ showURL(BASE+'/#'+h); }
 
-var statusItem=null, statusHeader=null, upHeader=null, downHeader=null, prefIconItem=null, prefStatusItem=null, prefSpeedItem=null, iconOnlyItem=null, startItem=null, stopItem=null, serverMenu=null, serverRoot=null, proxyHeader=null, proxyMenuRoots=[], proxyMenuData={}, proxyMenuGeneration=-1, proxySubmenuBuilt={}, proxyMenuTick=0;
+var statusItem=null, statusHeader=null, speedHeader=null, prefIconItem=null, prefStatusItem=null, prefSpeedItem=null, iconOnlyItem=null, startItem=null, stopItem=null, serverMenu=null, serverRoot=null, proxyHeader=null, proxyEndSeparator=null, proxyMenuRoots=[], proxyMenuData={}, proxyMenuGeneration=-1, proxySubmenuBuilt={}, proxyMenuTick=0;
 var showIcon=true, showStatus=true, showSpeed=true, lastRunning=false, lastReachable=false, lastUp=0, lastDown=0, lastCoreVersion='--';
 var appSymbol=null, missingSnapshotTicks=0;
 var statusOverlay=null, statusIconView=null, statusDot=null, upValueLabel=null, upUnitLabel=null, downValueLabel=null, downUnitLabel=null;
@@ -2087,8 +2104,7 @@ function updateStatusTitle(){
   renderStatusButton();
   var state=lastReachable?(lastRunning?'Running':'Stopped'):'Offline';
   if(statusHeader) statusHeader.title='Mihomo Core  ·  '+lastCoreVersion+'  ·  '+state;
-  if(upHeader) upHeader.title='↑  上传                     '+fmtRate(lastUp);
-  if(downHeader) downHeader.title='↓  下载                     '+fmtRate(lastDown);
+  if(speedHeader) speedHeader.title='↑  上传  '+fmtRate(lastUp)+'      ↓  下载  '+fmtRate(lastDown);
   if(startItem) startItem.enabled=lastReachable&&!lastRunning;
   if(stopItem) stopItem.enabled=lastReachable&&lastRunning;
 }
@@ -2243,7 +2259,7 @@ function rebuildProxyMenus(){
   proxyMenuRoots=[];
 
   var groups=proxyConfigOrderedGroups(proxyMenuData);
-  var index=menu.indexOfItem(coreRoot); if(index<0)index=menu.numberOfItems;
+  var index=proxyEndSeparator?menu.indexOfItem(proxyEndSeparator):menu.indexOfItem(coreRoot); if(index<0)index=menu.numberOfItems;
   groups.forEach(function(name){
     var p=proxyMenuData[name], current=p.now||p.type||'';
     var title=name+(current?'  ·  '+current:'');
@@ -2343,8 +2359,7 @@ function addSymbol(item,name){try{var img=$.NSImage.imageWithSystemSymbolNameAcc
 function addSep(targetMenu){targetMenu.addItem($.NSMenuItem.separatorItem);}
 
 statusHeader=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('Mihomo Core  ·  --  ·  Offline','', '');statusHeader.enabled=false;menu.addItem(statusHeader);
-upHeader=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('↑  上传                     0 B/s','', '');upHeader.enabled=false;menu.addItem(upHeader);
-downHeader=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('↓  下载                     0 B/s','', '');downHeader.enabled=false;menu.addItem(downHeader);
+speedHeader=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('↑  上传  0 B/s      ↓  下载  0 B/s','', '');speedHeader.enabled=false;menu.addItem(speedHeader);
 addSep(menu);
 
 addSymbol(addItem(menu,'打开主窗口','openManager:','o'),'macwindow');
@@ -2353,6 +2368,7 @@ serverRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('服务器  ·  �
 addSep(menu);
 
 proxyHeader=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('代理组','',''); proxyHeader.enabled=false; menu.addItem(proxyHeader);
+proxyEndSeparator=$.NSMenuItem.separatorItem; menu.addItem(proxyEndSeparator);
 var coreRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('Core 控制','', ''); var coreMenu=$.NSMenu.alloc.initWithTitle('Core 控制'); coreRoot.submenu=coreMenu; addSymbol(coreRoot,'cpu'); menu.addItem(coreRoot);
 startItem=addSymbol(addItem(coreMenu,'启动 Core','startCore:',''),'play.fill');
 stopItem=addSymbol(addItem(coreMenu,'停止 Core','stopCore:',''),'stop.fill');
