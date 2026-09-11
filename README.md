@@ -1,19 +1,20 @@
 # Mihomo Core Manager for macOS
 
-基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.2.7 (build 127)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.2.6 (build 126)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
 
-## v1.2.7
+## v1.2.6
 
-v1.2.7 以本次 `source-4` 功能代码为基线，并重新套用已经成功发布的 **v1.2.5 fixed5 发布工程设置**。业务层保留 source-4 的流畅度、状态缓存、代理菜单即时刷新和完整左右布局；发布层恢复经过 v1.2.4 / v1.2.5 实际发布验证的完整硬门禁。
+v1.2.6 以已成功发布的 v1.2.5 为功能基线，集中把 v1.2.4 / v1.2.5 发布故障转化为自动化发布规则：
 
-- App / Xcode / portable runtime 统一为 **v1.2.7 / build 127**。
-- CI 与 Release 都只调用 `scripts/simulate-release.sh`，避免两套发布流程漂移。
-- strict macOS preflight 自行重建/复核 manifest，并使用当前 Xcode macOS SDK + `arm64-apple-macos14.0` 做 semantic typecheck。
-- Release Xcode build 固定 `SWIFT_ENABLE_BATCH_MODE=NO`，保存完整 `xcodebuild-release.log` 并在失败时回显真实编译错误。
-- 恢复 v1.2.4 Xcode 16.4 兼容写法：显式 Optional switch、独立 `ProxySortPicker`、拆分大型 SwiftUI result builder、显式 `Hashable`、具体 history 中间类型和 macOS 14 双参数 `onChange`。
-- portable 异步缓存/状态刷新重新纳入 `backgroundWG + goBackground()` 生命周期；TempDir 测试清理前等待后台任务，避免 macOS/APFS `directory not empty` 竞态。
-- 发布模拟包含目标竞态重复测试、shuffle、race、vet、Darwin/arm64 runtime/test binary 交叉编译、portable ZIP/Mach-O/版本校验；真实 `macos-15` arm64 Runner 继续执行 Xcode Release build 和最终 SHA-256 回放。
-- `SOURCE-SHA256SUMS.txt` 按最终源码重新生成。
+- CI 与 Release 统一执行同一个 `scripts/simulate-release.sh --strict-macos`，避免两套构建步骤漂移。
+- Apple Silicon `macos-15` 上执行当前 Xcode SDK 的 Swift typecheck、真实 Release `xcodebuild`、arm64 架构与最终资产验证。
+- Swift Release 构建显式 `SWIFT_ENABLE_BATCH_MODE=NO`；保留完整 `xcodebuild-release.log` 并在失败时回显真实编译诊断。
+- 固化 v1.2.4 的 SwiftUI/Xcode 兼容经验：`ProxySortOption: Hashable`、独立排序 Picker、小型 ViewBuilder、`Bool?` 显式 `.some/.none` 穷尽 switch。
+- strict macOS preflight 使用 `xcrun --sdk macosx` 获取 SDK，再以 `-sdk` + `-target arm64-apple-macos14.0` 做语义 typecheck。
+- manifest 在 PR/main 中严格检查，正式 Release 的精确 checkout 可自动重建后再复核，并在 stale 时报告新增/删除/哈希变化文件。
+- portable 短生命周期后台任务统一纳入 `backgroundWG`，彻底消除测速测试与 `testing.TempDir` 清理竞争；发布模拟对该回归连续运行 300 次，并执行 shuffle、race、vet。
+- Darwin/arm64 Go test binary、portable runtime、ZIP/Info.plist/SHA-256 都加入发布门禁。
+- 版本升级为 v1.2.6 / build 126。
 
 ## v1.2.5
 

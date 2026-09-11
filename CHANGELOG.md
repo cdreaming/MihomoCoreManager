@@ -1,15 +1,16 @@
 # Changelog
 
-## v1.2.7
+## v1.2.6
 
-- 以 `source-4` 为功能基线，并恢复已经成功发布的 v1.2.5 fixed5 发布工程配置。
-- App / Xcode / portable runtime 统一升级为 v1.2.7 / build 127。
-- CI 与 Release 统一走 `scripts/simulate-release.sh`；strict macOS preflight 自愈 manifest 并使用 Xcode SDK-bound Swift semantic typecheck。
-- Release 恢复 `SWIFT_ENABLE_BATCH_MODE=NO`、完整 `xcodebuild-release.log`、失败错误回显和 CI diagnostics 上传。
-- 恢复 v1.2.4 Xcode 16.4 编译兼容门禁：Optional switch、独立 `ProxySortPicker`、拆分大型 ViewBuilder、`ProxySortOption: Hashable`、具体 history 类型和 macOS 14 `onChange`。
-- portable 恢复 `backgroundWG + goBackground()` 生命周期，相关测试在 TempDir 清理前等待后台任务；修复 httptest handler 中 `t.Fatalf` 的 goroutine 隐患。
-- 发布模拟覆盖目标竞态重复测试、shuffle、race、vet、Darwin/arm64 交叉编译、portable ZIP/Mach-O/版本校验，并在真实 Apple Silicon macOS 上继续原生 Xcode Release build、架构和 SHA-256 回放。
-- 保留 source-4 的状态缓存平滑、HTTP keep-alive、代理菜单增量刷新、线路切换即时后缀更新和完整左右布局。
+- 将 v1.2.4 / v1.2.5 实际发布故障沉淀为统一发布模拟：CI 与 Release 均执行 `scripts/simulate-release.sh --strict-macos`。
+- 新增 `release-preflight.py`：严格模式要求 Darwin arm64，绑定当前 Xcode macOS SDK，以 `arm64-apple-macos14.0` 进行 Swift typecheck，并检查 Release build settings。
+- Release Swift 编译显式关闭 batch mode；完整 Xcode 日志写入 `build/xcodebuild-release.log`，失败时自动回显编译诊断。
+- 固化 SwiftUI Release 兼容修复：`ProxySortOption: Hashable`、独立 `ProxySortPicker`、拆分代理组详情 ViewBuilder、`Bool?` 显式 Optional switch、现代 `onChange` 签名。
+- 增强 source manifest：严格 Release 可在精确 checkout 自动重建并复核；stale 诊断列出新增、删除和 SHA-256 变化文件。
+- 修复 portable 后台刷新生命周期：短任务统一通过 `backgroundWG/goBackground` 跟踪，测试退出前等待，消除 `TempDir RemoveAll ... Runtime: directory not empty` 竞态。
+- 发布模拟增加目标回归 300 次、全套 shuffle 10 次、`go test -race`、`go vet`、Darwin arm64 test binary 交叉编译及 Mach-O 检查。
+- portable 与 native 产物新增版本、结构、CRC、架构和 SHA-256 校验；GitHub Release 上传后仍在线回读校验。
+- 版本升级为 v1.2.6 / build 126。
 
 ## v1.2.5
 
@@ -19,11 +20,6 @@
 - 主窗口重构为完整左右布局，移除独立视觉标题栏；portable 删除原 36px HTML titlebar，仅保留 22px 不可见拖拽区域，原生继续使用 hidden title bar / full-size content。
 - 左侧标题区重排为蓝紫 `M` 图标 + 两行 `Mihomo Core / 管理面板`，并将标题改为与界面一致的系统字体和主文字色（深色界面呈柔和白色）；版本信息置于其下，移除重复标题。
 - 左侧栏宽度统一为 256pt/px，标题字体、字重、间距、主文字色和深色背景与 Dashboard 整体风格统一。
-- 流畅度优化：原生 SwiftUI 把 1.2 秒实时状态更新隔离到小型子视图，状态轮询去重，代理索引缓存化；代理页首次加载改为无全局 Busy 的后台加载，`/proxies` 与运行模式并发读取。
-- 代理切换关键路径缩短：成功 PUT 后立即更新界面并在后台做可取消的短延迟校准；测速完成不再强制追加一次完整代理拉取。相同代理组的旧校准任务使用 token 隔离，避免晚到任务清掉较新的任务引用。
-- portable 状态接口改为“同 profile 最近成功快照立即返回 + 后台 TryLock 刷新”，远端状态读取采用 4 秒单次上限；短暂抖动仅保留最多约 4 秒最近成功状态，持续断线会按时转为离线，不会无限显示旧 Running。
-- portable HTTP 客户端基于 Go 默认 Transport 克隆，只扩大安全 keep-alive 连接池；TLS 证书验证、系统代理规则、鉴权和 HTTP 安全开关保持不变。所有写操作仍只发送一次，不做自动重试。
-- 状态栏代理菜单改为结构感知增量刷新：仅代理组顺序/成员结构变化时重建 NSMenu 根节点；延时/history/当前线路变化只更新必要后缀，异步线路切换失败仍会定向回滚对应组。
 - 版本保持 v1.2.5 / build 125。
 
 ## v1.2.4

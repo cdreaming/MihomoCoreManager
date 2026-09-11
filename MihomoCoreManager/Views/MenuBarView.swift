@@ -3,8 +3,13 @@ import SwiftUI
 
 struct MenuBarView: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var live: LiveStatusStore
     @Environment(\.openWindow) private var openWindow
 
+    private let columns = [
+        GridItem(.flexible(), spacing: 8),
+        GridItem(.flexible(), spacing: 8)
+    ]
     private let shortcutColumns = [
         GridItem(.flexible(), spacing: 8),
         GridItem(.flexible(), spacing: 8),
@@ -14,12 +19,13 @@ struct MenuBarView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
-                MenuBarLiveSummary()
+                header
+                speedCard
                 serverCard
                 menuSectionDivider
                 proxyMenus
                 menuSectionDivider
-                MenuBarCoreActions()
+                coreActions
                 shortcutGrid
                 updateActions
                 displayOptions
@@ -34,6 +40,102 @@ struct MenuBarView: View {
         .task(id: model.selectedProfileID) {
             await model.ensureProxiesLoaded()
         }
+    }
+
+    private var header: some View {
+        HStack(spacing: 11) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [DashboardPalette.accent, Color(red: 0.39, green: 0.30, blue: 1.0)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                Image(systemName: "circle.grid.cross")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+            .frame(width: 40, height: 40)
+            .shadow(color: DashboardPalette.accent.opacity(0.22), radius: 10, y: 4)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Mihomo Core")
+                    .font(.system(size: 15, weight: .bold))
+                Text(live.status?.versions?.core ?? "正在读取版本…")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(DashboardPalette.secondary)
+                    .monospacedDigit()
+            }
+
+            Spacer(minLength: 8)
+            statusPill
+        }
+    }
+
+    private var statusPill: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(statusColor)
+                .frame(width: 7, height: 7)
+                .shadow(color: statusColor.opacity(0.45), radius: 4)
+            Text(statusText)
+                .font(.system(size: 11, weight: .semibold))
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 29)
+        .background(DashboardPalette.surfaceRaised.opacity(0.84))
+        .clipShape(Capsule())
+        .overlay { Capsule().stroke(DashboardPalette.separator, lineWidth: 1) }
+    }
+
+    private var speedCard: some View {
+        HStack(spacing: 9) {
+            menuSpeedMetric(
+                title: "上传",
+                symbol: "arrow.up",
+                value: model.menuRate(live.status?.speed?.up)
+            )
+
+            Spacer(minLength: 6)
+
+            Rectangle()
+                .fill(DashboardPalette.separator)
+                .frame(width: 1, height: 18)
+
+            Spacer(minLength: 6)
+
+            menuSpeedMetric(
+                title: "下载",
+                symbol: "arrow.down",
+                value: model.menuRate(live.status?.speed?.down)
+            )
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 42)
+        .background(DashboardPalette.surface.opacity(0.92))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(DashboardPalette.separator, lineWidth: 1)
+        }
+    }
+
+    private func menuSpeedMetric(title: String, symbol: String, value: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol)
+                .font(.system(size: 11.5, weight: .bold))
+                .foregroundStyle(DashboardPalette.accent)
+            Text(title)
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(DashboardPalette.tertiary)
+            Text(value)
+                .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                .monospacedDigit()
+                .lineLimit(1)
+        }
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private var menuSectionDivider: some View {
@@ -192,6 +294,56 @@ struct MenuBarView: View {
         return "\(delay) ms"
     }
 
+    private var coreActions: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionTitle("Core 控制")
+            LazyVGrid(columns: columns, spacing: 8) {
+                MenuActionButton(
+                    title: "启动",
+                    busyTitle: "启动中",
+                    icon: "play.fill",
+                    busy: model.activeOperation == .core(.start),
+                    disabled: model.isBusy || live.status?.service.active == true
+                ) { Task { await model.perform(.start) } }
+
+                MenuActionButton(
+                    title: "停止",
+                    busyTitle: "停止中",
+                    icon: "stop.fill",
+                    busy: model.activeOperation == .core(.stop),
+                    disabled: model.isBusy || live.status?.service.active != true,
+                    role: .destructive,
+                    destructive: true
+                ) { Task { await model.perform(.stop) } }
+
+                MenuActionButton(
+                    title: "重启",
+                    busyTitle: "重启中",
+                    icon: "arrow.clockwise",
+                    busy: model.activeOperation == .core(.restart),
+                    disabled: model.isBusy
+                ) { Task { await model.perform(.restart) } }
+
+                MenuActionButton(
+                    title: "重载配置",
+                    busyTitle: "重载中",
+                    icon: "doc.badge.arrow.up",
+                    busy: model.activeOperation == .core(.reload),
+                    disabled: model.isBusy
+                ) { Task { await model.perform(.reload) } }
+            }
+
+            MenuActionButton(
+                title: "应用订阅 + 热重载",
+                busyTitle: "正在应用订阅",
+                icon: "arrow.triangle.2.circlepath",
+                busy: model.activeOperation == .core(.applySubscriptions),
+                disabled: model.isBusy,
+                fillsWidth: true
+            ) { Task { await model.perform(.applySubscriptions) } }
+        }
+    }
+
     private var shortcutGrid: some View {
         VStack(alignment: .leading, spacing: 8) {
             sectionTitle("快捷入口")
@@ -275,107 +427,6 @@ struct MenuBarView: View {
             .padding(.leading, 2)
     }
 
-    private func showWindow(_ section: SidebarSection) {
-        model.selectedSection = section
-        openWindow(id: "main")
-        NSApp.activate(ignoringOtherApps: true)
-    }
-}
-
-private struct MenuBarLiveSummary: View {
-    @EnvironmentObject private var model: AppModel
-    @EnvironmentObject private var live: LiveStatusStore
-
-    var body: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 11) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [DashboardPalette.accent, Color(red: 0.39, green: 0.30, blue: 1.0)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                    Image(systemName: "circle.grid.cross")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(.white)
-                }
-                .frame(width: 40, height: 40)
-                .shadow(color: DashboardPalette.accent.opacity(0.22), radius: 10, y: 4)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Mihomo Core")
-                        .font(.system(size: 15, weight: .bold))
-                    Text(live.status?.versions?.core ?? "正在读取版本…")
-                        .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(DashboardPalette.secondary)
-                        .monospacedDigit()
-                }
-
-                Spacer(minLength: 8)
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: 7, height: 7)
-                        .shadow(color: statusColor.opacity(0.45), radius: 4)
-                    Text(statusText)
-                        .font(.system(size: 11, weight: .semibold))
-                }
-                .padding(.horizontal, 10)
-                .frame(height: 29)
-                .background(DashboardPalette.surfaceRaised.opacity(0.84))
-                .clipShape(Capsule())
-                .overlay { Capsule().stroke(DashboardPalette.separator, lineWidth: 1) }
-            }
-
-            HStack(spacing: 9) {
-                speedMetric(
-                    title: "上传",
-                    symbol: "arrow.up",
-                    value: model.menuRate(live.status?.speed?.up)
-                )
-
-                Spacer(minLength: 6)
-                Rectangle()
-                    .fill(DashboardPalette.separator)
-                    .frame(width: 1, height: 18)
-                Spacer(minLength: 6)
-
-                speedMetric(
-                    title: "下载",
-                    symbol: "arrow.down",
-                    value: model.menuRate(live.status?.speed?.down)
-                )
-            }
-            .padding(.horizontal, 12)
-            .frame(height: 42)
-            .background(DashboardPalette.surface.opacity(0.92))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(DashboardPalette.separator, lineWidth: 1)
-            }
-        }
-    }
-
-    private func speedMetric(title: String, symbol: String, value: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: symbol)
-                .font(.system(size: 11.5, weight: .bold))
-                .foregroundStyle(DashboardPalette.accent)
-            Text(title)
-                .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(DashboardPalette.tertiary)
-            Text(value)
-                .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
-                .monospacedDigit()
-                .lineLimit(1)
-        }
-        .fixedSize(horizontal: true, vertical: false)
-    }
-
     private var statusText: String {
         if live.status == nil { return "Checking" }
         return live.status?.service.active == true ? "Running" : "Stopped"
@@ -385,70 +436,11 @@ private struct MenuBarLiveSummary: View {
         guard let status = live.status else { return .secondary }
         return status.service.active ? DashboardPalette.green : Color.orange
     }
-}
 
-private struct MenuBarCoreActions: View {
-    @EnvironmentObject private var model: AppModel
-    @EnvironmentObject private var live: LiveStatusStore
-
-    private let columns = [
-        GridItem(.flexible(), spacing: 8),
-        GridItem(.flexible(), spacing: 8)
-    ]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Core 控制")
-                .font(.system(size: 10.5, weight: .semibold))
-                .foregroundStyle(DashboardPalette.tertiary)
-                .textCase(.uppercase)
-                .padding(.leading, 2)
-
-            LazyVGrid(columns: columns, spacing: 8) {
-                MenuActionButton(
-                    title: "启动",
-                    busyTitle: "启动中",
-                    icon: "play.fill",
-                    busy: model.activeOperation == .core(.start),
-                    disabled: model.isBusy || live.status?.service.active == true
-                ) { Task { await model.perform(.start) } }
-
-                MenuActionButton(
-                    title: "停止",
-                    busyTitle: "停止中",
-                    icon: "stop.fill",
-                    busy: model.activeOperation == .core(.stop),
-                    disabled: model.isBusy || live.status?.service.active != true,
-                    role: .destructive,
-                    destructive: true
-                ) { Task { await model.perform(.stop) } }
-
-                MenuActionButton(
-                    title: "重启",
-                    busyTitle: "重启中",
-                    icon: "arrow.clockwise",
-                    busy: model.activeOperation == .core(.restart),
-                    disabled: model.isBusy
-                ) { Task { await model.perform(.restart) } }
-
-                MenuActionButton(
-                    title: "重载配置",
-                    busyTitle: "重载中",
-                    icon: "doc.badge.arrow.up",
-                    busy: model.activeOperation == .core(.reload),
-                    disabled: model.isBusy
-                ) { Task { await model.perform(.reload) } }
-            }
-
-            MenuActionButton(
-                title: "应用订阅 + 热重载",
-                busyTitle: "正在应用订阅",
-                icon: "arrow.triangle.2.circlepath",
-                busy: model.activeOperation == .core(.applySubscriptions),
-                disabled: model.isBusy,
-                fillsWidth: true
-            ) { Task { await model.perform(.applySubscriptions) } }
-        }
+    private func showWindow(_ section: SidebarSection) {
+        model.selectedSection = section
+        openWindow(id: "main")
+        NSApp.activate(ignoringOtherApps: true)
     }
 }
 
