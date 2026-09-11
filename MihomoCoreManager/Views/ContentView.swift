@@ -120,18 +120,50 @@ private struct WindowBehaviorConfigurator: NSViewRepresentable {
 
 private struct DashboardSidebar: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var live: LiveStatusStore
 
     private let visibleSections: [SidebarSection] = [.overview, .core, .proxies, .subscriptions, .logs, .settings]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            DashboardSidebarBrand()
-                .padding(.horizontal, 22)
-                // The window uses full-size content with a hidden title bar. Keep a
-                // compact clear zone for the native traffic-light controls, then let
-                // the brand block become the visual top edge of the application.
-                .padding(.top, 38)
-                .padding(.bottom, 22)
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 14) {
+                    ZStack {
+                        LinearGradient(
+                            colors: [Color(red: 0.16, green: 0.59, blue: 1.0), Color(red: 0.43, green: 0.32, blue: 1.0)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                        Text("M")
+                            .font(.system(size: 25, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                    }
+                    .frame(width: 54, height: 54)
+                    .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+                    .shadow(color: DashboardPalette.accent.opacity(0.24), radius: 18, y: 8)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Mihomo Core")
+                            .font(.system(size: 14.5, weight: .semibold))
+                        Text("管理面板")
+                            .font(.system(size: 20.5, weight: .bold))
+                    }
+                    .foregroundStyle(DashboardPalette.primary)
+                }
+
+                VStack(alignment: .leading, spacing: 5) {
+                    sidebarVersion("Core 版本", live.status?.versions?.core ?? "--")
+                    sidebarVersion("Core 面板", live.status?.versions?.managementPanel ?? "v4.0.0")
+                    sidebarVersion("MetaCubeXD", live.status?.versions?.metacubexd ?? "--")
+                }
+                .padding(.top, 18)
+            }
+            .padding(.horizontal, 22)
+            // The window uses full-size content with a hidden title bar. Keep a
+            // compact clear zone for the native traffic-light controls, then let
+            // the brand block become the visual top edge of the application.
+            .padding(.top, 38)
+            .padding(.bottom, 22)
 
             VStack(spacing: 6) {
                 ForEach(visibleSections) { section in
@@ -169,64 +201,24 @@ private struct DashboardSidebar: View {
 
             Spacer(minLength: 20)
 
-            DashboardSidebarStatus()
-                .padding(.leading, 22)
-                .padding(.bottom, 22)
+            HStack(spacing: 7) {
+                Circle()
+                    .fill(live.status?.service.active == true ? DashboardPalette.green : DashboardPalette.red)
+                    .frame(width: 8, height: 8)
+                    .shadow(color: (live.status?.service.active == true ? DashboardPalette.green : DashboardPalette.red).opacity(0.42), radius: 5)
+                Text(panelLabel)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(DashboardPalette.tertiary)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 29)
+            .background(Color.white.opacity(0.025))
+            .clipShape(Capsule())
+            .overlay { Capsule().stroke(DashboardPalette.separator, lineWidth: 1) }
+            .padding(.leading, 22)
+            .padding(.bottom, 22)
         }
         .background(DashboardPalette.sidebar)
-    }
-
-    private func sidebarIcon(_ section: SidebarSection) -> String {
-        switch section {
-        case .overview: "arrow.up.left.and.arrow.down.right"
-        case .core: "dot.circle"
-        case .proxies: "arrow.triangle.branch"
-        case .subscriptions: "arrow.left.arrow.right"
-        case .logs: "command"
-        case .updates: "arrow.down.circle"
-        case .settings: "gearshape"
-        }
-    }
-
-
-}
-
-private struct DashboardSidebarBrand: View {
-    @EnvironmentObject private var live: LiveStatusStore
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 14) {
-                ZStack {
-                    LinearGradient(
-                        colors: [Color(red: 0.16, green: 0.59, blue: 1.0), Color(red: 0.43, green: 0.32, blue: 1.0)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    Text("M")
-                        .font(.system(size: 25, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                }
-                .frame(width: 54, height: 54)
-                .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-                .shadow(color: DashboardPalette.accent.opacity(0.24), radius: 18, y: 8)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Mihomo Core")
-                        .font(.system(size: 14.5, weight: .semibold))
-                    Text("管理面板")
-                        .font(.system(size: 20.5, weight: .bold))
-                }
-                .foregroundStyle(DashboardPalette.primary)
-            }
-
-            VStack(alignment: .leading, spacing: 5) {
-                sidebarVersion("Core 版本", live.status?.versions?.core ?? "--")
-                sidebarVersion("Core 面板", live.status?.versions?.managementPanel ?? "v4.0.0")
-                sidebarVersion("MetaCubeXD", live.status?.versions?.metacubexd ?? "--")
-            }
-            .padding(.top, 18)
-        }
     }
 
     @ViewBuilder
@@ -239,27 +231,17 @@ private struct DashboardSidebarBrand: View {
         .font(.system(size: 12, weight: .medium))
         .foregroundStyle(DashboardPalette.tertiary)
     }
-}
 
-private struct DashboardSidebarStatus: View {
-    @EnvironmentObject private var model: AppModel
-    @EnvironmentObject private var live: LiveStatusStore
-
-    var body: some View {
-        HStack(spacing: 7) {
-            Circle()
-                .fill(live.status?.service.active == true ? DashboardPalette.green : DashboardPalette.red)
-                .frame(width: 8, height: 8)
-                .shadow(color: (live.status?.service.active == true ? DashboardPalette.green : DashboardPalette.red).opacity(0.42), radius: 5)
-            Text(panelLabel)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(DashboardPalette.tertiary)
+    private func sidebarIcon(_ section: SidebarSection) -> String {
+        switch section {
+        case .overview: "arrow.up.left.and.arrow.down.right"
+        case .core: "dot.circle"
+        case .proxies: "arrow.triangle.branch"
+        case .subscriptions: "arrow.left.arrow.right"
+        case .logs: "command"
+        case .updates: "arrow.down.circle"
+        case .settings: "gearshape"
         }
-        .padding(.horizontal, 10)
-        .frame(height: 29)
-        .background(Color.white.opacity(0.025))
-        .clipShape(Capsule())
-        .overlay { Capsule().stroke(DashboardPalette.separator, lineWidth: 1) }
     }
 
     private var panelLabel: String {
@@ -458,6 +440,7 @@ private func backendEndpointText(_ profile: ServerProfile?) -> String {
 struct DashboardPageHeader: View {
     let title: String
     let subtitle: String
+    @EnvironmentObject private var live: LiveStatusStore
 
     var body: some View {
         HStack(alignment: .top, spacing: 18) {
@@ -470,16 +453,8 @@ struct DashboardPageHeader: View {
                     .foregroundStyle(DashboardPalette.secondary)
             }
             Spacer(minLength: 12)
-            DashboardLiveStatusBadge()
+            DashboardStatusBadge(running: live.status?.service.active == true)
         }
-    }
-}
-
-private struct DashboardLiveStatusBadge: View {
-    @EnvironmentObject private var live: LiveStatusStore
-
-    var body: some View {
-        DashboardStatusBadge(running: live.status?.service.active == true)
     }
 }
 
@@ -642,7 +617,7 @@ private struct DashboardButtonCursorModifier: ViewModifier {
                 hovering = inside
                 updateCursor(inside: inside, busy: busy)
             }
-            .onChange(of: busy) { newValue in
+            .onChange(of: busy) { _, newValue in
                 guard hovering else { return }
                 updateCursor(inside: true, busy: newValue)
             }
@@ -749,6 +724,21 @@ private struct DashboardNotice: View {
                 .stroke(DashboardPalette.separator, lineWidth: 1)
         }
         .shadow(color: .black.opacity(0.32), radius: 18, y: 8)
+    }
+}
+
+
+private struct ProxySortPicker: View {
+    @Binding var selection: ProxySortOption
+
+    var body: some View {
+        Picker("排序", selection: $selection) {
+            ForEach(ProxySortOption.allCases) { option in
+                Text(option.title).tag(option as ProxySortOption)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
     }
 }
 
@@ -956,70 +946,82 @@ struct ProxiesView: View {
         let speedOperation = AppOperation.testProxyGroup(group.name)
 
         return VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(group.name)
-                        .font(.system(size: 18, weight: .bold))
-                    HStack(spacing: 8) {
-                        detailBadge(group.type, accent: false)
-                        detailBadge(group.isSelectableGroup ? "可切换" : "自动策略", accent: group.isSelectableGroup)
-                        if let now = group.now {
-                            detailBadge("当前 · \(now)", accent: true)
-                        }
-                    }
-                }
-
-                Spacer(minLength: 12)
-
-                VStack(alignment: .trailing, spacing: 8) {
-                    Button {
-                        Task { await model.testProxyGroup(group.name) }
-                    } label: {
-                        DashboardBusyLabel(
-                            title: "测速当前组",
-                            busyTitle: "测速中…",
-                            isBusy: model.activeOperation == speedOperation
-                        )
-                    }
-                    .buttonStyle(DashboardActionButtonStyle(
-                        primary: true,
-                        busy: model.activeOperation == speedOperation
-                    ))
-                    .frame(width: 126)
-                    .disabled(model.isBusy && model.activeOperation != speedOperation)
-
-                    Text("\(filteredMembers.count) / \(group.all.count) 个代理")
-                        .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(DashboardPalette.tertiary)
-                }
-            }
-
-            HStack(spacing: 10) {
-                TextField("筛选代理…", text: $searchText)
-                    .textFieldStyle(DashboardTextFieldStyle())
-                sortControl(selection: $proxySort)
-                    .frame(width: 300)
-            }
+            groupDetailHeader(group, speedOperation: speedOperation)
+            proxyToolbar
 
             Rectangle()
                 .fill(DashboardPalette.separator)
                 .frame(height: 1)
 
-            if filteredMembers.isEmpty {
-                emptyState(icon: "magnifyingglass", title: "没有匹配的代理", detail: "调整筛选关键字后重试。")
-                    .frame(maxWidth: .infinity, minHeight: 250)
-            } else {
-                LazyVStack(spacing: 7) {
-                    ForEach(filteredMembers, id: \.self) { name in
-                        proxyRow(name: name, group: group)
+            proxyMemberList(group)
+        }
+    }
+
+    private func groupDetailHeader(_ group: MihomoProxy, speedOperation: AppOperation) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(group.name)
+                    .font(.system(size: 18, weight: .bold))
+                HStack(spacing: 8) {
+                    detailBadge(group.type, accent: false)
+                    detailBadge(group.isSelectableGroup ? "可切换" : "自动策略", accent: group.isSelectableGroup)
+                    if let now = group.now {
+                        detailBadge("当前 · \(now)", accent: true)
                     }
+                }
+            }
+
+            Spacer(minLength: 12)
+
+            VStack(alignment: .trailing, spacing: 8) {
+                Button {
+                    Task { await model.testProxyGroup(group.name) }
+                } label: {
+                    DashboardBusyLabel(
+                        title: "测速当前组",
+                        busyTitle: "测速中…",
+                        isBusy: model.activeOperation == speedOperation
+                    )
+                }
+                .buttonStyle(DashboardActionButtonStyle(
+                    primary: true,
+                    busy: model.activeOperation == speedOperation
+                ))
+                .frame(width: 126)
+                .disabled(model.isBusy && model.activeOperation != speedOperation)
+
+                Text("\(filteredMembers.count) / \(group.all.count) 个代理")
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(DashboardPalette.tertiary)
+            }
+        }
+    }
+
+    private var proxyToolbar: some View {
+        HStack(spacing: 10) {
+            TextField("筛选代理…", text: $searchText)
+                .textFieldStyle(DashboardTextFieldStyle())
+            sortControl(selection: $proxySort)
+                .frame(width: 300)
+        }
+    }
+
+    @ViewBuilder
+    private func proxyMemberList(_ group: MihomoProxy) -> some View {
+        if filteredMembers.isEmpty {
+            emptyState(icon: "magnifyingglass", title: "没有匹配的代理", detail: "调整筛选关键字后重试。")
+                .frame(maxWidth: .infinity, minHeight: 250)
+        } else {
+            LazyVStack(spacing: 7) {
+                ForEach(filteredMembers, id: \.self) { name in
+                    proxyRow(name: name, group: group)
                 }
             }
         }
     }
 
     private func proxyRow(name: String, group: MihomoProxy) -> some View {
-        let proxy = model.proxy(named: name)
+        let proxy = proxyByName[name]
         let selected = group.now == name
         let operation = AppOperation.selectProxy(group: group.name, proxy: name)
         let busy = model.activeOperation == operation
@@ -1117,6 +1119,12 @@ struct ProxiesView: View {
         return defaultGroups.first(where: { $0.name == selectedGroupName }) ?? defaultGroups.first
     }
 
+    private var proxyByName: [String: MihomoProxy] {
+        model.proxies.reduce(into: [:]) { result, proxy in
+            result[proxy.name] = proxy
+        }
+    }
+
     private var filteredMembers: [String] {
         guard let group = selectedGroup else { return [] }
         let keyword = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -1155,13 +1163,7 @@ struct ProxiesView: View {
     }
 
     private func sortControl(selection: Binding<ProxySortOption>) -> some View {
-        Picker("排序", selection: selection) {
-            ForEach(ProxySortOption.allCases) { option in
-                Text(option.title).tag(option)
-            }
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
+        ProxySortPicker(selection: selection)
     }
 
     private func groupProxyName(_ group: MihomoProxy) -> String {
@@ -1169,8 +1171,8 @@ struct ProxiesView: View {
     }
 
     private func currentProxy(for group: MihomoProxy) -> MihomoProxy? {
-        guard let now = group.now else { return model.proxy(named: group.name) }
-        return model.proxy(named: now) ?? model.proxy(named: group.name)
+        guard let now = group.now else { return proxyByName[group.name] }
+        return proxyByName[now] ?? proxyByName[group.name]
     }
 
     private func groupCurrentDelay(_ group: MihomoProxy) -> Int? {
@@ -1227,16 +1229,21 @@ struct ProxiesView: View {
     }
 
     private func qualityKey(_ name: String) -> QualityKey {
-        let proxy = model.proxy(named: name)
+        let proxy = proxyByName[name]
         let preferredTestURL = selectedGroup?.testURL
         let aliveRank: Int
         switch proxy?.alive {
-        case true: aliveRank = 0
-        case nil: aliveRank = 1
-        case false: aliveRank = 2
+        case .some(true): aliveRank = 0
+        case .none: aliveRank = 1
+        case .some(false): aliveRank = 2
         }
 
-        let history = Array(proxy?.history.suffix(6) ?? [])
+        let history: [MihomoProxyDelaySample]
+        if let proxy {
+            history = Array(proxy.history.suffix(6))
+        } else {
+            history = []
+        }
         var positive = history.compactMap(\.delay).filter { $0 > 0 }
         var failures = history.compactMap(\.delay).filter { $0 <= 0 }.count
 

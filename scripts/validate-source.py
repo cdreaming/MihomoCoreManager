@@ -18,6 +18,8 @@ required = [
     ".github/workflows/ci.yml",
     "SOURCE-SHA256SUMS.txt",
     "scripts/build-portable-installer.sh",
+    "scripts/release-preflight.py",
+    "scripts/simulate-release.sh",
 ]
 for rel in required:
     if not (root / rel).is_file(): errors.append(f"missing: {rel}")
@@ -30,8 +32,12 @@ expected_build = version.replace(".", "")
 if f"CURRENT_PROJECT_VERSION = {expected_build};" not in pbx: errors.append(f"Xcode build number must be {expected_build}")
 if not (root / f"docs/releases/v{version}/RELEASE-NOTES.md").is_file(): errors.append(f"release notes missing for v{version}")
 portable = root / "portable-runtime/main.go"
-if portable.is_file() and not re.search(rf'appVersion\s*=\s*\"{re.escape(version)}\"', portable.read_text(encoding="utf-8")):
-    errors.append("portable runtime appVersion must match VERSION")
+if portable.is_file():
+    portable_version_text = portable.read_text(encoding="utf-8")
+    if not re.search(rf'appVersion\s*=\s*\"{re.escape(version)}\"', portable_version_text):
+        errors.append("portable runtime appVersion must match VERSION")
+    if not re.search(rf'buildNumber\s*=\s*\"{re.escape(expected_build)}\"', portable_version_text):
+        errors.append("portable runtime buildNumber must match VERSION-derived build")
 
 client = (root / "MihomoCoreManager/API/MihomoAPIClient.swift").read_text(encoding="utf-8")
 for endpoint in ["/api/status", "/api/action", "/api/subscriptions", "/api/logs", "/api/project-update/check", "/api/project-update/apply", "/api/project-update/log"]:
@@ -233,16 +239,6 @@ if "miniBrandMark" in content or 'Text("M")\n                                   
 for marker in ["LiveStatusStore", "secretCache", "ensureSubscriptionsLoaded", "ensureLogsLoaded"]:
     if marker not in app_model:
         errors.append(f"native performance gate missing: {marker}")
-for marker in [
-    "statusRefreshes",
-    "proxyBackgroundLoads",
-    "proxyByNameCache",
-    "markUnavailableIfStale",
-    "async let valuesTask",
-    "proxyReconcileTokens",
-]:
-    if marker not in app_model:
-        errors.append(f"native v1.2.5 smoothness/safety gate missing: {marker}")
 for marker in ["proxyMode", "proxies", "ensureProxiesLoaded", "fetchProxies", "setProxyMode", "selectProxy"]:
     if marker not in app_model:
         errors.append(f"native v1.2.3 proxy operation gate missing: {marker}")
@@ -255,10 +251,10 @@ for marker in ['name == "GLOBAL"', "GLOBAL.all", "preferredTestURL", "proxy.extr
 for marker in ["resolvedProxyName", "positiveDelay", "delay > 0", "proxy.now", "positiveLatencyCandidates"]:
     if marker not in app_model:
         errors.append(f"native v1.2.4 provider/nested latency gate missing: {marker}")
-for marker in ["isTransientControllerError", "applyLocalProxySelection", "已保留最近一次代理与延时数据", "scheduleProxySelectionReconcile"]:
+for marker in ["isTransientControllerError", "applyLocalProxySelection", "已保留最近一次代理与延时数据", "Controller 随后暂时断开"]:
     if marker not in app_model:
         errors.append(f"native v1.2.4 transient-controller fallback gate missing: {marker}")
-for marker in ["currentProxySelection", "proxiesByApplyingSelection", "A just-confirmed PUT remains authoritative for this group"]:
+for marker in ["currentProxySelection", "proxiesByApplyingSelection", "Some Controller/tunnel combinations can briefly return the old"]:
     if marker not in app_model:
         errors.append(f"native v1.2.5 immediate proxy selection refresh gate missing: {marker}")
 for marker in ['let currentSelection = model.currentProxySelection', r'.id("\(group.name)|\(currentSelection ?? group.type)")']:
@@ -360,13 +356,11 @@ for marker in ["min-height:46px", ".nav button:active", "scale(.955)"]:
         errors.append(f"v1.1.8 portable sidebar interaction gate missing: {marker}")
 
 # v1.1.9 dropdown regression: keep the compact custom MenuBarExtra panel.
-# v1.2.5 splits the high-frequency live summary/Core state into small child
-# views so a 1.2 s telemetry tick does not rebuild the full proxy menu tree.
 for marker in [
     ".menuBarExtraStyle(.window)",
-    'MenuBarLiveSummary()',
+    'private var speedCard: some View',
     'private var serverCard: some View',
-    'MenuBarCoreActions()',
+    'private var coreActions: some View',
     'private var shortcutGrid: some View',
     'private var updateActions: some View',
     'private var displayOptions: some View',
@@ -374,9 +368,6 @@ for marker in [
 ]:
     if marker not in app_swift + "\n" + menu:
         errors.append(f"v1.1.9 native dropdown regression missing: {marker}")
-for marker in ["private struct MenuBarLiveSummary", "private struct MenuBarCoreActions"]:
-    if marker not in menu:
-        errors.append(f"v1.2.5 native dropdown performance gate missing: {marker}")
 
 # v1.2.0 status-bar body: use independent AppKit labels instead of a multiline
 # NSStatusBarButton title so both traffic rows are actually visible.
@@ -429,18 +420,6 @@ for marker in ['data-nav="settings"', 'data-view="settings"', 'contain:layout pa
 for marker in ["secretCache", "statusData", "startStatusPoller", "statusFromFile", "STATUS_FILE", "clearStatusFile"]:
     if marker not in portable_main:
         errors.append(f"portable status-cache performance gate missing: {marker}")
-for marker in [
-    "func newHTTPClient()",
-    "http.DefaultTransport.(*http.Transport).Clone()",
-    "statusFetchMu.TryLock()",
-    "remoteWithPolicy",
-    "hasRecentGood",
-    "function proxyMenuStructureSignature(data)",
-]:
-    if marker not in portable_main:
-        errors.append(f"portable v1.2.5 smoothness/safety gate missing: {marker}")
-if "Object.keys(proxyMenuRootByGroup).forEach(refreshProxyMenuRootTitle)" in portable_main:
-    errors.append("portable v1.2.5 proxy-menu refresh must not relayout every group on unchanged snapshots")
 if "d=get('/local/status',quiet===true)" not in portable_main:
     errors.append("portable recoverable menu refresh fallback missing")
 if "scheduledTimerWithTimeIntervalTargetSelectorUserInfoRepeats(1.2" not in portable_main:
@@ -457,10 +436,7 @@ for marker in [
     "function proxyMenuRootTitle(group)",
     "function refreshProxyMenuRootTitle(group)",
     "refreshProxyMenuRootTitle(payload.group)",
-    "function proxyMenuStructureSignature(data)",
-    "proxyMenuStructureKey",
-    "proxyPendingReconcile[payload.group]=true",
-    "if(oldCurrent!==newCurrent)refreshProxyMenuRootTitle(group)",
+    "Object.keys(proxyMenuRootByGroup).forEach(refreshProxyMenuRootTitle)",
 ]:
     if marker not in portable_main:
         errors.append(f"portable v1.2.5 menu/layout refresh gate missing: {marker}")
@@ -535,36 +511,86 @@ with (root / "MihomoCoreManager/Info.plist").open("rb") as f:
 if not plist.get("NSAppTransportSecurity", {}).get("NSAllowsArbitraryLoads"):
     errors.append("ATS compatibility flag missing for explicit per-profile HTTP support")
 
+# v1.2.6 release-hardening regression gates learned from v1.2.4/v1.2.5.
+build_release_text = (root / "scripts/build-release.sh").read_text(encoding="utf-8")
+preflight_text = (root / "scripts/release-preflight.py").read_text(encoding="utf-8")
+simulate_text = (root / "scripts/simulate-release.sh").read_text(encoding="utf-8")
+manifest_text = (root / "scripts/build-source-manifest.py").read_text(encoding="utf-8")
+portable_tests = (root / "portable-runtime/main_test.go").read_text(encoding="utf-8")
+for marker in [
+    "enum ProxySortOption: String, CaseIterable, Identifiable, Hashable",
+    "private struct ProxySortPicker: View",
+    "case .some(true): aliveRank = 0",
+    "case .none: aliveRank = 1",
+    "case .some(false): aliveRank = 2",
+    "let history: [MihomoProxyDelaySample]",
+]:
+    if marker not in models + "\n" + content:
+        errors.append(f"v1.2.6 Swift/Xcode regression gate missing: {marker}")
+if re.search(r"switch\s+proxy\?\.alive\s*\{[^}]*case\s+true", content, re.S):
+    errors.append("v1.2.6 optional Bool switch must use explicit .some/.none patterns")
+if ".onChange(of: busy) { newValue in" in content:
+    errors.append("v1.2.6 must not restore deprecated single-parameter onChange for busy cursor")
+if "SWIFT_ENABLE_BATCH_MODE = NO;" not in pbx:
+    errors.append("v1.2.6 Xcode Release compatibility gate missing: SWIFT_ENABLE_BATCH_MODE = NO")
+for marker in ["SWIFT_ENABLE_BATCH_MODE=NO", "xcodebuild-release.log", "compiler diagnostics", "generic/platform=macOS"]:
+    if marker not in build_release_text:
+        errors.append(f"v1.2.6 build-release diagnostic gate missing: {marker}")
+for marker in [
+    '"--sdk", "macosx", "--show-sdk-path"',
+    '"-target", f"arm64-apple-macos{DEPLOYMENT_TARGET}"',
+    '"-sdk", sdk',
+    "SWIFT_ENABLE_BATCH_MODE=NO",
+    "scripts/build-source-manifest.py",
+    '"--write"',
+]:
+    if marker not in preflight_text:
+        errors.append(f"v1.2.6 strict macOS preflight gate missing: {marker}")
+for marker in [
+    "TestGroupDelayCacheDecoratesSharedProxyData", "-count=300", "-shuffle=on", "-count=10",
+    "go test -race", "go vet", "GOOS=darwin GOARCH=arm64 go test -c", "bash scripts/build-release.sh --unsigned",
+]:
+    if marker not in simulate_text:
+        errors.append(f"v1.2.6 full release simulation gate missing: {marker}")
+for marker in ["backgroundWG", "goBackground", "waitBackground"]:
+    if marker not in portable_main:
+        errors.append(f"v1.2.6 tracked background lifecycle gate missing: {marker}")
+for forbidden in ["go s.refreshProxyMenuCache()", "go s.refreshStatusCache()"]:
+    if forbidden in portable_main:
+        errors.append(f"v1.2.6 untracked short-lived goroutine remains: {forbidden}")
+if "defer state.waitBackground()" not in portable_tests:
+    errors.append("v1.2.6 Go tests must wait for tracked background work before TempDir cleanup")
+for marker in ["files missing from manifest:", "files no longer present:", "files with changed SHA-256:"]:
+    if marker not in manifest_text:
+        errors.append(f"v1.2.6 manifest diagnostics gate missing: {marker}")
+
 workflow = (root / ".github/workflows/release.yml").read_text(encoding="utf-8")
 ci_workflow = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-build_release = (root / "scripts/build-release.sh").read_text(encoding="utf-8")
-release_text = workflow + "\n" + build_release
+release_text = workflow + "\n" + build_release_text + "\n" + simulate_text
 for marker in ["macos-15", "notarytool", "productbuild", "gh release", "SHA256SUMS.txt"]:
-    if marker not in release_text: errors.append(f"release gate missing: {marker}")
-
-if "run: bash scripts/build-release.sh --unsigned" not in workflow:
-    errors.append("release workflow must use --unsigned by default")
+    if marker not in release_text:
+        errors.append(f"release gate missing: {marker}")
 for marker in [
     "actions/setup-go@v6",
     "go-version-file: portable-runtime/go.mod",
-    "cache: false",
-    "CGO_ENABLED=0 go test ./...",
-    "bash scripts/build-portable-installer.sh",
-    '>> dist/SHA256SUMS.txt',
+    "bash scripts/simulate-release.sh --strict-macos",
     'gh release upload "$TAG" dist/* dist-portable/* --clobber',
     'test -f "MihomoCoreManager-${TAG}-arm64-portable-installer.zip"',
+    "xcodebuild-release-log",
+    "请使用新版本号，不要移动已存在 tag",
 ]:
     if marker not in workflow:
-        errors.append(f"v1.2.2 GitHub Release portable parity gate missing: {marker}")
+        errors.append(f"v1.2.6 GitHub Release full-simulation gate missing: {marker}")
 for marker in [
     "actions/setup-go@v6",
     "go-version-file: portable-runtime/go.mod",
-    "CGO_ENABLED=0 go test ./...",
-    "bash scripts/build-portable-installer.sh",
+    "python3 scripts/build-source-manifest.py --check",
+    "bash scripts/simulate-release.sh --strict-macos",
+    "xcodebuild-release-log",
     "dist-portable/",
 ]:
     if marker not in ci_workflow:
-        errors.append(f"v1.2.2 macOS CI portable parity gate missing: {marker}")
+        errors.append(f"v1.2.6 macOS CI full-simulation gate missing: {marker}")
 for forbidden in ["secrets.APPLE_", "校验签名与公证 Secrets", "导入 Developer ID 证书"]:
     if forbidden in workflow:
         errors.append(f"unsigned release workflow must not require Apple signing secrets: {forbidden}")

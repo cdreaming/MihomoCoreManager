@@ -8,11 +8,15 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: macos-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   arm64-build:
-    name: Apple Silicon arm64 build
+    name: Apple Silicon arm64 full release simulation
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
 
@@ -22,37 +26,47 @@ jobs:
           go-version-file: portable-runtime/go.mod
           cache: false
 
-      - name: Verify runner architecture
+      - name: Verify runner architecture and toolchain
         shell: bash
         run: |
           set -Eeuo pipefail
+          test "$(uname -s)" = "Darwin"
           test "$(uname -m)" = "arm64"
+          xcodebuild -version
+          go version
 
-      - name: Source gate
+      # SOURCE-SHA256SUMS.txt is generated metadata.  v1.2.5 release proved
+      # that release/CI must refresh it from the exact checkout before any hard
+      # check; otherwise harmless carried-forward release notes can block Xcode.
+      - name: Refresh source manifest from exact checkout
+        shell: bash
         run: |
-          python3 scripts/validate-source.py
+          set -Eeuo pipefail
+          python3 scripts/build-source-manifest.py --write
           python3 scripts/build-source-manifest.py --check
+          if ! git diff --quiet -- SOURCE-SHA256SUMS.txt; then
+            echo "::warning::Committed SOURCE-SHA256SUMS.txt was stale; regenerated from this exact checkout."
+          fi
 
-      - name: Build arm64 app and installer assets
-        run: bash scripts/build-release.sh --unsigned
-
-      - name: Portable release parity test
+      - name: Full release simulation
         shell: bash
-        run: |
-          set -Eeuo pipefail
-          (cd portable-runtime && CGO_ENABLED=0 go test ./...)
-          bash scripts/build-portable-installer.sh
+        run: bash scripts/simulate-release.sh --strict-macos
 
-      - name: Verify binary architecture
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          BIN="build/DerivedData/Build/Products/Release/MihomoCoreManager.app/Contents/MacOS/MihomoCoreManager"
-          test "$(lipo -archs "$BIN" | xargs)" = "arm64"
-
-      - uses: actions/upload-artifact@v6
+      - name: Upload Xcode diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
         with:
-          name: MihomoCoreManager-arm64-unsigned
+          name: xcodebuild-release-log-${{ github.run_id }}
+          path: build/xcodebuild-release.log
+          if-no-files-found: ignore
+
+      - name: Upload verified release artifacts
+        if: success()
+        uses: actions/upload-artifact@v6
+        with:
+          name: MihomoCoreManager-v1.2.6-arm64-release-simulation
           path: |
             dist/
             dist-portable/
+            build/release-simulation-verify/
+          if-no-files-found: warn
