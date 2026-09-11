@@ -18,6 +18,9 @@ required = [
     ".github/workflows/ci.yml",
     "SOURCE-SHA256SUMS.txt",
     "scripts/build-portable-installer.sh",
+    "scripts/release-preflight.py",
+    "scripts/simulate-release.sh",
+    "docs/RELEASE-GUARDRAILS.md",
 ]
 for rel in required:
     if not (root / rel).is_file(): errors.append(f"missing: {rel}")
@@ -195,21 +198,49 @@ for marker in ["case proxies", 'case .proxies: "代理切换"', "MihomoRunMode",
 for marker in ["ProxySortOption", "case defaultOrder", "case delay", "case quality", "case name", "testURL", "expectedStatus", "testProxyGroup"]:
     if marker not in models:
         errors.append(f"native v1.2.4 proxy model/sort gate missing: {marker}")
+if "enum ProxySortOption: String, CaseIterable, Identifiable, Hashable" not in models:
+    errors.append("v1.2.4 release regression: ProxySortOption must remain explicitly Hashable")
 for marker in ["persistentDetail", "persistentPage(.settings)", "DashboardSettingsView()"]:
     if marker not in content:
         errors.append(f"native persistent tab/settings gate missing: {marker}")
 for marker in ["persistentPage(.proxies)", "struct ProxiesView", "运行模式", "代理组", "详细代理", "setProxyMode", "selectProxy"]:
     if marker not in content:
         errors.append(f"native v1.2.3 proxy UI gate missing: {marker}")
-for marker in ["case .some(true): aliveRank = 0", "case .none: aliveRank = 1", "case .some(false): aliveRank = 2"]:
-    if marker not in content:
-        errors.append(f"optional Bool switch gate missing: {marker}")
-if "case true: aliveRank" in content or "case false: aliveRank" in content:
-    errors.append("optional Bool switch must use explicit Optional cases for Xcode 16.4 exhaustiveness")
-
-for marker in ["groupSort", "proxySort", "ProxySortPicker", "groupDetailHeader", "groupDetailToolbar", "groupMemberList", "测速当前组", "qualityLess", "groupDelayLess", "effectiveProxyDelay"]:
+for marker in [
+    "groupSort",
+    "proxySort",
+    "ProxySortPicker",
+    "groupDetailHeader",
+    "groupDetailToolbar",
+    "groupMemberList",
+    "测速当前组",
+    "qualityLess",
+    "groupDelayLess",
+    "effectiveProxyDelay",
+]:
     if marker not in content:
         errors.append(f"native v1.2.4 proxy sort/delay UI gate missing: {marker}")
+
+# v1.2.4 Xcode 16.4 release incident regression gates. These are intentionally
+# explicit because syntax-only Swift parsing did not catch the original failure.
+for marker in [
+    "case .some(true): aliveRank = 0",
+    "case .none: aliveRank = 1",
+    "case .some(false): aliveRank = 2",
+    "let history: [MihomoProxyDelaySample]",
+    ".onChange(of: busy) { _, newValue in",
+]:
+    if marker not in content:
+        errors.append(f"v1.2.4 Xcode compile guard missing: {marker}")
+for forbidden in [
+    "case true: aliveRank = 0",
+    "case false: aliveRank = 2",
+    "let history = Array(proxy?.history.suffix(6) ?? [])",
+    "private func sortControl(selection: Binding<ProxySortOption>)",
+    ".onChange(of: busy) { newValue in",
+]:
+    if forbidden in content:
+        errors.append(f"v1.2.4 Xcode compile regression returned: {forbidden}")
 for marker in ["preferredTestURL: group.testURL"]:
     if marker not in content:
         errors.append(f"native v1.2.4 proxy latency display hotfix missing: {marker}")
@@ -220,7 +251,7 @@ for marker in [
     "window.titlebarAppearsTransparent = true",
     "window.titlebarSeparatorStyle = .none",
     "window.styleMask.insert(.fullSizeContentView)",
-    ".padding(.top, 38)",
+    ".padding(.top, 26)",
     "DashboardBackendSelector",
     "BackendPickerPopover",
     '.frame(height: 43)',
@@ -414,8 +445,30 @@ if "d=get('/local/status',quiet===true)" not in portable_main:
     errors.append("portable recoverable menu refresh fallback missing")
 if "scheduledTimerWithTimeIntervalTargetSelectorUserInfoRepeats(1.2" not in portable_main:
     errors.append("portable menu refresh timer missing")
-if "upHeader.title='↑  上传                     '+fmtRate(lastUp)" not in portable_main or "downHeader.title='↓  下载                     '+fmtRate(lastDown)" not in portable_main:
-    errors.append("portable menu dropdown speed headers missing")
+if "speedHeader.title='↑  上传  '+fmtRate(lastUp)+'      ↓  下载  '+fmtRate(lastDown)" not in portable_main:
+    errors.append("portable v1.2.5 menu dropdown speed must be a single line")
+for marker in [
+    "proxyEndSeparator=$.NSMenuItem.separatorItem; menu.addItem(proxyEndSeparator)",
+    "var index=proxyEndSeparator?menu.indexOfItem(proxyEndSeparator):menu.indexOfItem(coreRoot)",
+    "rect.size.height-36",
+]:
+    if marker not in portable_main:
+        errors.append(f"portable v1.2.5 menu/titlebar gate missing: {marker}")
+for marker in [
+    "grid-template-rows:36px minmax(0,1fr)",
+    "background:var(--titlebar)",
+    "--titlebar:#1b1e24f2",
+]:
+    if marker not in portable_ui:
+        errors.append(f"portable v1.2.5 titlebar UI gate missing: {marker}")
+for marker in [
+    "menuSectionDivider",
+    ".frame(height: 42)",
+    ".padding(.top, 26)",
+    "window.backgroundColor = NSColor(",
+]:
+    if marker not in menu + "\n" + content:
+        errors.append(f"native v1.2.5 compact UI gate missing: {marker}")
 for marker in [
     "MihomoWindowDragView",
     "performWindowDragWithEvent",
@@ -471,9 +524,21 @@ build_release = (root / "scripts/build-release.sh").read_text(encoding="utf-8")
 release_text = workflow + "\n" + build_release
 for marker in ["macos-15", "notarytool", "productbuild", "gh release", "SHA256SUMS.txt"]:
     if marker not in release_text: errors.append(f"release gate missing: {marker}")
-for marker in ["SWIFT_ENABLE_BATCH_MODE=NO", "xcodebuild-release.log", "Xcode compiler diagnostics"]:
+for marker in [
+    "SWIFT_ENABLE_BATCH_MODE=NO",
+    "xcodebuild-release.log",
+    "Xcode compiler diagnostics",
+    "xcrun swiftc --version",
+]:
     if marker not in build_release:
-        errors.append(f"Xcode compile-diagnostics gate missing: {marker}")
+        errors.append(f"v1.2.4 Xcode diagnostics/build guard missing: {marker}")
+for marker in [
+    "python3 scripts/release-preflight.py --strict-macos",
+    "Upload Xcode diagnostics on failure",
+    "build/xcodebuild-release.log",
+]:
+    if marker not in workflow + "\n" + ci_workflow:
+        errors.append(f"v1.2.5 release-engineering guard missing: {marker}")
 
 if "run: bash scripts/build-release.sh --unsigned" not in workflow:
     errors.append("release workflow must use --unsigned by default")

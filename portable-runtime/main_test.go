@@ -810,8 +810,9 @@ func TestMenuScriptUsesCachedSnapshotNativeDragAndV120StatusSpeed(t *testing.T) 
 		"downValueLabel.stringValue=$(down.value)",
 		"button.image=null; button.imagePosition=0; button.title=''",
 		"Never allow a cosmetic status-bar failure to terminate the whole App",
-		"upHeader.title='↑  上传                     '+fmtRate(lastUp)",
-		"downHeader.title='↓  下载                     '+fmtRate(lastDown)",
+		"speedHeader.title='↑  上传  '+fmtRate(lastUp)+'      ↓  下载  '+fmtRate(lastDown)",
+		"proxyEndSeparator=$.NSMenuItem.separatorItem; menu.addItem(proxyEndSeparator)",
+		"var index=proxyEndSeparator?menu.indexOfItem(proxyEndSeparator):menu.indexOfItem(coreRoot)",
 		"var coreRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('Core 控制'",
 		"var toolsRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('管理与工具'",
 		"var displayRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('状态栏显示'",
@@ -878,8 +879,8 @@ func TestPortableInteractionRegressionV118(t *testing.T) {
 	}
 }
 
-func TestPortableVersionV124(t *testing.T) {
-	if appVersion != "1.2.4" || buildNumber != "124" {
+func TestPortableVersionV125(t *testing.T) {
+	if appVersion != "1.2.5" || buildNumber != "125" {
 		t.Fatalf("unexpected portable version/build: %s/%s", appVersion, buildNumber)
 	}
 }
