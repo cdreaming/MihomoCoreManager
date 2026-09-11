@@ -20,20 +20,10 @@ python3 "$ROOT/scripts/validate-source.py"
 rm -rf "$DIST" "$ROOT/build"
 mkdir -p "$DIST" "$ROOT/build"
 
-# v1.2.4 release incident guardrails:
-# 1) avoid Swift batch compilation for the large SwiftUI target;
-# 2) preserve the complete Xcode log and replay compiler diagnostics at the end;
-# 3) record the exact macOS/Xcode/Swift toolchain used by the runner.
+# Compile Swift files individually instead of batching the large SwiftUI views.
+# Besides avoiding Xcode 16 batch/type-checker edge cases, preserve the real
+# compiler diagnostics at the end of the GitHub Actions step when a build fails.
 XCODE_LOG="$ROOT/build/xcodebuild-release.log"
-{
-  echo "== release toolchain =="
-  uname -a
-  sw_vers
-  xcodebuild -version
-  xcrun swiftc --version
-  echo "== xcodebuild =="
-} | tee "$XCODE_LOG"
-
 set +e
 xcodebuild \
   -project "$ROOT/MihomoCoreManager.xcodeproj" \
@@ -45,15 +35,13 @@ xcodebuild \
   MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
   CODE_SIGNING_ALLOWED=NO \
   SWIFT_ENABLE_BATCH_MODE=NO \
-  clean build 2>&1 | tee -a "$XCODE_LOG"
+  clean build 2>&1 | tee "$XCODE_LOG"
 XCODE_STATUS=${PIPESTATUS[0]}
 set -e
-
 if [[ "$XCODE_STATUS" -ne 0 ]]; then
   echo "::group::Xcode compiler diagnostics"
-  grep -nE 'error:|fatal error:' "$XCODE_LOG" | tail -n 160 || true
+  grep -nE '(^|[[:space:]])(error:|fatal error:)' "$XCODE_LOG" | tail -n 120 || true
   echo "::endgroup::"
-  echo "Full Xcode log: $XCODE_LOG" >&2
   exit "$XCODE_STATUS"
 fi
 

@@ -22,9 +22,7 @@ struct MenuBarView: View {
                 header
                 speedCard
                 serverCard
-                menuSectionDivider
                 proxyMenus
-                menuSectionDivider
                 coreActions
                 shortcutGrid
                 updateActions
@@ -91,21 +89,15 @@ struct MenuBarView: View {
     }
 
     private var speedCard: some View {
-        HStack(spacing: 9) {
+        HStack(spacing: 10) {
             menuSpeedMetric(
                 title: "上传",
                 symbol: "arrow.up",
                 value: model.menuRate(live.status?.speed?.up)
             )
-
-            Spacer(minLength: 6)
-
             Rectangle()
                 .fill(DashboardPalette.separator)
-                .frame(width: 1, height: 18)
-
-            Spacer(minLength: 6)
-
+                .frame(width: 1, height: 34)
             menuSpeedMetric(
                 title: "下载",
                 symbol: "arrow.down",
@@ -113,36 +105,33 @@ struct MenuBarView: View {
             )
         }
         .padding(.horizontal, 12)
-        .frame(height: 42)
+        .frame(height: 58)
         .background(DashboardPalette.surface.opacity(0.92))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
                 .stroke(DashboardPalette.separator, lineWidth: 1)
         }
     }
 
     private func menuSpeedMetric(title: String, symbol: String, value: String) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Image(systemName: symbol)
-                .font(.system(size: 11.5, weight: .bold))
+                .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(DashboardPalette.accent)
-            Text(title)
-                .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(DashboardPalette.tertiary)
-            Text(value)
-                .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
-                .monospacedDigit()
-                .lineLimit(1)
+                .frame(width: 18, alignment: .leading)
+            VStack(alignment: .trailing, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(DashboardPalette.tertiary)
+                Text(value)
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .monospacedDigit()
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .fixedSize(horizontal: true, vertical: false)
-    }
-
-    private var menuSectionDivider: some View {
-        Rectangle()
-            .fill(DashboardPalette.separator)
-            .frame(height: 1)
-            .padding(.vertical, 1)
+        .frame(maxWidth: .infinity)
     }
 
     private var serverCard: some View {
