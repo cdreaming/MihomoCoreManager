@@ -23,8 +23,8 @@ import (
 )
 
 const (
-	appVersion                = "1.2.5"
-	buildNumber               = "125"
+	appVersion                = "1.2.4"
+	buildNumber               = "124"
 	keychainService           = "cc.kkr.MihomoCoreManager"
 	controllerKeychainService = "cc.kkr.MihomoCoreManager.controller-secret"
 )
@@ -1973,12 +1973,12 @@ var win=$.NSWindow.alloc.initWithContentRectStyleMaskBackingDefer(rect,32783,2,f
 win.title='Mihomo Core 管理面板'; win.titleVisibility=1; win.titlebarAppearsTransparent=true; win.movableByWindowBackground=true;
 var host=$.NSView.alloc.initWithFrame(rect); host.autoresizingMask=18; win.contentView=host;
 var web=$.WKWebView.alloc.initWithFrame(host.bounds); web.autoresizingMask=18; host.addSubview(web);
-var dragStrip=$.MihomoWindowDragView.alloc.initWithFrame($.NSMakeRect(0,rect.size.height-36,rect.size.width,36)); dragStrip.autoresizingMask=10; host.addSubview(dragStrip);
+var dragStrip=$.MihomoWindowDragView.alloc.initWithFrame($.NSMakeRect(0,rect.size.height-52,rect.size.width,52)); dragStrip.autoresizingMask=10; host.addSubview(dragStrip);
 win.center;
 function showURL(u){ try{var url=$.NSURL.URLWithString($(u));var req=$.NSURLRequest.requestWithURL(url);web.loadRequest(req);win.makeKeyAndOrderFront(null);cocoaApp.activateIgnoringOtherApps(true);}catch(e){std.displayNotification(String(e),{withTitle:'Mihomo Core Manager'});} }
 function openHash(h){ showURL(BASE+'/#'+h); }
 
-var statusItem=null, statusHeader=null, speedHeader=null, prefIconItem=null, prefStatusItem=null, prefSpeedItem=null, iconOnlyItem=null, startItem=null, stopItem=null, serverMenu=null, serverRoot=null, proxyHeader=null, proxyEndSeparator=null, proxyMenuRoots=[], proxyMenuData={}, proxyMenuGeneration=-1, proxySubmenuBuilt={}, proxyMenuTick=0;
+var statusItem=null, statusHeader=null, upHeader=null, downHeader=null, prefIconItem=null, prefStatusItem=null, prefSpeedItem=null, iconOnlyItem=null, startItem=null, stopItem=null, serverMenu=null, serverRoot=null, proxyHeader=null, proxyMenuRoots=[], proxyMenuData={}, proxyMenuGeneration=-1, proxySubmenuBuilt={}, proxyMenuTick=0;
 var showIcon=true, showStatus=true, showSpeed=true, lastRunning=false, lastReachable=false, lastUp=0, lastDown=0, lastCoreVersion='--';
 var appSymbol=null, missingSnapshotTicks=0;
 var statusOverlay=null, statusIconView=null, statusDot=null, upValueLabel=null, upUnitLabel=null, downValueLabel=null, downUnitLabel=null;
@@ -2087,7 +2087,8 @@ function updateStatusTitle(){
   renderStatusButton();
   var state=lastReachable?(lastRunning?'Running':'Stopped'):'Offline';
   if(statusHeader) statusHeader.title='Mihomo Core  ·  '+lastCoreVersion+'  ·  '+state;
-  if(speedHeader) speedHeader.title='↑  上传  '+fmtRate(lastUp)+'      ↓  下载  '+fmtRate(lastDown);
+  if(upHeader) upHeader.title='↑  上传                     '+fmtRate(lastUp);
+  if(downHeader) downHeader.title='↓  下载                     '+fmtRate(lastDown);
   if(startItem) startItem.enabled=lastReachable&&!lastRunning;
   if(stopItem) stopItem.enabled=lastReachable&&lastRunning;
 }
@@ -2242,7 +2243,7 @@ function rebuildProxyMenus(){
   proxyMenuRoots=[];
 
   var groups=proxyConfigOrderedGroups(proxyMenuData);
-  var index=proxyEndSeparator?menu.indexOfItem(proxyEndSeparator):menu.indexOfItem(coreRoot); if(index<0)index=menu.numberOfItems;
+  var index=menu.indexOfItem(coreRoot); if(index<0)index=menu.numberOfItems;
   groups.forEach(function(name){
     var p=proxyMenuData[name], current=p.now||p.type||'';
     var title=name+(current?'  ·  '+current:'');
@@ -2342,7 +2343,8 @@ function addSymbol(item,name){try{var img=$.NSImage.imageWithSystemSymbolNameAcc
 function addSep(targetMenu){targetMenu.addItem($.NSMenuItem.separatorItem);}
 
 statusHeader=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('Mihomo Core  ·  --  ·  Offline','', '');statusHeader.enabled=false;menu.addItem(statusHeader);
-speedHeader=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('↑  上传  0 B/s      ↓  下载  0 B/s','', '');speedHeader.enabled=false;menu.addItem(speedHeader);
+upHeader=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('↑  上传                     0 B/s','', '');upHeader.enabled=false;menu.addItem(upHeader);
+downHeader=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('↓  下载                     0 B/s','', '');downHeader.enabled=false;menu.addItem(downHeader);
 addSep(menu);
 
 addSymbol(addItem(menu,'打开主窗口','openManager:','o'),'macwindow');
@@ -2351,7 +2353,6 @@ serverRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('服务器  ·  �
 addSep(menu);
 
 proxyHeader=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('代理组','',''); proxyHeader.enabled=false; menu.addItem(proxyHeader);
-proxyEndSeparator=$.NSMenuItem.separatorItem; menu.addItem(proxyEndSeparator);
 var coreRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('Core 控制','', ''); var coreMenu=$.NSMenu.alloc.initWithTitle('Core 控制'); coreRoot.submenu=coreMenu; addSymbol(coreRoot,'cpu'); menu.addItem(coreRoot);
 startItem=addSymbol(addItem(coreMenu,'启动 Core','startCore:',''),'play.fill');
 stopItem=addSymbol(addItem(coreMenu,'停止 Core','stopCore:',''),'stop.fill');
