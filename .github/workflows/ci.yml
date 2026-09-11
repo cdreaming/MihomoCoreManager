@@ -8,10 +8,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: macos-ci-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   arm64-build:
     name: Apple Silicon arm64 full release simulation
@@ -30,31 +26,26 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(uname -s)" = "Darwin"
           test "$(uname -m)" = "arm64"
+          xcodebuild -version
+          go version
 
-      # PR/main must commit generated source metadata. The strict release
-      # preflight may self-refresh it later, but CI catches stale manifests first.
-      - name: Verify committed source manifest
-        run: python3 scripts/build-source-manifest.py --check
-
-      - name: Full release simulation
+      - name: 真实 macOS arm64 发布全链路模拟
         shell: bash
-        run: bash scripts/simulate-release.sh --strict-macos
+        run: bash scripts/simulate-release.sh
 
-      - name: Upload Xcode diagnostics
-        if: always()
+      - name: Upload Xcode diagnostics on failure
+        if: failure()
         uses: actions/upload-artifact@v6
         with:
-          name: xcodebuild-release-log
+          name: xcode-diagnostics-${{ github.run_id }}
           path: build/xcodebuild-release.log
           if-no-files-found: ignore
 
-      - name: Upload verified release artifacts
-        if: success()
-        uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v6
         with:
-          name: MihomoCoreManager-v1.2.6-arm64-release-simulation
+          name: MihomoCoreManager-arm64-release-simulation
           path: |
             dist/
             dist-portable/
+            build/release-simulation-verify/

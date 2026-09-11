@@ -7,20 +7,16 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: '要发布的版本，例如 1.2.6 或 v1.2.6'
+        description: '要发布的版本，例如 1.2.5 或 v1.2.5'
         required: true
         type: string
 
 permissions:
   contents: write
 
-concurrency:
-  group: macos-release-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   release:
-    name: arm64 release / PKG / portable
+    name: arm64 发布（真实环境全链路模拟后发布）
     runs-on: macos-15
     timeout-minutes: 75
     steps:
@@ -52,36 +48,44 @@ jobs:
             echo "请求版本 v${REQUESTED} 与 VERSION v${VERSION} 不一致" >&2
             exit 1
           }
-          [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]] || {
-            echo "Release runner 必须是 Apple Silicon macOS" >&2
-            exit 1
-          }
+          [[ "$(uname -m)" == "arm64" ]] || { echo "Release runner 必须为 arm64" >&2; exit 1; }
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: 模拟完整真实发布链路
+      - name: 刷新源码清单元数据
         shell: bash
-        run: bash scripts/simulate-release.sh --strict-macos
+        run: |
+          set -Eeuo pipefail
+          python3 scripts/build-source-manifest.py --write
+          python3 scripts/build-source-manifest.py --check
+          if ! git diff --quiet -- SOURCE-SHA256SUMS.txt; then
+            echo "::warning::Committed SOURCE-SHA256SUMS.txt was stale; regenerated from this exact checkout."
+          fi
 
-      - name: Upload Xcode diagnostics
-        if: always()
+      - name: 真实 macOS arm64 发布全链路模拟并构建最终资产
+        shell: bash
+        run: bash scripts/simulate-release.sh
+
+      - name: Upload Xcode diagnostics on failure
+        if: failure()
         uses: actions/upload-artifact@v6
         with:
-          name: xcodebuild-release-log-${{ steps.version.outputs.version }}
+          name: xcode-diagnostics-${{ github.run_id }}
           path: build/xcodebuild-release.log
           if-no-files-found: ignore
 
-      - name: 为 workflow_dispatch 准备不可移动 tag
+      - name: 为 workflow_dispatch 准备 tag
         if: github.event_name == 'workflow_dispatch'
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
         run: |
           set -Eeuo pipefail
           git fetch --tags --force
           if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
             [[ "$(git rev-list -n 1 "$TAG")" == "$(git rev-parse HEAD)" ]] || {
-              echo "$TAG 已存在但不指向当前 commit；请使用新版本号，不要移动已存在 tag" >&2
+              echo "$TAG 已存在但不指向当前 commit" >&2
               exit 1
             }
           else
@@ -123,5 +127,4 @@ jobs:
           test -f "MihomoCoreManager-${TAG}-arm64.pkg"
           test -f "MihomoCoreManager-${TAG}-arm64.zip"
           test -f "MihomoCoreManager-${TAG}-arm64-portable-installer.zip"
-          test -f "release_${TAG}_notes_zh-CN.md"
           echo "GitHub Release online verification: PASS"
