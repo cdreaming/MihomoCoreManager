@@ -1,5 +1,31 @@
 # Changelog
 
+## v1.2.4
+
+### v1.2.4 Hotfix
+
+- 修复 Xcode 16.4 对 `Bool?` switch 穷尽性检查：显式使用 `.some(true)` / `.none` / `.some(false)`，并更新 macOS 14 `onChange` API。
+- macOS CI 编译稳定性修复：拆分代理页大型 SwiftUI ViewBuilder 与排序 Picker，Release 构建关闭 Swift batch mode，并在失败时回显真实 Xcode 编译诊断。
+- Cloudflare Tunnel 稳定性修复：Controller GET 请求对 530/502/503/504 等临时网关错误做短重试；识别 Error 1033 并显示简短中文提示，不再把 Cloudflare 整段 JSON/HTML 直接抛给用户。代理页在临时断线时回退到最近一次成功快照，状态栏继续读取本地快照。
+- 线路延时再次修正：按 MetaCubeXD 当前实现同时获取 `/proxies` 与 `/providers/proxies`，把 provider-only 具体节点补入节点表；组内成员若是嵌套策略组会递归解析到最终叶子节点。某个测试 URL 的 `delay=0` 不再覆盖其它 URL 已成功的正延时。
+- 再修具体线路延时：Mihomo 当前 `extra` 实际结构为 `extra[testUrl] = { alive, history: [...] }`，不是直接 history 数组；原解析因此只能让部分代理组显示延时，具体线路读不到。原生 Swift 与 portable/Web/状态栏现已统一按真实结构解析。
+- 修复“默认”代理组排序：不再使用 Mihomo `/group` 的 Go map 遍历结果，改用 `/proxies` 中 `GLOBAL.all` 提供的配置顺序；内置 `GLOBAL` 组放在配置组之后。
+- 修复测速成功但代理线路不显示延时：统一读取显式组测速结果、`extra` URL 专属历史和 legacy `history`，显式测速结果优先。
+- Web 代理页测速完成后直接把 `/group/{group}/delay` 返回值写回节点，不再依赖第二次远程刷新才能显示。
+- 大幅优化 portable 状态栏：代理数据由 Go 后台轮询并原子写入本地快照，菜单打开/刷新不再发起 Controller 请求或启动 curl；代理组子菜单按需懒加载。
+- 状态栏测速和线路切换改为异步队列，远端测速/PUT 不再阻塞 AppKit 菜单事件循环。
+- 移除状态栏代理组前附加的 SF Symbol，保留组名自身的 emoji/旗帜。
+- 状态栏代理线路同步显示最新显式测速或 Mihomo `extra/history` 延时。
+
+- 代理组和代理列表新增默认、延时、质量、名字四种排序。
+- 默认组排序读取 `/group` 的原始配置顺序；组内代理默认保持 `all` 顺序。
+- 新增当前代理组测速，调用 `/group/{group}/delay`，只测试当前组。
+- 测速结果按节点名共享，同一节点在其它代理组中同步显示最新测试延时。
+- 状态栏新增顶层代理组菜单；每个组提供测速按钮和代理线路选择。
+- portable 本地 bridge 新增 `/local/proxy-groups`、`/local/proxy-delay`，并缓存共享节点测速结果。
+- 保留 v1.2.3 Controller Secret 独立认证修复。
+- 版本升级为 v1.2.4 / build 124。
+
 ## v1.2.3
 
 - 修复代理页错误复用管理面板 Core Secret 导致 Mihomo Controller 返回 HTTP 401 的问题；新增独立 Controller Secret，并在未设置时兼容回退 Core Secret。
