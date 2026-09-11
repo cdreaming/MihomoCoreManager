@@ -1,24 +1,6 @@
 # Mihomo Core Manager for macOS
 
-基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.2.4 (build 124)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
-
-## v1.2.4
-
-**v1.2.4 Cloudflare 容错修订**：Controller 经 Cloudflare Tunnel 暴露时，HTTP 530 / Error 1033 会自动短重试；仍不可达时，代理页和状态栏继续使用最近一次成功的代理/延时快照，并显示简短断线提示，不再输出整段 Cloudflare JSON/HTML。
-
-**v1.2.4 修订版**：修复默认代理组顺序、线路延时显示和状态栏菜单卡顿。默认组顺序现在以 `GLOBAL.all` 的配置顺序为准；测速结果会直接回填并兼容 Mihomo `extra/history`；portable 状态栏使用本地原子快照 + 懒加载子菜单，打开菜单不再等待远程 Controller。 线路延时数据同时合并 Mihomo `/providers/proxies`，确保 provider-only 具体节点也进入节点表；嵌套策略组会递归解析到最终叶子节点，并复用其它 Test URL 已成功的正延时。
-
-v1.2.4 基于已经验证 Controller 连接正常的 v1.2.3 继续增强代理管理体验：
-
-- “代理组”和“代理列表”分别支持 **默认 / 延时 / 质量 / 名字** 四种排序。
-- 默认排序：代理组优先使用 Mihomo `/group` 返回的配置顺序，代理列表保持组内 `all` 原始顺序。
-- 延时排序：按最近一次显式测速结果优先，其次使用 Mihomo 历史延时，未知/超时结果靠后。
-- 质量排序：综合节点存活状态、近期失败次数、延时抖动、平均延时和最新延时，优先显示稳定线路。
-- 代理详情增加“测速当前组”，使用 Mihomo `GET /group/{group}/delay`，只测试当前组。
-- 当前组测速结果按节点名全局共享：同一个节点同时出现在其它代理组时，其它组会立即显示相同测速结果。
-- 状态栏新增代理组顶层入口：每个代理组都可直接测速，并可在子菜单中切换该组代理线路。
-- 原生 SwiftUI 与 portable arm64 安装版同步实现。
-- 版本升级为 v1.2.4 / build 124。
+基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.2.3 (build 123)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
 
 ## v1.2.3
 
