@@ -1,6 +1,5 @@
 import Foundation
 
-<<<<<<< HEAD
 private struct ControllerConfigResponse: Decodable {
     let mode: String?
 }
@@ -73,8 +72,6 @@ private struct ControllerErrorMessage: Decodable {
     let message: String?
 }
 
-=======
->>>>>>> parent of 7d39e5c (v1.2.3)
 struct MihomoAPIClient {
     private let decoder: JSONDecoder = {
         let decoder = JSONDecoder()
@@ -191,7 +188,6 @@ struct MihomoAPIClient {
         guard !direct.isEmpty else {
             return try await action(.reload, profile: profile, secret: secret)
         }
-        guard !secret.isEmpty else { throw MihomoClientError.missingSecret }
         let url = try makeURL(
             base: direct,
             path: "/configs",
@@ -201,18 +197,20 @@ struct MihomoAPIClient {
         struct Payload: Encodable { let path: String; let payload: String }
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
-        request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
+        if !secret.isEmpty {
+            request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
+        }
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try encoder.encode(Payload(path: profile.configPath, payload: ""))
         let (_, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw MihomoClientError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
+            if http.statusCode == 401 { throw MihomoClientError.controllerUnauthorized }
             throw MihomoClientError.server(status: http.statusCode, message: "Controller 拒绝重载配置")
         }
         return "已通过 Direct Controller 重载 \(profile.configPath)"
     }
 
-<<<<<<< HEAD
     func proxyMode(profile: ServerProfile, secret: String) async throws -> MihomoRunMode? {
         let data = try await controllerData(path: "/configs", method: "GET", body: nil, profile: profile, secret: secret)
         let response: ControllerConfigResponse
@@ -394,8 +392,6 @@ struct MihomoAPIClient {
         _ = try await controllerData(url: url, method: "PUT", body: body, secret: secret)
     }
 
-=======
->>>>>>> parent of 7d39e5c (v1.2.3)
     func logs(lines: Int, profile: ServerProfile, secret: String) async throws -> String {
         let safe = min(300, max(10, lines))
         let response: LogsResponse = try await get(
@@ -463,7 +459,9 @@ struct MihomoAPIClient {
         )
         var request = URLRequest(url: url)
         request.httpMethod = method
-        request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
+        if !secret.isEmpty {
+            request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
+        }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let body {
             request.httpBody = body
@@ -485,7 +483,6 @@ struct MihomoAPIClient {
         }
     }
 
-<<<<<<< HEAD
     private func controllerBase(profile: ServerProfile, secret: String) throws -> String {
         let direct = profile.coreControllerURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !direct.isEmpty else { throw MihomoClientError.missingController }
@@ -657,8 +654,6 @@ struct MihomoAPIClient {
         return url
     }
 
-=======
->>>>>>> parent of 7d39e5c (v1.2.3)
     private func makeURL(
         base rawBase: String,
         path: String,

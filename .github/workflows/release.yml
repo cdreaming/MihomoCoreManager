@@ -7,11 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-<<<<<<< HEAD
         description: '要发布的版本，例如 1.2.4 或 v1.2.4'
-=======
-        description: '要发布的版本，例如 1.2.2 或 v1.2.2'
->>>>>>> parent of 7d39e5c (v1.2.3)
         required: true
         type: string
 

@@ -3,8 +3,33 @@ import Security
 
 enum KeychainStore {
     private static let service = "cc.kkr.MihomoCoreManager.profile-secret"
+    private static let controllerService = "cc.kkr.MihomoCoreManager.controller-secret"
 
     static func readSecret(profileID: UUID) -> String {
+        readSecret(profileID: profileID, service: service)
+    }
+
+    static func writeSecret(_ secret: String, profileID: UUID) throws {
+        try writeSecret(secret, profileID: profileID, service: service)
+    }
+
+    static func deleteSecret(profileID: UUID) {
+        deleteSecret(profileID: profileID, service: service)
+    }
+
+    static func readControllerSecret(profileID: UUID) -> String {
+        readSecret(profileID: profileID, service: controllerService)
+    }
+
+    static func writeControllerSecret(_ secret: String, profileID: UUID) throws {
+        try writeSecret(secret, profileID: profileID, service: controllerService)
+    }
+
+    static func deleteControllerSecret(profileID: UUID) {
+        deleteSecret(profileID: profileID, service: controllerService)
+    }
+
+    private static func readSecret(profileID: UUID, service: String) -> String {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -22,7 +47,7 @@ enum KeychainStore {
         return value
     }
 
-    static func writeSecret(_ secret: String, profileID: UUID) throws {
+    private static func writeSecret(_ secret: String, profileID: UUID, service: String) throws {
         let account = profileID.uuidString
         let baseQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -54,7 +79,7 @@ enum KeychainStore {
         }
     }
 
-    static func deleteSecret(profileID: UUID) {
+    private static func deleteSecret(profileID: UUID, service: String) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

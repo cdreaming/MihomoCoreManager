@@ -1,6 +1,5 @@
 # Changelog
 
-<<<<<<< HEAD
 ## v1.2.4
 
 ### v1.2.4 Hotfix
@@ -37,8 +36,6 @@
 - 原生 SwiftUI 与 portable arm64 版本同步实现；portable 新增 Controller API 回归测试。
 - 版本升级为 v1.2.3 / build 123。
 
-=======
->>>>>>> parent of 7d39e5c (v1.2.3)
 ## v1.2.2
 
 - 修复 v1.2.1 GitHub Release 在 portable 安装包阶段因 macOS Runner 未预装 Go 而报 `Go is required`、exit code 1 的问题。

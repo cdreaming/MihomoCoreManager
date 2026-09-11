@@ -1,6 +1,5 @@
 # Mihomo Core Manager for macOS
 
-<<<<<<< HEAD
 基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.2.4 (build 124)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
 
 ## v1.2.4
@@ -42,9 +41,6 @@ v1.2.3 在 v1.2.2 稳定发布基线上新增 Mihomo Core 代理切换能力：
 | 切换运行模式 | `PATCH /configs` | 写入 `rule` / `global` / `direct` |
 | 读取代理 | `GET /proxies` | 展示代理组与详细代理 |
 | 切换代理 | `PUT /proxies/{group}` | 写入目标代理 `name` |
-=======
-基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.2.2 (build 122)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
->>>>>>> parent of 7d39e5c (v1.2.3)
 
 ## v1.2.2
 

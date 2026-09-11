@@ -1,5 +1,4 @@
 66b5dbf1a50e5f86c95fab036536f67b379ebc4f9e2120db7a6d5ee568b8f82d  .github/workflows/ci.yml
-<<<<<<< HEAD
 fedc8169d182f44f6fe80846c2b2c2677d5fa1c88427dac588b2984d3fcce704  .github/workflows/release.yml
 144f61f92bdbd74eec494cd1a02b4e897b000c50155e9a422c0561f43508006b  .gitignore
 561ca2b2790a1a1a7ba45b2d2feae11ebbc3ca2e05d28ef1362a0c5c48fb49a3  BUILD-FIX-v1.1.4.md
@@ -9,17 +8,6 @@ ce66c6cf99f6d0da627f2e383a6ef2ae4d0fa425c9750d7900f33922cc1a8b7a  MihomoCoreMana
 7e78c7c0c2f52b49415c4b571bbfda4b4ba8f47120731ad23e4350ab2511e4b9  MihomoCoreManager/Info.plist
 0a335e63dd857e83a11a5e9e5069456d74fd17075c90a2af9606322d65ae1757  MihomoCoreManager/MihomoCoreManagerApp.swift
 a1f9417457eacc17c012376edaf5e39b0e523786b5e59dd958d4b55dc6ab12cd  MihomoCoreManager/Models.swift
-=======
-34416d69d4061f95d1bec8018ad0e6d036bb636e91d957d73dcf8d0ca09e51eb  .github/workflows/release.yml
-144f61f92bdbd74eec494cd1a02b4e897b000c50155e9a422c0561f43508006b  .gitignore
-561ca2b2790a1a1a7ba45b2d2feae11ebbc3ca2e05d28ef1362a0c5c48fb49a3  BUILD-FIX-v1.1.4.md
-fe7ca9d8733417a9a3f0f04a898e7c3d04fba0928574065a35a6153f92e92c4a  CHANGELOG.md
-bae77732f0bb1ba8c2e68ea81e3ad98cef155487d626247e8c3887e96367b1e9  MihomoCoreManager/API/MihomoAPIClient.swift
-8551ff1b3be7c10e8023d461992fce5c07e2d4949d519641f9b90800b29cdd8d  MihomoCoreManager/AppModel.swift
-7e78c7c0c2f52b49415c4b571bbfda4b4ba8f47120731ad23e4350ab2511e4b9  MihomoCoreManager/Info.plist
-0a335e63dd857e83a11a5e9e5069456d74fd17075c90a2af9606322d65ae1757  MihomoCoreManager/MihomoCoreManagerApp.swift
-2b65880ef2f9d1cbae5381850749b9f901c00d7ef6d6da38bf4c466a29af0713  MihomoCoreManager/Models.swift
->>>>>>> parent of 7d39e5c (v1.2.3)
 a68918214f00fcb8f6ab93eaa6338a7f561a7837ad88f10432ad5d4a93ab8f04  MihomoCoreManager/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png
 cd6205bf6d6ceb99b1e47610ec2cff71c005a12de92592dcfa51d880568c7fac  MihomoCoreManager/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-128.png
 8c12af1057bf22e8e12a97c3ea1116cc5529a4f65f9f6a27841617b87b7c2154  MihomoCoreManager/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-16.png
@@ -29,25 +17,17 @@ e5ae4e46c486c5d78d1cd7edfff30ac9afe48b1c0b9a62f9e25b51d6abbb4ad0  MihomoCoreMana
 93053f48f0fbaf0d3362501c71e0a551503a763c5ee2adae312ca615ab79e15f  MihomoCoreManager/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-64.png
 e3be324778ef2da0aa7a695e97c8913ad025f71a7cf699a4d20be763bf141de1  MihomoCoreManager/Resources/Assets.xcassets/AppIcon.appiconset/Contents.json
 10e3b5dc202f1cd9fad1f688c8fc9fe9e9669bf3f8295e67d216b10fd99b6f49  MihomoCoreManager/Resources/Assets.xcassets/Contents.json
-5199638913a0c8846956aa76fb43cb3589b372eda3e9298486e751c65d2fdb70  MihomoCoreManager/Storage/KeychainStore.swift
+8ac4c250153f79618f3f0dcb85758868bbdb693e2dbcb3cb14006e6448440b04  MihomoCoreManager/Storage/KeychainStore.swift
 5541b85dd72ddfaa0d2b5f3d24305d66a66a3eb1290209e1b0a292de4a4d2eb1  MihomoCoreManager/Storage/ProfileStore.swift
-<<<<<<< HEAD
 5abb8e3f3afca0ba96cc1b052964baabcb9b62e29aa751955fa6a9aedb35ae23  MihomoCoreManager/Views/ContentView.swift
-=======
-b246109816a75d4547efb49aa4e06beb2d01b41157f13b3f1b2fa4f26194b656  MihomoCoreManager/Views/ContentView.swift
->>>>>>> parent of 7d39e5c (v1.2.3)
 95d8aace2295e079ba72b37db6ca7b6d31a8ae8e6d3b4c44a3d495998fd009b9  MihomoCoreManager/Views/CoreView.swift
 b33f909e2edce7a53503db6644984f98c57fea716c5119a1eec6c9a26e98c9f8  MihomoCoreManager/Views/LogsView.swift
 178083c96d064ec977ce8568196bdecc50718046ea48d4b8f830a36f1a3a646c  MihomoCoreManager/Views/MenuBarView.swift
 22eb9af04e9242ec5636354ef836c95bd7cb72e74bd5610b17d11fedb84cd0fe  MihomoCoreManager/Views/OverviewView.swift
-a55be052e2fdb8cd3bb4f8927223c39e8723e1ae086b49d4e05a19921ea0ea71  MihomoCoreManager/Views/SettingsView.swift
+0d00e85106643da0db5b1039d348e45741b711bbd25eaf827f117b6d8c4f8067  MihomoCoreManager/Views/SettingsView.swift
 95a73a8bde9cf28454320bc3f968c935fc6badbfa0e0ea51a5cab40c5ffa0a54  MihomoCoreManager/Views/SubscriptionsView.swift
 8e672f8468edf7e7007ffd207998dc47fe8b1b14dbbec128d82fe947646a0d76  MihomoCoreManager/Views/UpdateView.swift
-<<<<<<< HEAD
 5406dbabe73b6c126e7bb132f84b966e56e16859532f6a2e3461311e937c230f  MihomoCoreManager.xcodeproj/project.pbxproj
-=======
-267afee6590efadb47af00ea6698bd93b98ccfcb50d83b973f48f520335d35e0  MihomoCoreManager.xcodeproj/project.pbxproj
->>>>>>> parent of 7d39e5c (v1.2.3)
 3bde8d6cb24472039472693855a6a563f90359be2f62c169f8ebee5def6b3a4e  MihomoCoreManager.xcodeproj/xcshareddata/xcschemes/MihomoCoreManager.xcscheme
 06da32a9a0aff279f73f41d2d23881805dabbc8f2cad95530796634d59c6eb49  QA-v1.1.5.md
 ff190b23bd17654f6e72a144e5685f7513b5384e2804409f0d2a570a2899fb7e  QA-v1.1.6.md
@@ -57,7 +37,6 @@ d190d3d0c438724a2c7c969af8eb47f6448f6ad3287d21789a0116c96b6fc16d  QA-v1.1.7.md
 8357c9f7d8b9ccb9a8aec5ff2306f6c27a0328554d53240e31fcc1b65d4854ac  QA-v1.2.0.md
 b38841c7538951d3379c005e7bd069720960951378fa10c24f88b0d21bb8a3cc  QA-v1.2.1.md
 88e7148c1555c3354123c877b51a912e3a67ac4e7baddc26a70a48e426bedddd  QA-v1.2.2.md
-<<<<<<< HEAD
 d4c38f769a5d372d123b7848a7ffd4b9395d884c747f43bb4b085fe6c6b98579  QA-v1.2.3.md
 fcee436369a3851136b916a2c7ab156ef622e128bb603a6b71c9e3115edc3a9f  QA-v1.2.4.md
 06dade55c5ecc14d12373a1900606006260f61d2f81c970af0af4a5692bbdf8f  README.md
@@ -67,15 +46,6 @@ a775fce43d5457df5856b0712bc1dfa54053977e6e451b31466298d3d1855db1  UI-LAYOUT-REFI
 563a0b4eec3c77bbc34ac630d4fa5214f5c6726ae01468404fd704473110084e  VERSION
 ba395b327a12dab16d780bcf444042b0bc62d681dd6e40f857ee081bf1acf0a2  docs/ARCHITECTURE.md
 cf751a824048be88e513dbf29679ed468f377e7ba190f62ce3b30b2491988d31  docs/RELEASE.md
-=======
-2e87a6590256193714de832cfab2fc051b9eb0d0fd342a8daa724b027604429e  README.md
-a775fce43d5457df5856b0712bc1dfa54053977e6e451b31466298d3d1855db1  UI-LAYOUT-REFINEMENT-NOTES.md
-3d4d5b5174a1375876a8bead2badeba1a9cd0e8bac112f561700ff0acbfbfcd1  UI-ROLLBACK-NOTES.md
-7f211b4050d68aca9b36d097568e497b399de60ecfc8a7258dcc6b4ccc5cc482  VALIDATION.md
-c62a5cc61ac4525935753f5ec284c0a052a4b1da4b3a3580dce2b7d77a2154ae  VERSION
-ba395b327a12dab16d780bcf444042b0bc62d681dd6e40f857ee081bf1acf0a2  docs/ARCHITECTURE.md
-3589eb5e260a6842b4704635f8f4efa0abebc0967b794d57cfff90fc58b072d9  docs/RELEASE.md
->>>>>>> parent of 7d39e5c (v1.2.3)
 ab7a14283057bfc9a143cf6834beace761eeb8ecf3f3142e22e9d77eea4cada5  docs/releases/v1.0.1/RELEASE-NOTES.md
 e970a63c2c78de1fda9c97312fea2b89b61b28e00a1e26cded04fc563e03fa58  docs/releases/v1.0.2/RELEASE-NOTES.md
 8de52c0bc706301f54340c5473bda939795d3663d03170c810b2a0d80b86774a  docs/releases/v1.0.3/RELEASE-NOTES.md
@@ -98,7 +68,6 @@ a2183ac0baf1e453d1188497ccc5c71c6179961f312cd7b6ce8fa1089d4da112  docs/releases/
 e70dd03727fe5e9c80ad7a62f841f1ffead974618c1e1429b02e5a405988bdb8  docs/releases/v1.2.0/RELEASE-NOTES.md
 ee66051f37e40fb236d932ed5b4fdc3549238ba31caa4d4857c3283d7c5cc204  docs/releases/v1.2.1/RELEASE-NOTES.md
 2c3f225230125984de50fff144db8895c04f9cb30c749909669fb995bbbaf7b3  docs/releases/v1.2.2/RELEASE-NOTES.md
-<<<<<<< HEAD
 708e90114dc2a7491d344c7a57d982b5c501b452d058ec8a392ebf6073fc0769  docs/releases/v1.2.3/RELEASE-NOTES.md
 7fbb396f32c9783c874f75c4dd2579c763be11e595712bf765010652c6a59534  docs/releases/v1.2.4/RELEASE-NOTES.md
 919e1210b748f10d8453441428847f9c0249313cdbcad956873fdd2ec13e8a2b  portable-runtime/README.md
@@ -110,14 +79,3 @@ d6e8322943f190f3e08dfcb8538a20ea58b1c0cf4b8fd72248da1db192e4c007  scripts/build-
 98e0c1355d1c53b555e297abf51240c422f611e6c293e79454c14dc4f96a652b  scripts/build-release.sh
 471eae0bf0d381bf4b0b1a8c2232f5c1f28fc6b708a8ba6b7f52a333a84d45c9  scripts/build-source-manifest.py
 469dc0e526494c2088022b5bb96e4fb09d2ee2df5eb62be7c0d77387dc90f56a  scripts/validate-source.py
-=======
-55f9daa0f15de97505c65603baf3fcca72d7b83950ee9dd69c2365ea62077e61  portable-runtime/README.md
-c56c04f50d23924b918fe7ff8552da486683badc0daf5b0addf0ae05b6016fa2  portable-runtime/go.mod
-e622cff6127309ac9c2aeeb95949e8d0e4600acb6523f44a13e91120e31bbf96  portable-runtime/main.go
-836553dac988b242b99f083208288f089bfbde2c85fc1c2b5b032c9a497d1cc5  portable-runtime/main_test.go
-7c08ca68605ce223a1e6da70f8edbb0b4ac413a1f4f9605f77f605abfd4378ab  portable-runtime/ui/index.html
-d6e8322943f190f3e08dfcb8538a20ea58b1c0cf4b8fd72248da1db192e4c007  scripts/build-portable-installer.sh
-98e0c1355d1c53b555e297abf51240c422f611e6c293e79454c14dc4f96a652b  scripts/build-release.sh
-471eae0bf0d381bf4b0b1a8c2232f5c1f28fc6b708a8ba6b7f52a333a84d45c9  scripts/build-source-manifest.py
-642581f67a2fcccaf9c8c0bf89011b18fbd383ae2abe3bbfaa1ba02dbfa5e8ce  scripts/validate-source.py
->>>>>>> parent of 7d39e5c (v1.2.3)
