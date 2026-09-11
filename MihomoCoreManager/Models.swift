@@ -195,53 +195,9 @@ enum MihomoRunMode: String, CaseIterable, Identifiable, Codable {
     }
 }
 
-
-enum ProxySortOption: String, CaseIterable, Identifiable {
-    case defaultOrder
-    case delay
-    case quality
-    case name
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .defaultOrder: "默认"
-        case .delay: "延时"
-        case .quality: "质量"
-        case .name: "名字"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .defaultOrder: "line.3.horizontal"
-        case .delay: "gauge.with.dots.needle.33percent"
-        case .quality: "waveform.path.ecg"
-        case .name: "textformat"
-        }
-    }
-}
-
 struct MihomoProxyDelaySample: Decodable, Hashable {
     let time: String?
     let delay: Int?
-}
-
-struct MihomoProxyDelayExtra: Decodable, Hashable {
-    let alive: Bool?
-    let history: [MihomoProxyDelaySample]
-
-    private enum CodingKeys: String, CodingKey {
-        case alive
-        case history
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        alive = try container.decodeIfPresent(Bool.self, forKey: .alive)
-        history = try container.decodeIfPresent([MihomoProxyDelaySample].self, forKey: .history) ?? []
-    }
 }
 
 struct MihomoProxy: Identifiable, Hashable {
@@ -250,14 +206,11 @@ struct MihomoProxy: Identifiable, Hashable {
     let now: String?
     let all: [String]
     let history: [MihomoProxyDelaySample]
-    let extra: [String: MihomoProxyDelayExtra]
     let alive: Bool?
     let hidden: Bool?
     let udp: Bool?
     let xudp: Bool?
     let tfo: Bool?
-    let testURL: String?
-    let expectedStatus: String?
 
     var id: String { name }
     var isGroup: Bool { !all.isEmpty }
@@ -276,28 +229,22 @@ struct MihomoProxy: Identifiable, Hashable {
         now: String?,
         all: [String],
         history: [MihomoProxyDelaySample],
-        extra: [String: MihomoProxyDelayExtra],
         alive: Bool?,
         hidden: Bool?,
         udp: Bool?,
         xudp: Bool?,
-        tfo: Bool?,
-        testURL: String?,
-        expectedStatus: String?
+        tfo: Bool?
     ) {
         self.name = name
         self.type = type
         self.now = now
         self.all = all
         self.history = history
-        self.extra = extra
         self.alive = alive
         self.hidden = hidden
         self.udp = udp
         self.xudp = xudp
         self.tfo = tfo
-        self.testURL = testURL
-        self.expectedStatus = expectedStatus
     }
 }
 
@@ -331,7 +278,6 @@ enum AppOperation: Equatable {
     case fetchProxies
     case setProxyMode(MihomoRunMode)
     case selectProxy(group: String, proxy: String)
-    case testProxyGroup(String)
     case fetchSubscriptions
     case saveSubscriptions
     case fetchLogs
