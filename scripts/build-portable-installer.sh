@@ -27,6 +27,19 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$DIST"
 )
 chmod 0755 "$BIN"
 
+BIN="$BIN" python3 - <<'PY'
+from pathlib import Path
+import os, struct
+p = Path(os.environ['BIN'])
+data = p.read_bytes()[:8]
+if len(data) < 8:
+    raise SystemExit('portable binary is truncated')
+magic, cputype = struct.unpack('<II', data)
+if magic != 0xfeedfacf or cputype != 0x0100000c:
+    raise SystemExit(f'portable binary is not thin Mach-O arm64: magic=0x{magic:08x} cputype=0x{cputype:08x}')
+print('portable Mach-O architecture: arm64')
+PY
+
 ROOT="$ROOT" APP="$APP" VERSION="$VERSION" BUILD_NUMBER="$BUILD_NUMBER" python3 - <<'PY'
 from pathlib import Path
 import os, plistlib, struct
@@ -150,6 +163,27 @@ with zipfile.ZipFile(out, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=9
         info.external_attr = (path.stat().st_mode & 0xFFFF) << 16
         with path.open('rb') as f:
             zf.writestr(info, f.read(), compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
+PY
+
+OUT="$OUT" VERSION="$VERSION" BUILD_NUMBER="$BUILD_NUMBER" python3 - <<'PY'
+from pathlib import PurePosixPath
+import os, plistlib, stat, zipfile
+zp = os.environ['OUT']
+with zipfile.ZipFile(zp) as z:
+    bad = z.testzip()
+    if bad:
+        raise SystemExit(f'portable ZIP CRC failure: {bad}')
+    prefix = f"MihomoCoreManager-v{os.environ['VERSION']}-arm64-portable-installer/MihomoCoreManager.app/Contents/"
+    names = set(z.namelist())
+    for required in [prefix+'Info.plist', prefix+'MacOS/MihomoCoreManager']:
+        if required not in names:
+            raise SystemExit(f'portable ZIP missing: {required}')
+    p = plistlib.loads(z.read(prefix+'Info.plist'))
+    got = (str(p.get('CFBundleShortVersionString', '')), str(p.get('CFBundleVersion', '')))
+    expected = (os.environ['VERSION'], os.environ['BUILD_NUMBER'])
+    if got != expected:
+        raise SystemExit(f'portable ZIP bundle version mismatch: got {got}, expected {expected}')
+print('portable ZIP integrity: PASS')
 PY
 
 if command -v shasum >/dev/null 2>&1; then

@@ -427,7 +427,13 @@ final class AppModel: ObservableObject {
             do {
                 let refreshed = try await api.proxies(profile: profile, secret: currentControllerSecret)
                 guard selectedProfileID == profileID else { return }
-                proxies = refreshed
+
+                // Some Controller/tunnel combinations can briefly return the old
+                // `now` value immediately after a successful PUT. Preserve the
+                // confirmed selection locally so menu labels and checkmarks refresh
+                // at once instead of visibly jumping back to the previous route.
+                proxies = proxiesByApplyingSelection(proxyName, in: groupName, to: refreshed)
+                proxyGroupOrder = refreshed.first(where: { $0.name == "GLOBAL" })?.all ?? proxyGroupOrder
                 proxiesLoadedFor = profileID
                 show("代理组“\(groupName)”已切换到“\(proxyName)”")
             } catch {
@@ -775,8 +781,16 @@ final class AppModel: ObservableObject {
         throw MihomoClientError.operationFailed("等待项目升级完成超时，请检查升级日志和远端服务状态。")
     }
 
-    private func applyLocalProxySelection(_ proxyName: String, in groupName: String) {
-        proxies = proxies.map { proxy in
+    func currentProxySelection(in groupName: String) -> String? {
+        proxies.first(where: { $0.name == groupName && $0.isGroup })?.now
+    }
+
+    private func proxiesByApplyingSelection(
+        _ proxyName: String,
+        in groupName: String,
+        to values: [MihomoProxy]
+    ) -> [MihomoProxy] {
+        values.map { proxy in
             guard proxy.name == groupName else { return proxy }
             return MihomoProxy(
                 name: proxy.name,
@@ -794,6 +808,10 @@ final class AppModel: ObservableObject {
                 expectedStatus: proxy.expectedStatus
             )
         }
+    }
+
+    private func applyLocalProxySelection(_ proxyName: String, in groupName: String) {
+        proxies = proxiesByApplyingSelection(proxyName, in: groupName, to: proxies)
     }
 
     private func isTransientControllerError(_ error: Error) -> Bool {

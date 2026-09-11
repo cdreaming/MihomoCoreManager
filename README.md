@@ -1,18 +1,32 @@
 # Mihomo Core Manager for macOS
 
-基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.2.5 (build 125)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.2.6 (build 126)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+
+## v1.2.6
+
+v1.2.6 以已成功发布的 v1.2.5 为功能基线，集中把 v1.2.4 / v1.2.5 发布故障转化为自动化发布规则：
+
+- CI 与 Release 统一执行同一个 `scripts/simulate-release.sh --strict-macos`，避免两套构建步骤漂移。
+- Apple Silicon `macos-15` 上执行当前 Xcode SDK 的 Swift typecheck、真实 Release `xcodebuild`、arm64 架构与最终资产验证。
+- Swift Release 构建显式 `SWIFT_ENABLE_BATCH_MODE=NO`；保留完整 `xcodebuild-release.log` 并在失败时回显真实编译诊断。
+- 固化 v1.2.4 的 SwiftUI/Xcode 兼容经验：`ProxySortOption: Hashable`、独立排序 Picker、小型 ViewBuilder、`Bool?` 显式 `.some/.none` 穷尽 switch。
+- strict macOS preflight 使用 `xcrun --sdk macosx` 获取 SDK，再以 `-sdk` + `-target arm64-apple-macos14.0` 做语义 typecheck。
+- manifest 在 PR/main 中严格检查，正式 Release 的精确 checkout 可自动重建后再复核，并在 stale 时报告新增/删除/哈希变化文件。
+- portable 短生命周期后台任务统一纳入 `backgroundWG`，彻底消除测速测试与 `testing.TempDir` 清理竞争；发布模拟对该回归连续运行 300 次，并执行 shuffle、race、vet。
+- Darwin/arm64 Go test binary、portable runtime、ZIP/Info.plist/SHA-256 都加入发布门禁。
+- 版本升级为 v1.2.6 / build 126。
 
 ## v1.2.5
 
-v1.2.5 以 v1.2.4 的代理排序、测速、Cloudflare 容错和状态栏性能修复为稳定基线，集中收紧状态栏下拉菜单与主窗口顶部视觉层级：
+v1.2.5 以 v1.2.4 的代理排序、测速、Cloudflare 容错和状态栏性能修复为稳定基线，继续优化状态栏代理切换刷新和主窗口布局：
 
-- 状态栏下拉菜单中的上传/下载实时网速合并为**同一行**显示，减少纵向占高。
-- 代理组区域在状态栏下拉菜单中使用**前后分隔线独立成组**，与 Core 控制、管理工具区分更清晰。
-- 原生 SwiftUI 状态栏面板同步改为单行网速卡片，并用分隔线单独划分代理组区域。
-- 主窗口标题栏/拖拽区由约 52pt 收紧到 **36pt**；原生窗口顶部安全间距由 38pt 调整为 **26pt**，约为原高度的 2/3。
-- 标题栏改用与 Dashboard 一致的中性深色体系，移除偏亮的独立底色，让窗口顶部与侧栏/主内容更协调。
-- 发布链路吸收 v1.2.4 Xcode 16.4 故障经验：增加编译兼容回归门禁、真实 macOS/Xcode 预检、完整失败日志保留与发布模拟脚本。
-- 版本升级为 v1.2.5 / build 125。
+- 状态栏下拉菜单中的上传/下载实时网速保持**同一行**显示；代理组区域继续使用前后分隔线独立成组。
+- 修复从状态栏重新选择线路/代理组后，顶层代理组后缀仍停留在旧线路的问题：成功选择后立即更新本地菜单快照和可见菜单标题，再延迟同步 Controller 权威状态。
+- 原生 SwiftUI 同步避免成功 PUT 后首次旧 `now` 响应覆盖新选择，并让代理组菜单 identity 包含当前选中项，确保后缀和勾选立即刷新。
+- 主窗口重构为完整的**左侧导航 + 右侧内容**布局，去掉独立视觉标题栏；portable 仅保留 22px 不可见原生拖拽区域，原生 SwiftUI 使用 `hiddenTitleBar + fullSizeContentView`。
+- 左侧标题区采用蓝紫 `M` 图标 + 两行 `Mihomo Core / 管理面板`；标题改用与界面一致的系统字体和主文字色（深色界面呈柔和白色），版本信息置于其下，并移除重复的独立 `Mihomo Core` 标题。
+- 侧栏统一为 256pt/px，标题字重、间距、主文字色与深色背景按 Dashboard 风格统一。
+- 版本保持 v1.2.5 / build 125。
 
 ## v1.2.4
 
