@@ -1,9 +1,8 @@
-# Validation Report — v1.2.1
+# Validation Report — v1.2.2
 
-- App `1.2.1` / Xcode build `121` / portable build `121`。
-- 已确认 v1.2.0 portable/AppKit 状态栏路径正常，本次只修 GitHub Actions 正式 Xcode/SwiftUI target 的状态栏本体。
-- 正式 `MenuBarExtra` 不再直接承载双行 SwiftUI `VStack`；上传/下载速率先绘制为一个固定 `55×18pt` template `NSImage`，从而避免 macOS 状态栏把两行压缩成一行。
-- 上传在上、下载在下；速度块靠下、左对齐，数字区域固定预留 4 个等宽字符位，单位按 `B/s / KB/s / MB/s / GB/s / TB/s` 自动变化，状态栏本体不显示箭头。
-- v1.1.9 自定义状态栏下拉面板保持不变。
-- GitHub Release 同时产出正式 SwiftUI `.pkg/.zip` 与 portable arm64 安装包，便于做显示一致性回归。
-- Source validator、portable Go 回归测试、Swift parse 与源码 SHA manifest 均作为 v1.2.1 发布门禁。
+- App `1.2.2` / Xcode build `122` / portable build `122`。
+- 已复现并定位 v1.2.1 GitHub Release 失败根因：Release job 调用 `scripts/build-portable-installer.sh` 前没有配置 Go，脚本在 `command -v go` 处以 `Go is required` 退出。
+- `.github/workflows/release.yml` 现在显式使用 `actions/setup-go@v6`，版本由 `portable-runtime/go.mod` 提供；在 Release 构建前运行 `CGO_ENABLED=0 go test ./...`。
+- `.github/workflows/ci.yml` 同步配置 Go，并实际运行 portable installer 构建脚本，确保同类环境缺失能在 PR/main CI 阶段发现。
+- v1.2.1 正式 Xcode/SwiftUI 状态栏 template image 修复保持不变。
+- Source validator、portable Go 回归测试、Swift parse、workflow YAML 解析与源码 SHA manifest 作为 v1.2.2 发布门禁。

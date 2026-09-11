@@ -15,6 +15,7 @@ required = [
     "MihomoCoreManager/Views/MenuBarView.swift",
     "MihomoCoreManager/Views/SettingsView.swift",
     ".github/workflows/release.yml",
+    ".github/workflows/ci.yml",
     "SOURCE-SHA256SUMS.txt",
     "scripts/build-portable-installer.sh",
 ]
@@ -149,11 +150,11 @@ for marker in [
     "model.menuBarShowStatus && !model.menuBarShowIcon",
 ]:
     if marker not in app_swift:
-        errors.append(f"native compact-window/v1.2.1 menu-bar gate missing: {marker}")
+        errors.append(f"native compact-window/v1.2.2 menu-bar gate missing: {marker}")
 if "private func speedLine(" in app_swift or "VStack(alignment: .leading, spacing: -2)" in app_swift:
-    errors.append("native v1.2.1 status-bar body must not use a multiline SwiftUI speed label")
+    errors.append("native v1.2.2 status-bar body must not use a multiline SwiftUI speed label")
 if "menuBarRateParts" not in app_model:
-    errors.append("native v1.2.1 menu-bar rate-parts formatter missing")
+    errors.append("native v1.2.2 menu-bar rate-parts formatter missing")
 
 core_view = (root / "MihomoCoreManager/Views/CoreView.swift").read_text(encoding="utf-8")
 update_view = (root / "MihomoCoreManager/Views/UpdateView.swift").read_text(encoding="utf-8")
@@ -342,6 +343,7 @@ if not plist.get("NSAppTransportSecurity", {}).get("NSAllowsArbitraryLoads"):
     errors.append("ATS compatibility flag missing for explicit per-profile HTTP support")
 
 workflow = (root / ".github/workflows/release.yml").read_text(encoding="utf-8")
+ci_workflow = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 build_release = (root / "scripts/build-release.sh").read_text(encoding="utf-8")
 release_text = workflow + "\n" + build_release
 for marker in ["macos-15", "notarytool", "productbuild", "gh release", "SHA256SUMS.txt"]:
@@ -350,13 +352,26 @@ for marker in ["macos-15", "notarytool", "productbuild", "gh release", "SHA256SU
 if "run: bash scripts/build-release.sh --unsigned" not in workflow:
     errors.append("release workflow must use --unsigned by default")
 for marker in [
+    "actions/setup-go@v6",
+    "go-version-file: portable-runtime/go.mod",
+    "cache: false",
+    "CGO_ENABLED=0 go test ./...",
     "bash scripts/build-portable-installer.sh",
     '>> dist/SHA256SUMS.txt',
     'gh release upload "$TAG" dist/* dist-portable/* --clobber',
     'test -f "MihomoCoreManager-${TAG}-arm64-portable-installer.zip"',
 ]:
     if marker not in workflow:
-        errors.append(f"v1.2.1 GitHub Release portable parity gate missing: {marker}")
+        errors.append(f"v1.2.2 GitHub Release portable parity gate missing: {marker}")
+for marker in [
+    "actions/setup-go@v6",
+    "go-version-file: portable-runtime/go.mod",
+    "CGO_ENABLED=0 go test ./...",
+    "bash scripts/build-portable-installer.sh",
+    "dist-portable/",
+]:
+    if marker not in ci_workflow:
+        errors.append(f"v1.2.2 macOS CI portable parity gate missing: {marker}")
 for forbidden in ["secrets.APPLE_", "校验签名与公证 Secrets", "导入 Developer ID 证书"]:
     if forbidden in workflow:
         errors.append(f"unsigned release workflow must not require Apple signing secrets: {forbidden}")

@@ -1,6 +1,16 @@
 # Mihomo Core Manager for macOS
 
-基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.2.1 (build 121)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.2.2 (build 122)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+
+## v1.2.2
+
+v1.2.2 是 v1.2.1 的 GitHub Actions 构建热修复，状态栏显示逻辑保持 v1.2.1 不变：
+
+- 修复 Release 在执行 `scripts/build-portable-installer.sh` 时因 macOS Runner 未预装 Go 而报 `Go is required`、exit code 1 的问题。
+- `.github/workflows/release.yml` 在 portable 测试/构建前显式使用 `actions/setup-go@v6`，Go 版本由 `portable-runtime/go.mod` 提供。
+- Release 增加 `go version` 与 `CGO_ENABLED=0 go test ./...` smoke test，让 Go 工具链问题在正式发布构建前立即暴露。
+- `.github/workflows/ci.yml` 同步安装 Go，并执行同一个 `scripts/build-portable-installer.sh`，以后 PR/main CI 就能覆盖 portable 发布路径。
+- CI artifact 同时包含 `dist/` 与 `dist-portable/`；v1.2.1 的正式 SwiftUI 状态栏 template image 修复、v1.1.9 下拉面板及 portable/AppKit 行为全部保留。
 
 ## v1.2.1
 
@@ -173,13 +183,13 @@ xcodebuild \
 
 ## Release
 
-正式 tag `v1.2.1` 成功后生成：
+正式 tag `v1.2.2` 成功后生成：
 
 ```text
-MihomoCoreManager-v1.2.1-arm64.pkg
-MihomoCoreManager-v1.2.1-arm64.zip
-MihomoCoreManager-v1.2.1-arm64-portable-installer.zip
-release_v1.2.1_notes_zh-CN.md
+MihomoCoreManager-v1.2.2-arm64.pkg
+MihomoCoreManager-v1.2.2-arm64.zip
+MihomoCoreManager-v1.2.2-arm64-portable-installer.zip
+release_v1.2.2_notes_zh-CN.md
 SHA256SUMS.txt
 ```
 

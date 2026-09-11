@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: '要发布的版本，例如 1.2.1 或 v1.2.1'
+        description: '要发布的版本，例如 1.2.2 或 v1.2.2'
         required: true
         type: string
 
@@ -23,6 +23,19 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      - name: 配置 portable Go 工具链
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: portable-runtime/go.mod
+          cache: false
+
+      - name: 校验 portable Go 工具链
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          go version
+          (cd portable-runtime && CGO_ENABLED=0 go test ./...)
 
       - name: 解析并校验版本
         id: version

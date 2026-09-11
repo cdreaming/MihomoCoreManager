@@ -16,6 +16,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: 配置 portable Go 工具链
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: portable-runtime/go.mod
+          cache: false
+
       - name: Verify runner architecture
         shell: bash
         run: |
@@ -30,6 +36,13 @@ jobs:
       - name: Build arm64 app and installer assets
         run: bash scripts/build-release.sh --unsigned
 
+      - name: Portable release parity test
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          (cd portable-runtime && CGO_ENABLED=0 go test ./...)
+          bash scripts/build-portable-installer.sh
+
       - name: Verify binary architecture
         shell: bash
         run: |
@@ -40,4 +53,6 @@ jobs:
       - uses: actions/upload-artifact@v6
         with:
           name: MihomoCoreManager-arm64-unsigned
-          path: dist/
+          path: |
+            dist/
+            dist-portable/

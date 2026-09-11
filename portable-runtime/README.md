@@ -22,4 +22,4 @@
 - 下拉菜单中的上传/下载速度使用两个独立只读菜单项。
 - 主菜单栏 JXA shell 异常退出时自动启动最小恢复 shell，并记录 `Runtime/menubar.log`；标题栏 drag strip、集中状态缓存、标准 Edit responder chain、`⌘V`/显式粘贴继续保留。
 
-正式 GitHub Release 由 `.github/workflows/release.yml` 在 macOS arm64 Runner 上构建 SwiftUI App；v1.2.1 同时构建并上传本 portable arm64 安装包，默认使用无需 Apple Developer 凭据的 `--unsigned` 发布路径。
+正式 GitHub Release 由 `.github/workflows/release.yml` 在 macOS arm64 Runner 上构建 SwiftUI App；v1.2.2 会先通过 `actions/setup-go@v6` 按 `go.mod` 显式配置 Go，再测试并构建本 portable arm64 安装包，默认使用无需 Apple Developer 凭据的 `--unsigned` 发布路径。普通 macOS CI 也执行相同 portable 构建脚本，避免 Release 阶段才发现工具链缺失。

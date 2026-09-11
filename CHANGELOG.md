@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.2.2
+
+- 修复 v1.2.1 GitHub Release 在 portable 安装包阶段因 macOS Runner 未预装 Go 而报 `Go is required`、exit code 1 的问题。
+- Release workflow 在 portable 构建前显式使用 `actions/setup-go@v6`，Go 版本直接读取 `portable-runtime/go.mod`，并增加 `CGO_ENABLED=0 go test ./...` 工具链 smoke test。
+- macOS CI 同步配置 Go 并实际执行 `scripts/build-portable-installer.sh`，把 portable 发布路径前移到 PR/main 阶段回归。
+- CI artifact 同时上传 `dist/` 与 `dist-portable/`。
+- 保留 v1.2.1 正式 SwiftUI 状态栏 template image 修复和此前全部 UI/功能。
+- 版本升级为 v1.2.2 / build 122。
+
 ## v1.2.1
 
 - 修复 GitHub Actions/Xcode 正式版状态栏网速仍被 `MenuBarExtra` 压缩、只显示单个数字的问题。
