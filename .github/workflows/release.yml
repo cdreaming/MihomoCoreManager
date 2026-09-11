@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: '要发布的版本，例如 1.2.4 或 v1.2.4'
+        description: '要发布的版本，例如 1.2.5 或 v1.2.5'
         required: true
         type: string
 
@@ -59,15 +59,40 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: 刷新并验证发布源码清单
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # SOURCE-SHA256SUMS.txt is generated release metadata. Refresh it from
+          # this exact checkout before strict release preflight. Normal CI stays
+          # strict and continues to require a committed fresh manifest.
+          python3 scripts/build-source-manifest.py --write
+          python3 scripts/build-source-manifest.py --check
+          if ! git diff --quiet -- SOURCE-SHA256SUMS.txt; then
+            echo "::warning::Committed SOURCE-SHA256SUMS.txt was stale; release runner regenerated it from this exact checkout."
+            git diff --stat -- SOURCE-SHA256SUMS.txt || true
+          fi
+
+      - name: macOS / Xcode 发布预检
+        shell: bash
+        run: python3 scripts/release-preflight.py --strict-macos
+
       - name: 源码发布门禁
         run: |
           python3 scripts/validate-source.py
           python3 scripts/build-source-manifest.py --check
 
-
       - name: 构建 arm64 未签名版本并生成 PKG
         shell: bash
         run: bash scripts/build-release.sh --unsigned
+
+      - name: Upload Xcode diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: xcode-diagnostics-${{ github.run_id }}
+          path: build/xcodebuild-release.log
+          if-no-files-found: ignore
 
       - name: 构建已验证的 portable arm64 安装包
         shell: bash

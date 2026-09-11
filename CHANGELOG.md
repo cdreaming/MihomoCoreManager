@@ -1,11 +1,20 @@
+- 发布流程修复：Release 在严格 macOS/Xcode 预检前从精确 tag checkout 刷新并验证 `SOURCE-SHA256SUMS.txt`；CI 仍保持 stale manifest 硬门禁，并增强差异诊断。
 # Changelog
+
+## v1.2.5
+
+- 发布工程回归修复：恢复 v1.2.4 已验证的 Xcode 16.4 编译兼容规则（显式 Optional case、拆分大型 SwiftUI ViewBuilder、显式 Hashable、关闭 Swift batch mode），新增 `release-preflight.py` / `simulate-release.sh` 与 CI 失败日志上传，防止同类 `exit code 65` 回归。
+- 状态栏下拉菜单上传/下载网速改为单行显示，减少菜单高度并保持实时刷新。
+- 状态栏代理组区域增加前后分隔，代理组独立成组；portable 动态代理组插入位置固定在代理组结束分隔线之前。
+- 原生 SwiftUI 状态栏面板同步将网速卡片收紧为单行，并在代理组前后增加分隔线。
+- portable 主窗口标题栏/拖拽区由 52px 调整为 36px；原生窗口顶部安全间距由 38pt 调整为 26pt，约为原高度的 2/3。
+- 标题栏底色改为与 Dashboard/侧栏一致的中性背景色；原生窗口暴露的 chrome backing 同步使用 Dashboard 深色背景。
+- 版本升级为 v1.2.5 / build 125。
 
 ## v1.2.4
 
 ### v1.2.4 Hotfix
 
-- 修复 Xcode 16.4 对 `Bool?` switch 穷尽性检查：显式使用 `.some(true)` / `.none` / `.some(false)`，并更新 macOS 14 `onChange` API。
-- macOS CI 编译稳定性修复：拆分代理页大型 SwiftUI ViewBuilder 与排序 Picker，Release 构建关闭 Swift batch mode，并在失败时回显真实 Xcode 编译诊断。
 - Cloudflare Tunnel 稳定性修复：Controller GET 请求对 530/502/503/504 等临时网关错误做短重试；识别 Error 1033 并显示简短中文提示，不再把 Cloudflare 整段 JSON/HTML 直接抛给用户。代理页在临时断线时回退到最近一次成功快照，状态栏继续读取本地快照。
 - 线路延时再次修正：按 MetaCubeXD 当前实现同时获取 `/proxies` 与 `/providers/proxies`，把 provider-only 具体节点补入节点表；组内成员若是嵌套策略组会递归解析到最终叶子节点。某个测试 URL 的 `delay=0` 不再覆盖其它 URL 已成功的正延时。
 - 再修具体线路延时：Mihomo 当前 `extra` 实际结构为 `extra[testUrl] = { alive, history: [...] }`，不是直接 history 数组；原解析因此只能让部分代理组显示延时，具体线路读不到。原生 Swift 与 portable/Web/状态栏现已统一按真实结构解析。
