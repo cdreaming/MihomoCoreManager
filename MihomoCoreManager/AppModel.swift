@@ -41,8 +41,6 @@ final class AppModel: ObservableObject {
     @Published var selectedSection: SidebarSection = .overview
     @Published var proxyMode: MihomoRunMode?
     @Published var proxies: [MihomoProxy] = []
-    @Published var proxyGroupOrder: [String] = []
-    @Published var proxyDelayResults: [String: Int] = [:]
     @Published var subscriptions: [String: String] = [:]
     @Published var logs: String = ""
     @Published var updateInfo: ProjectUpdateInfo?
@@ -251,8 +249,6 @@ final class AppModel: ObservableObject {
         live.reset()
         proxyMode = nil
         proxies = []
-        proxyGroupOrder = []
-        proxyDelayResults = [:]
         subscriptions = [:]
         logs = ""
         updateInfo = nil
@@ -379,27 +375,13 @@ final class AppModel: ObservableObject {
         guard let profile = selectedProfile else { return }
         let profileID = profile.id
         await busyOperation(.fetchProxies) {
-            do {
-                let values = try await api.proxies(profile: profile, secret: currentControllerSecret)
-                let mode = try? await api.proxyMode(profile: profile, secret: currentControllerSecret)
-                guard selectedProfileID == profileID else { return }
-
-                if let mode { proxyMode = mode }
-                proxies = values
-
-                // Mihomo `/group` ranges a Go map and is intentionally not used
-                // for "默认" ordering. GLOBAL.all retains config.yaml order.
-                proxyGroupOrder = values.first(where: { $0.name == "GLOBAL" })?.all ?? []
-                proxiesLoadedFor = profileID
-            } catch {
-                guard selectedProfileID == profileID else { return }
-                if isTransientControllerError(error), !proxies.isEmpty {
-                    proxiesLoadedFor = profileID
-                    show("Controller 暂时不可达，已保留最近一次代理与延时数据。", error: true)
-                    return
-                }
-                throw error
-            }
+            async let fetchedMode = api.proxyMode(profile: profile, secret: currentControllerSecret)
+            async let fetchedProxies = api.proxies(profile: profile, secret: currentControllerSecret)
+            let (mode, values) = try await (fetchedMode, fetchedProxies)
+            guard selectedProfileID == profileID else { return }
+            proxyMode = mode
+            proxies = values
+            proxiesLoadedFor = profileID
         }
     }
 
@@ -420,164 +402,11 @@ final class AppModel: ObservableObject {
         let profileID = profile.id
         await busyOperation(.selectProxy(group: groupName, proxy: proxyName)) {
             try await api.selectProxy(proxyName, in: groupName, profile: profile, secret: currentControllerSecret)
+            let refreshed = try await api.proxies(profile: profile, secret: currentControllerSecret)
             guard selectedProfileID == profileID else { return }
-
-            applyLocalProxySelection(proxyName, in: groupName)
-
-            do {
-                let refreshed = try await api.proxies(profile: profile, secret: currentControllerSecret)
-                guard selectedProfileID == profileID else { return }
-                proxies = refreshed
-                proxiesLoadedFor = profileID
-                show("代理组“\(groupName)”已切换到“\(proxyName)”")
-            } catch {
-                if isTransientControllerError(error) {
-                    proxiesLoadedFor = profileID
-                    show("代理组“\(groupName)”已切换到“\(proxyName)”；Controller 随后暂时断开，已保留当前选择。", error: true)
-                    return
-                }
-                throw error
-            }
-        }
-    }
-
-    func testProxyGroup(_ groupName: String) async {
-        guard let profile = selectedProfile,
-              let group = proxies.first(where: { $0.name == groupName && $0.isGroup }) else { return }
-        let profileID = profile.id
-        await busyOperation(.testProxyGroup(groupName)) {
-            let results = try await api.testProxyGroup(
-                group,
-                profile: profile,
-                secret: currentControllerSecret
-            )
-            let refreshed = try? await api.proxies(profile: profile, secret: currentControllerSecret)
-            guard selectedProfileID == profileID else { return }
-            for (name, delay) in results {
-                proxyDelayResults[name] = delay
-                let resolved = resolvedProxyName(name)
-                if resolved != name {
-                    proxyDelayResults[resolved] = delay
-                }
-            }
-            if let refreshed {
-                proxies = refreshed
-            }
+            proxies = refreshed
             proxiesLoadedFor = profileID
-            show("代理组“\(groupName)”测速完成，共 \(results.count) 个结果")
-        }
-    }
-
-    func resolvedProxyName(_ proxyName: String) -> String {
-        guard !proxyName.isEmpty else { return proxyName }
-        let byName = Dictionary(uniqueKeysWithValues: proxies.map { ($0.name, $0) })
-        var current = proxyName
-        var visited = Set<String>()
-
-        while let proxy = byName[current],
-              let next = proxy.now,
-              !next.isEmpty,
-              next != current {
-            if visited.contains(current) { break }
-            visited.insert(current)
-            guard byName[next] != nil else { break }
-            current = next
-        }
-        return current
-    }
-
-    private func latestDelay(_ history: [MihomoProxyDelaySample]) -> Int? {
-        history.last?.delay
-    }
-
-    private func positiveDelay(_ delay: Int?) -> Int? {
-        guard let delay, delay > 0 else { return nil }
-        return delay
-    }
-
-    private func positiveLatencyCandidates(
-        for proxy: MihomoProxy,
-        preferredTestURL: String?
-    ) -> [Int] {
-        var values: [Int] = []
-
-        if let preferredTestURL,
-           let delay = positiveDelay(proxy.extra[preferredTestURL]?.history.last?.delay) {
-            values.append(delay)
-        }
-
-        if let delay = positiveDelay(proxy.latestDelay) {
-            values.append(delay)
-        }
-
-        for extra in proxy.extra.values {
-            if let delay = positiveDelay(extra.history.last?.delay) {
-                values.append(delay)
-            }
-        }
-        return values
-    }
-
-    func effectiveProxyDelay(_ proxyName: String, preferredTestURL: String? = nil) -> Int? {
-        let resolvedName = resolvedProxyName(proxyName)
-        let names = resolvedName == proxyName ? [proxyName] : [resolvedName, proxyName]
-
-        // Match MetaCubeXD semantics: 0 means NOT_CONNECTED / no successful
-        // measurement for that URL. A zero must never hide a positive reading
-        // already available under another test URL.
-        for name in names {
-            if let delay = positiveDelay(proxyDelayResults[name]) {
-                return delay
-            }
-        }
-
-        for name in names {
-            guard let proxy = proxies.first(where: { $0.name == name }) else { continue }
-            if let delay = positiveLatencyCandidates(for: proxy, preferredTestURL: preferredTestURL).first {
-                return delay
-            }
-        }
-
-        // Nothing succeeded. Preserve a known 0 so callers can render "超时";
-        // otherwise return nil for completely unmeasured nodes.
-        for name in names {
-            if let tested = proxyDelayResults[name] {
-                return tested
-            }
-            guard let proxy = proxies.first(where: { $0.name == name }) else { continue }
-
-            if let preferredTestURL,
-               let delay = proxy.extra[preferredTestURL]?.history.last?.delay {
-                return delay
-            }
-            if let delay = latestDelay(proxy.history) {
-                return delay
-            }
-            for extra in proxy.extra.values {
-                if let delay = extra.history.last?.delay {
-                    return delay
-                }
-            }
-        }
-        return nil
-    }
-
-    var proxyGroupsInDefaultOrder: [MihomoProxy] {
-        let visible = proxies.filter { $0.isGroup && $0.hidden != true }
-        guard !proxyGroupOrder.isEmpty else { return visible }
-
-        let positions = Dictionary(uniqueKeysWithValues: proxyGroupOrder.enumerated().map { ($0.element, $0.offset) })
-        return visible.sorted { lhs, rhs in
-            // GLOBAL is synthetic (not a proxy-groups entry in config.yaml).
-            // Keep configured groups in exact config order and place GLOBAL
-            // after them instead of letting it scramble the list.
-            if lhs.name == "GLOBAL", rhs.name != "GLOBAL" { return false }
-            if rhs.name == "GLOBAL", lhs.name != "GLOBAL" { return true }
-
-            let l = positions[lhs.name] ?? Int.max
-            let r = positions[rhs.name] ?? Int.max
-            if l != r { return l < r }
-            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            show("代理组“\(groupName)”已切换到“\(proxyName)”")
         }
     }
 
@@ -773,43 +602,6 @@ final class AppModel: ObservableObject {
 
         updateRunning = false
         throw MihomoClientError.operationFailed("等待项目升级完成超时，请检查升级日志和远端服务状态。")
-    }
-
-    private func applyLocalProxySelection(_ proxyName: String, in groupName: String) {
-        proxies = proxies.map { proxy in
-            guard proxy.name == groupName else { return proxy }
-            return MihomoProxy(
-                name: proxy.name,
-                type: proxy.type,
-                now: proxyName,
-                all: proxy.all,
-                history: proxy.history,
-                extra: proxy.extra,
-                alive: proxy.alive,
-                hidden: proxy.hidden,
-                udp: proxy.udp,
-                xudp: proxy.xudp,
-                tfo: proxy.tfo,
-                testURL: proxy.testURL,
-                expectedStatus: proxy.expectedStatus
-            )
-        }
-    }
-
-    private func isTransientControllerError(_ error: Error) -> Bool {
-        if let clientError = error as? MihomoClientError,
-           case .server(let status, _) = clientError {
-            return [502, 503, 504, 520, 521, 522, 523, 524, 525, 526, 530].contains(status)
-        }
-        if let urlError = error as? URLError {
-            switch urlError.code {
-            case .timedOut, .cannotConnectToHost, .cannotFindHost, .networkConnectionLost, .notConnectedToInternet:
-                return true
-            default:
-                return false
-            }
-        }
-        return false
     }
 
     private func busyOperation(_ operationID: AppOperation, _ operation: () async throws -> Void) async {
