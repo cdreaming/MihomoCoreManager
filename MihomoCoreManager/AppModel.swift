@@ -10,11 +10,13 @@ struct LiveStatusSnapshot {
 @MainActor
 final class LiveStatusStore: ObservableObject {
     @Published private(set) var snapshot = LiveStatusSnapshot()
+    private var lastSuccessfulStatusAt: Date?
 
     var status: StatusPayload? { snapshot.status }
     var trafficSamples: [TrafficSample] { snapshot.trafficSamples }
 
     func reset() {
+        lastSuccessfulStatusAt = nil
         snapshot = LiveStatusSnapshot()
     }
 
@@ -30,7 +32,17 @@ final class LiveStatusStore: ObservableObject {
         if samples.count > 80 {
             samples.removeFirst(samples.count - 80)
         }
+        lastSuccessfulStatusAt = Date()
         snapshot = LiveStatusSnapshot(status: newStatus, trafficSamples: samples)
+    }
+
+    func markUnavailableIfStale(grace: TimeInterval = 5) {
+        guard let lastSuccessfulStatusAt,
+              Date().timeIntervalSince(lastSuccessfulStatusAt) > grace,
+              snapshot.status != nil else { return }
+        // Preserve chart history but stop presenting an indefinitely stale
+        // Running/Stopped state after a sustained telemetry outage.
+        snapshot = LiveStatusSnapshot(status: nil, trafficSamples: snapshot.trafficSamples)
     }
 }
 
@@ -40,7 +52,13 @@ final class AppModel: ObservableObject {
     @Published var selectedProfileID: UUID?
     @Published var selectedSection: SidebarSection = .overview
     @Published var proxyMode: MihomoRunMode?
-    @Published var proxies: [MihomoProxy] = []
+    @Published var proxies: [MihomoProxy] = [] {
+        didSet {
+            proxyByNameCache = proxies.reduce(into: [:]) { result, proxy in
+                result[proxy.name] = proxy
+            }
+        }
+    }
     @Published var proxyGroupOrder: [String] = []
     @Published var proxyDelayResults: [String: Int] = [:]
     @Published var subscriptions: [String: String] = [:]
@@ -85,6 +103,11 @@ final class AppModel: ObservableObject {
     private let store = ProfileStore()
     private let api = MihomoAPIClient()
     private var pollingTask: Task<Void, Never>?
+    private var statusRefreshes: Set<UUID> = []
+    private var proxyBackgroundLoads: Set<UUID> = []
+    private var proxyReconcileTasks: [String: Task<Void, Never>] = [:]
+    private var proxyReconcileTokens: [String: UUID] = [:]
+    private var proxyByNameCache: [String: MihomoProxy] = [:]
     private var secretCache: [UUID: String] = [:]
     private var controllerSecretCache: [UUID: String] = [:]
     private var proxiesLoadedFor: UUID?
@@ -260,6 +283,9 @@ final class AppModel: ObservableObject {
         proxiesLoadedFor = nil
         subscriptionsLoadedFor = nil
         logsLoadedFor = nil
+        proxyReconcileTasks.values.forEach { $0.cancel() }
+        proxyReconcileTasks.removeAll()
+        proxyReconcileTokens.removeAll()
         Task { await refreshStatus(silent: true) }
     }
 
@@ -324,22 +350,36 @@ final class AppModel: ObservableObject {
     }
 
     func refreshStatus(silent: Bool = false) async {
-        guard !isBusy || silent, let profile = selectedProfile else { return }
+        guard (!isBusy || silent), let profile = selectedProfile else { return }
         let profileID = profile.id
+        guard !statusRefreshes.contains(profileID) else { return }
+        let secret = currentSecret
+        statusRefreshes.insert(profileID)
+        defer { statusRefreshes.remove(profileID) }
+
         do {
-            let newStatus = try await api.status(profile: profile, secret: currentSecret)
+            let newStatus = try await api.status(profile: profile, secret: secret)
             guard selectedProfileID == profileID else { return }
             live.apply(newStatus)
         } catch {
+            live.markUnavailableIfStale()
             if !silent { show(error.localizedDescription, error: true) }
         }
     }
 
     func ensureProxiesLoaded() async {
-        guard let id = selectedProfileID, proxiesLoadedFor != id else { return }
-        try? await Task.sleep(nanoseconds: 90_000_000)
-        guard !Task.isCancelled, selectedProfileID == id else { return }
-        await fetchProxies()
+        guard let id = selectedProfileID, proxiesLoadedFor != id, !proxyBackgroundLoads.contains(id) else { return }
+        // Track per profile rather than with one global flag: switching servers
+        // should never wait for a slow request that belongs to the old server.
+        proxyBackgroundLoads.insert(id)
+        defer { proxyBackgroundLoads.remove(id) }
+
+        // Let the popover/window finish its first layout pass before starting the
+        // Controller request. This keeps opening animations responsive without
+        // introducing the previous noticeable 90 ms delay.
+        try? await Task.sleep(nanoseconds: 35_000_000)
+        guard !Task.isCancelled, selectedProfileID == id, proxiesLoadedFor != id else { return }
+        await fetchProxiesInBackground(for: id)
     }
 
     func ensureSubscriptionsLoaded() async {
@@ -378,19 +418,12 @@ final class AppModel: ObservableObject {
     func fetchProxies() async {
         guard let profile = selectedProfile else { return }
         let profileID = profile.id
+        let controllerSecret = currentControllerSecret
         await busyOperation(.fetchProxies) {
             do {
-                let values = try await api.proxies(profile: profile, secret: currentControllerSecret)
-                let mode = try? await api.proxyMode(profile: profile, secret: currentControllerSecret)
+                let snapshot = try await proxySnapshot(profile: profile, secret: controllerSecret)
                 guard selectedProfileID == profileID else { return }
-
-                if let mode { proxyMode = mode }
-                proxies = values
-
-                // Mihomo `/group` ranges a Go map and is intentionally not used
-                // for "默认" ordering. GLOBAL.all retains config.yaml order.
-                proxyGroupOrder = values.first(where: { $0.name == "GLOBAL" })?.all ?? []
-                proxiesLoadedFor = profileID
+                applyProxySnapshot(snapshot, profileID: profileID)
             } catch {
                 guard selectedProfileID == profileID else { return }
                 if isTransientControllerError(error), !proxies.isEmpty {
@@ -401,6 +434,49 @@ final class AppModel: ObservableObject {
                 throw error
             }
         }
+    }
+
+    private func fetchProxiesInBackground(for profileID: UUID) async {
+        guard let profile = selectedProfile, profile.id == profileID else { return }
+        let controllerSecret = currentControllerSecret
+        do {
+            let snapshot = try await proxySnapshot(profile: profile, secret: controllerSecret)
+            guard selectedProfileID == profileID else { return }
+            applyProxySnapshot(snapshot, profileID: profileID)
+        } catch {
+            // Opening the menu bar or a page should never make the whole app look
+            // busy or surface a transient tunnel error. Keep any last-good data;
+            // an explicit Refresh still reports actionable failures to the user.
+            if isTransientControllerError(error), !proxies.isEmpty {
+                proxiesLoadedFor = profileID
+            }
+        }
+    }
+
+    private func proxySnapshot(
+        profile: ServerProfile,
+        secret: String
+    ) async throws -> (values: [MihomoProxy], mode: MihomoRunMode?) {
+        // These are independent GETs. Running them concurrently removes one
+        // network round trip from both the proxy page and status-menu warm-up.
+        async let valuesTask = api.proxies(profile: profile, secret: secret)
+        async let modeTask = api.proxyMode(profile: profile, secret: secret)
+        let values = try await valuesTask
+        let mode = try? await modeTask
+        return (values, mode)
+    }
+
+    private func applyProxySnapshot(
+        _ snapshot: (values: [MihomoProxy], mode: MihomoRunMode?),
+        profileID: UUID
+    ) {
+        if let mode = snapshot.mode { proxyMode = mode }
+        proxies = snapshot.values
+
+        // Mihomo `/group` ranges a Go map and is intentionally not used
+        // for "默认" ordering. GLOBAL.all retains config.yaml order.
+        proxyGroupOrder = snapshot.values.first(where: { $0.name == "GLOBAL" })?.all ?? []
+        proxiesLoadedFor = profileID
     }
 
     func setProxyMode(_ mode: MihomoRunMode) async {
@@ -418,46 +494,39 @@ final class AppModel: ObservableObject {
     func selectProxy(_ proxyName: String, in groupName: String) async {
         guard let profile = selectedProfile else { return }
         let profileID = profile.id
+        let controllerSecret = currentControllerSecret
         await busyOperation(.selectProxy(group: groupName, proxy: proxyName)) {
-            try await api.selectProxy(proxyName, in: groupName, profile: profile, secret: currentControllerSecret)
+            try await api.selectProxy(proxyName, in: groupName, profile: profile, secret: controllerSecret)
             guard selectedProfileID == profileID else { return }
 
+            // A successful PUT is authoritative for the interaction. Update the
+            // menu/page immediately, release the busy state, then reconcile the
+            // rest of the proxy snapshot asynchronously. This avoids making every
+            // selection wait for another full /proxies + providers round trip.
             applyLocalProxySelection(proxyName, in: groupName)
-
-            do {
-                let refreshed = try await api.proxies(profile: profile, secret: currentControllerSecret)
-                guard selectedProfileID == profileID else { return }
-
-                // Some Controller/tunnel combinations can briefly return the old
-                // `now` value immediately after a successful PUT. Preserve the
-                // confirmed selection locally so menu labels and checkmarks refresh
-                // at once instead of visibly jumping back to the previous route.
-                proxies = proxiesByApplyingSelection(proxyName, in: groupName, to: refreshed)
-                proxyGroupOrder = refreshed.first(where: { $0.name == "GLOBAL" })?.all ?? proxyGroupOrder
-                proxiesLoadedFor = profileID
-                show("代理组“\(groupName)”已切换到“\(proxyName)”")
-            } catch {
-                if isTransientControllerError(error) {
-                    proxiesLoadedFor = profileID
-                    show("代理组“\(groupName)”已切换到“\(proxyName)”；Controller 随后暂时断开，已保留当前选择。", error: true)
-                    return
-                }
-                throw error
-            }
+            proxiesLoadedFor = profileID
+            show("代理组“\(groupName)”已切换到“\(proxyName)”")
+            scheduleProxySelectionReconcile(
+                proxyName,
+                in: groupName,
+                profile: profile,
+                profileID: profileID,
+                secret: controllerSecret
+            )
         }
     }
 
     func testProxyGroup(_ groupName: String) async {
         guard let profile = selectedProfile,
-              let group = proxies.first(where: { $0.name == groupName && $0.isGroup }) else { return }
+              let group = proxyByNameCache[groupName], group.isGroup else { return }
         let profileID = profile.id
+        let controllerSecret = currentControllerSecret
         await busyOperation(.testProxyGroup(groupName)) {
             let results = try await api.testProxyGroup(
                 group,
                 profile: profile,
-                secret: currentControllerSecret
+                secret: controllerSecret
             )
-            let refreshed = try? await api.proxies(profile: profile, secret: currentControllerSecret)
             guard selectedProfileID == profileID else { return }
             for (name, delay) in results {
                 proxyDelayResults[name] = delay
@@ -466,9 +535,9 @@ final class AppModel: ObservableObject {
                     proxyDelayResults[resolved] = delay
                 }
             }
-            if let refreshed {
-                proxies = refreshed
-            }
+            // Group-delay already returns every displayed result. Avoid a second
+            // full proxy fetch on the critical path; the normal snapshot refresh
+            // will reconcile health/history later.
             proxiesLoadedFor = profileID
             show("代理组“\(groupName)”测速完成，共 \(results.count) 个结果")
         }
@@ -476,17 +545,16 @@ final class AppModel: ObservableObject {
 
     func resolvedProxyName(_ proxyName: String) -> String {
         guard !proxyName.isEmpty else { return proxyName }
-        let byName = Dictionary(uniqueKeysWithValues: proxies.map { ($0.name, $0) })
         var current = proxyName
         var visited = Set<String>()
 
-        while let proxy = byName[current],
+        while let proxy = proxyByNameCache[current],
               let next = proxy.now,
               !next.isEmpty,
               next != current {
             if visited.contains(current) { break }
             visited.insert(current)
-            guard byName[next] != nil else { break }
+            guard proxyByNameCache[next] != nil else { break }
             current = next
         }
         return current
@@ -538,7 +606,7 @@ final class AppModel: ObservableObject {
         }
 
         for name in names {
-            guard let proxy = proxies.first(where: { $0.name == name }) else { continue }
+            guard let proxy = proxyByNameCache[name] else { continue }
             if let delay = positiveLatencyCandidates(for: proxy, preferredTestURL: preferredTestURL).first {
                 return delay
             }
@@ -550,7 +618,7 @@ final class AppModel: ObservableObject {
             if let tested = proxyDelayResults[name] {
                 return tested
             }
-            guard let proxy = proxies.first(where: { $0.name == name }) else { continue }
+            guard let proxy = proxyByNameCache[name] else { continue }
 
             if let preferredTestURL,
                let delay = proxy.extra[preferredTestURL]?.history.last?.delay {
@@ -782,7 +850,58 @@ final class AppModel: ObservableObject {
     }
 
     func currentProxySelection(in groupName: String) -> String? {
-        proxies.first(where: { $0.name == groupName && $0.isGroup })?.now
+        guard let proxy = proxyByNameCache[groupName], proxy.isGroup else { return nil }
+        return proxy.now
+    }
+
+    func proxy(named name: String) -> MihomoProxy? {
+        proxyByNameCache[name]
+    }
+
+    private func scheduleProxySelectionReconcile(
+        _ proxyName: String,
+        in groupName: String,
+        profile: ServerProfile,
+        profileID: UUID,
+        secret: String
+    ) {
+        proxyReconcileTasks[groupName]?.cancel()
+        let token = UUID()
+        proxyReconcileTokens[groupName] = token
+        proxyReconcileTasks[groupName] = Task { @MainActor [weak self] in
+            // Give the Controller/tunnel a brief moment to expose the newly
+            // selected `now` value. This work is intentionally off the button's
+            // busy path and can be cancelled by a newer selection.
+            try? await Task.sleep(nanoseconds: 220_000_000)
+            guard !Task.isCancelled, let self else { return }
+
+            defer {
+                // A cancelled request can finish after a newer request for the
+                // same group. Only the task that still owns this token may clear
+                // the registry entry, so the newer reconcile remains cancellable.
+                if self.proxyReconcileTokens[groupName] == token {
+                    self.proxyReconcileTasks[groupName] = nil
+                    self.proxyReconcileTokens[groupName] = nil
+                }
+            }
+
+            do {
+                let refreshed = try await self.api.proxies(profile: profile, secret: secret)
+                guard !Task.isCancelled,
+                      self.selectedProfileID == profileID,
+                      self.currentProxySelection(in: groupName) == proxyName else { return }
+
+                // A just-confirmed PUT remains authoritative for this group even
+                // if the first GET is momentarily stale behind a remote tunnel.
+                self.proxies = self.proxiesByApplyingSelection(proxyName, in: groupName, to: refreshed)
+                self.proxyGroupOrder = refreshed.first(where: { $0.name == "GLOBAL" })?.all ?? self.proxyGroupOrder
+                self.proxiesLoadedFor = profileID
+            } catch {
+                // The selection itself already succeeded. Reconciliation is
+                // best-effort and must not turn a successful click into an error
+                // notification just because the follow-up GET lost connectivity.
+            }
+        }
     }
 
     private func proxiesByApplyingSelection(

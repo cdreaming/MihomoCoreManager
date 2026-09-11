@@ -29,7 +29,3 @@ PR/main CI 必须检查提交的 `SOURCE-SHA256SUMS.txt` 是否最新；正式 R
 ## 6. 错误日志要保留原始证据
 
 `build-release.sh` 保存完整 `xcodebuild-release.log`。构建失败时输出真正编译错误和尾部日志，workflow 无论成功失败都尝试上传日志 artifact，避免只留下 `exit code 65`。
-
-## v1.2.6 release retry hardening
-
-The v1.2.6 workflow now preserves the v1.2.5 successful manifest strategy: `SOURCE-SHA256SUMS.txt` is treated as generated metadata and is rebuilt from the exact checked-out commit/tag before CI/Release compiler gates. Both workflows immediately re-check the generated manifest, and strict macOS preflight repeats the self-heal so workflow refactors cannot reintroduce a stale-manifest blocker. The historical `BUILD-FIX-v1.2.4.md` and `RELEASE-READINESS-v1.2.5.md` files are retained in the source package and covered by the manifest.

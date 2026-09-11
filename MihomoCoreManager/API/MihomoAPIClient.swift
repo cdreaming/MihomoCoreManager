@@ -87,8 +87,14 @@ struct MihomoAPIClient {
 
     private let session: URLSession = {
         let config = URLSessionConfiguration.ephemeral
+        // Keep credentials/cookies out of persistent storage while still reusing
+        // HTTPS connections aggressively enough for 1.2 s status polling and
+        // concurrent Controller reads.
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.urlCache = nil
         config.timeoutIntervalForRequest = 20
         config.timeoutIntervalForResource = 120
+        config.httpMaximumConnectionsPerHost = 6
         return URLSession(configuration: config)
     }()
 
@@ -459,6 +465,12 @@ struct MihomoAPIClient {
         )
         var request = URLRequest(url: url)
         request.httpMethod = method
+        // Status is sampled frequently and a stale network path must not hold the
+        // polling loop for the general 20 s request timeout. Mutating operations
+        // keep the conservative default timeout.
+        if method == "GET", path == "/api/status" {
+            request.timeoutInterval = 6
+        }
         if !secret.isEmpty {
             request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
         }
@@ -554,12 +566,17 @@ struct MihomoAPIClient {
         body: Data?,
         secret: String
     ) async throws -> Data {
-        let maxAttempts = ["GET", "HEAD"].contains(method.uppercased()) ? 3 : 1
+        let isReadOnly = ["GET", "HEAD"].contains(method.uppercased())
+        // Read-only Controller requests are safe to retry, but three 20 s waits
+        // make menus feel frozen when a tunnel is down. Two bounded attempts keep
+        // resilience while returning control quickly. Writes are never retried.
+        let maxAttempts = isReadOnly ? 2 : 1
         var lastError: Error = MihomoClientError.invalidResponse
 
         for attempt in 1...maxAttempts {
             var request = URLRequest(url: url)
             request.httpMethod = method
+            request.timeoutInterval = isReadOnly ? 10 : 20
             if !secret.isEmpty {
                 request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
             }
@@ -589,7 +606,7 @@ struct MihomoAPIClient {
                 lastError = error
 
                 if attempt < maxAttempts && isTransientControllerStatus(http.statusCode) {
-                    try? await Task.sleep(nanoseconds: UInt64(attempt) * 250_000_000)
+                    try? await Task.sleep(nanoseconds: UInt64(attempt) * 180_000_000)
                     continue
                 }
                 throw error
@@ -598,7 +615,7 @@ struct MihomoAPIClient {
             } catch {
                 lastError = error
                 if attempt < maxAttempts {
-                    try? await Task.sleep(nanoseconds: UInt64(attempt) * 250_000_000)
+                    try? await Task.sleep(nanoseconds: UInt64(attempt) * 180_000_000)
                     continue
                 }
                 throw error
