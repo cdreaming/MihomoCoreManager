@@ -1,20 +1,16 @@
 # Mihomo Core Manager for macOS
 
-基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.2.6 (build 126)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.2.7 (build 127)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
 
-## v1.2.6
+## v1.2.7
 
-v1.2.6 以已成功发布的 v1.2.5 为功能基线，集中把 v1.2.4 / v1.2.5 发布故障转化为自动化发布规则：
+v1.2.7 直接以本次 `source-4` 源码为功能基线进行版本升级，不引入额外业务行为变化，重点是把正式版版本元数据完整同步到新的发布号：
 
-- CI 与 Release 统一执行同一个 `scripts/simulate-release.sh --strict-macos`，避免两套构建步骤漂移。
-- Apple Silicon `macos-15` 上执行当前 Xcode SDK 的 Swift typecheck、真实 Release `xcodebuild`、arm64 架构与最终资产验证。
-- Swift Release 构建显式 `SWIFT_ENABLE_BATCH_MODE=NO`；保留完整 `xcodebuild-release.log` 并在失败时回显真实编译诊断。
-- 固化 v1.2.4 的 SwiftUI/Xcode 兼容经验：`ProxySortOption: Hashable`、独立排序 Picker、小型 ViewBuilder、`Bool?` 显式 `.some/.none` 穷尽 switch。
-- strict macOS preflight 使用 `xcrun --sdk macosx` 获取 SDK，再以 `-sdk` + `-target arm64-apple-macos14.0` 做语义 typecheck。
-- manifest 在 PR/main 中严格检查，正式 Release 的精确 checkout 可自动重建后再复核，并在 stale 时报告新增/删除/哈希变化文件。
-- portable 短生命周期后台任务统一纳入 `backgroundWG`，彻底消除测速测试与 `testing.TempDir` 清理竞争；发布模拟对该回归连续运行 300 次，并执行 shuffle、race、vet。
-- Darwin/arm64 Go test binary、portable runtime、ZIP/Info.plist/SHA-256 都加入发布门禁。
-- 版本升级为 v1.2.6 / build 126。
+- App 版本升级为 **v1.2.7 / build 127**。
+- Xcode `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`、portable runtime 版本常量与版本回归测试全部同步。
+- GitHub Release 输入示例、发布资产命名、发布文档与验证文档同步到 v1.2.7。
+- 保留当前源码中既有的状态栏、代理切换、Cloudflare 容错、主窗口布局及 portable 行为，不对这些稳定逻辑做额外改写。
+- 重新生成 `SOURCE-SHA256SUMS.txt`，确保源码清单与 v1.2.7 包内容一致。
 
 ## v1.2.5
 

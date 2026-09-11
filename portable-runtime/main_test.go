@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestJoinURL(t *testing.T) {
@@ -64,9 +65,7 @@ func TestGroupDelayCacheDecoratesSharedProxyData(t *testing.T) {
 		switch {
 		case r.URL.EscapedPath() == "/group/HK%20%2F%20Auto/delay" && r.Method == http.MethodGet:
 			if r.URL.Query().Get("timeout") != "5000" {
-				t.Errorf("unexpected timeout: %s", r.URL.RawQuery)
-				w.WriteHeader(http.StatusBadRequest)
-				return
+				t.Fatalf("unexpected timeout: %s", r.URL.RawQuery)
 			}
 			_, _ = w.Write([]byte(`{"Shared-A":88,"Only-HK":143}`))
 		case r.URL.Path == "/proxies" && r.Method == http.MethodGet:
@@ -92,7 +91,6 @@ func TestGroupDelayCacheDecoratesSharedProxyData(t *testing.T) {
 		secretCache:     map[string]string{"test": ""},
 		proxyDelayCache: map[string]map[string]int{},
 	}
-	defer state.waitBackground()
 
 	rec := httptest.NewRecorder()
 	state.handleProxyDelay(rec, httptest.NewRequest(
@@ -178,8 +176,13 @@ func TestStatusMenuProxyHotfixUsesCacheLazySubmenusAndAsyncActions(t *testing.T)
 		"proxyMenuRootByGroup={}",
 		"function proxyMenuRootTitle(group)",
 		"function refreshProxyMenuRootTitle(group)",
+		"function proxyMenuStructureSignature(data)",
+		"proxyMenuStructureKey",
+		"proxyPendingReconcile",
+		"proxyPendingReconcile[payload.group]=true",
 		"refreshProxyMenuRootTitle(payload.group)",
-		"Object.keys(proxyMenuRootByGroup).forEach(refreshProxyMenuRootTitle)",
+		"nextStructure===proxyMenuStructureKey",
+		"if(oldCurrent!==newCurrent)refreshProxyMenuRootTitle(group)",
 		"menuProxyDelayText(node,p.testUrl||'')",
 		"function menuExtraHistory(value)",
 		"function menuResolvedProxyName(name)",
@@ -192,6 +195,9 @@ func TestStatusMenuProxyHotfixUsesCacheLazySubmenusAndAsyncActions(t *testing.T)
 	}
 	if strings.Contains(script, "addSymbol(root,'point.3.connected.trianglepath.dotted')") {
 		t.Fatal("proxy-group root must not add a synthetic SF Symbol")
+	}
+	if strings.Contains(script, "Object.keys(proxyMenuRootByGroup).forEach(refreshProxyMenuRootTitle)") {
+		t.Fatal("unchanged proxy snapshots must not relayout every proxy-group root")
 	}
 	if strings.Contains(script, "var data=get('/local/proxies',true)") ||
 		strings.Contains(script, "var data=get('/local/proxy-menu-cache',true)") {
@@ -593,9 +599,7 @@ func controllerURLForTest(raw string) string { return raw }
 func TestDirectControllerPrefersControllerSecret(t *testing.T) {
 	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer controller-secret" {
-			t.Errorf("expected controller bearer secret, got %q", got)
-			w.WriteHeader(http.StatusUnauthorized)
-			return
+			t.Fatalf("expected controller bearer secret, got %q", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"mode":"rule"}`))
@@ -626,9 +630,7 @@ func TestDirectControllerPrefersControllerSecret(t *testing.T) {
 func TestDirectControllerAllowsNoAuth(t *testing.T) {
 	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "" {
-			t.Errorf("expected no Authorization header, got %q", got)
-			w.WriteHeader(http.StatusBadRequest)
-			return
+			t.Fatalf("expected no Authorization header, got %q", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"mode":"direct"}`))
@@ -661,9 +663,7 @@ func TestProxyControllerModeListAndSelection(t *testing.T) {
 	selected := "A"
 	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer secret" {
-			t.Errorf("missing bearer secret: %q", r.Header.Get("Authorization"))
-			w.WriteHeader(http.StatusUnauthorized)
-			return
+			t.Fatalf("missing bearer secret: %q", r.Header.Get("Authorization"))
 		}
 		w.Header().Set("Content-Type", "application/json")
 		switch {
@@ -699,7 +699,6 @@ func TestProxyControllerModeListAndSelection(t *testing.T) {
 		client:      controller.Client(),
 		secretCache: map[string]string{"test": "secret"},
 	}
-	defer state.waitBackground()
 
 	rec := httptest.NewRecorder()
 	state.handleProxyMode(rec, httptest.NewRequest(http.MethodGet, "/local/proxy-mode", nil))
@@ -821,7 +820,6 @@ func TestSubscriptionReloadTimeoutFallsBackToSafeRestart(t *testing.T) {
 		client:      remote.Client(),
 		secretCache: map[string]string{"test": "secret"},
 	}
-	defer state.waitBackground()
 
 	req := httptest.NewRequest(http.MethodPost, "/local/subscriptions", strings.NewReader(`{"subscriptions":{"BYG":"https://example.com/sub"}}`))
 	rec := httptest.NewRecorder()
@@ -970,8 +968,120 @@ func TestPortableInteractionRegressionV118(t *testing.T) {
 	}
 }
 
-func TestPortableVersionV126(t *testing.T) {
-	if appVersion != "1.2.6" || buildNumber != "126" {
+func TestPortableVersionV127(t *testing.T) {
+	if appVersion != "1.2.7" || buildNumber != "127" {
 		t.Fatalf("unexpected portable version/build: %s/%s", appVersion, buildNumber)
+	}
+}
+
+func TestPerformanceHTTPClientKeepsTLSSafetyAndConnectionReuse(t *testing.T) {
+	client := newHTTPClient()
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("unexpected transport type %T", client.Transport)
+	}
+	if transport.DisableKeepAlives {
+		t.Fatal("performance client must keep safe HTTP connection reuse enabled")
+	}
+	if transport.MaxIdleConnsPerHost < 8 {
+		t.Fatalf("expected pooled per-host idle connections, got %d", transport.MaxIdleConnsPerHost)
+	}
+	if transport.TLSClientConfig != nil && transport.TLSClientConfig.InsecureSkipVerify {
+		t.Fatal("performance tuning must never disable TLS certificate verification")
+	}
+}
+
+func TestHandleStatusServesSameProfileCacheWithoutWaitingForRefresh(t *testing.T) {
+	state := &appState{
+		settings: Settings{
+			SelectedID: "p1",
+			Profiles: []Profile{{
+				ID: "p1", Name: "test", ManagementURL: "https://example.com",
+			}},
+		},
+		statusData:      []byte(`{"service":{"active":true},"speed":{"up":12,"down":34}}`),
+		statusProfileID: "p1",
+		statusUpdatedAt: time.Now().Add(-10 * time.Second),
+		statusReachable: true,
+	}
+
+	// Simulate a refresh already in progress. handleStatus must return the
+	// same-profile last-good snapshot immediately instead of queuing behind it.
+	state.statusFetchMu.Lock()
+	defer state.statusFetchMu.Unlock()
+
+	rec := httptest.NewRecorder()
+	state.handleStatus(rec, httptest.NewRequest(http.MethodGet, "/local/status", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected cached status, got %d %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"up":12`) || !strings.Contains(rec.Body.String(), `"down":34`) {
+		t.Fatalf("cached speed snapshot was not returned: %s", rec.Body.String())
+	}
+}
+
+func TestRemoteWriteIsNeverRetried(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"message":"temporary"}`))
+	}))
+	defer server.Close()
+
+	state := &appState{client: server.Client()}
+	_, _, err := state.remoteRequest(http.MethodPut, server.URL, []byte(`{"name":"B"}`), "")
+	if err == nil {
+		t.Fatal("expected write failure")
+	}
+	if attempts != 1 {
+		t.Fatalf("mutating requests must never be retried automatically, got %d attempts", attempts)
+	}
+}
+
+func TestStatusTelemetryGraceIsRecentAndBounded(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"message":"temporary"}`))
+	}))
+	defer server.Close()
+
+	old := []byte(`{"service":{"active":true},"speed":{"up":100,"down":200}}`)
+	state := &appState{
+		path: filepath.Join(t.TempDir(), "settings.json"),
+		settings: Settings{
+			SelectedID: "p1",
+			Profiles: []Profile{{
+				ID: "p1", Name: "test", ManagementURL: server.URL, AllowInsecureHTTP: true,
+			}},
+		},
+		client:          server.Client(),
+		secretCache:     map[string]string{"p1": "secret"},
+		statusData:      append([]byte(nil), old...),
+		statusProfileID: "p1",
+		statusUpdatedAt: time.Now().Add(-time.Second),
+		statusReachable: true,
+	}
+	state.writeStatusFile(old)
+
+	firstGoodAt := state.statusUpdatedAt
+	state.refreshStatusCache()
+	if !state.statusReachable || !strings.Contains(string(state.statusData), `"up":100`) {
+		t.Fatal("a single telemetry failure should preserve a very recent same-profile snapshot")
+	}
+	if !state.statusUpdatedAt.Equal(firstGoodAt) {
+		t.Fatal("grace must retain the original last-good timestamp so it cannot extend indefinitely")
+	}
+	if _, err := os.Stat(state.statusFilePath()); err != nil {
+		t.Fatalf("recent last-good tray snapshot should remain during the bounded grace: %v", err)
+	}
+
+	state.statusUpdatedAt = time.Now().Add(-5 * time.Second)
+	state.refreshStatusCache()
+	if state.statusReachable || len(state.statusData) != 0 {
+		t.Fatal("telemetry grace must expire after a few seconds of continuous failure")
+	}
+	if _, err := os.Stat(state.statusFilePath()); !os.IsNotExist(err) {
+		t.Fatalf("expired telemetry snapshot should be removed, err=%v", err)
 	}
 }

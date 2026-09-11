@@ -196,7 +196,7 @@ enum MihomoRunMode: String, CaseIterable, Identifiable, Codable {
 }
 
 
-enum ProxySortOption: String, CaseIterable, Identifiable, Hashable {
+enum ProxySortOption: String, CaseIterable, Identifiable {
     case defaultOrder
     case delay
     case quality
