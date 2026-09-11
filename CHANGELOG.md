@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.2.1
+
+- 修复 GitHub Actions/Xcode 正式版状态栏网速仍被 `MenuBarExtra` 压缩、只显示单个数字的问题。
+- 原生 SwiftUI target 改为把上下行速率绘制进固定尺寸 template `NSImage` 后作为单一状态栏元素显示，彻底移除状态栏本体对多行 SwiftUI 文本布局的依赖。
+- 保持上传在上、下载在下、靠下对齐、4 位等宽数字预留、左对齐、单位自适应及无箭头规则。
+- GitHub Release workflow 同时构建 portable arm64 安装包，正式包与已验证 portable 包可在同一 Release 中直接对照。
+- 版本升级为 v1.2.1 / build 121。
+
 ## v1.2.0
 
 - 以 v1.1.9 为稳定基线，保留已确认的状态栏下拉面板，仅修复状态栏本体网速显示。

@@ -22,8 +22,8 @@ import (
 )
 
 const (
-	appVersion      = "1.2.0"
-	buildNumber     = "120"
+	appVersion      = "1.2.1"
+	buildNumber     = "121"
 	keychainService = "cc.kkr.MihomoCoreManager"
 )
 

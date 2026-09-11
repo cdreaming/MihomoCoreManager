@@ -133,9 +133,15 @@ if "guard model.selectedSection == .logs" not in logs_view:
 for marker in [
     ".windowStyle(.hiddenTitleBar)",
     ".menuBarExtraStyle(.window)",
-    'speedLine(model.menuBarRateParts(live.status?.speed?.up))',
-    'speedLine(model.menuBarRateParts(live.status?.speed?.down))',
-    '.frame(width: 24, alignment: .leading)',
+    "Image(nsImage: menuBarSpeedImage)",
+    "MenuBarSpeedImageRenderer.make(",
+    "NSImage(size: imageSize, flipped: false)",
+    "image.isTemplate = true",
+    "NSFont.monospacedDigitSystemFont(ofSize: 8.3, weight: .semibold)",
+    "private static let numericWidth: CGFloat = 24",
+    "private static let unitWidth: CGFloat = 31",
+    "drawSpeedLine(upload, y: 8.6)",
+    "drawSpeedLine(download, y: -0.4)",
     '.frame(width: 55, height: 18, alignment: .bottomLeading)',
     '.offset(y: 1)',
     "HStack(alignment: .center, spacing: 5)",
@@ -143,9 +149,11 @@ for marker in [
     "model.menuBarShowStatus && !model.menuBarShowIcon",
 ]:
     if marker not in app_swift:
-        errors.append(f"native compact-window/v1.2.0 menu-bar gate missing: {marker}")
+        errors.append(f"native compact-window/v1.2.1 menu-bar gate missing: {marker}")
+if "private func speedLine(" in app_swift or "VStack(alignment: .leading, spacing: -2)" in app_swift:
+    errors.append("native v1.2.1 status-bar body must not use a multiline SwiftUI speed label")
 if "menuBarRateParts" not in app_model:
-    errors.append("native v1.2.0 menu-bar rate-parts formatter missing")
+    errors.append("native v1.2.1 menu-bar rate-parts formatter missing")
 
 core_view = (root / "MihomoCoreManager/Views/CoreView.swift").read_text(encoding="utf-8")
 update_view = (root / "MihomoCoreManager/Views/UpdateView.swift").read_text(encoding="utf-8")
@@ -341,6 +349,14 @@ for marker in ["macos-15", "notarytool", "productbuild", "gh release", "SHA256SU
 
 if "run: bash scripts/build-release.sh --unsigned" not in workflow:
     errors.append("release workflow must use --unsigned by default")
+for marker in [
+    "bash scripts/build-portable-installer.sh",
+    '>> dist/SHA256SUMS.txt',
+    'gh release upload "$TAG" dist/* dist-portable/* --clobber',
+    'test -f "MihomoCoreManager-${TAG}-arm64-portable-installer.zip"',
+]:
+    if marker not in workflow:
+        errors.append(f"v1.2.1 GitHub Release portable parity gate missing: {marker}")
 for forbidden in ["secrets.APPLE_", "校验签名与公证 Secrets", "导入 Developer ID 证书"]:
     if forbidden in workflow:
         errors.append(f"unsigned release workflow must not require Apple signing secrets: {forbidden}")

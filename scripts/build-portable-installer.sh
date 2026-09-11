@@ -152,13 +152,17 @@ with zipfile.ZipFile(out, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=9
             zf.writestr(info, f.read(), compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
 PY
 
-shasum -a 256 "$OUT" > "$OUT.sha256" 2>/dev/null || python3 - "$OUT" <<'PY'
+if command -v shasum >/dev/null 2>&1; then
+  printf '%s  %s\n' "$(shasum -a 256 "$OUT" | awk '{print $1}')" "$(basename "$OUT")" > "$OUT.sha256"
+else
+  python3 - "$OUT" <<'PY'
 from pathlib import Path
 import hashlib, sys
 p = Path(sys.argv[1])
 d = hashlib.sha256(p.read_bytes()).hexdigest()
 Path(str(p)+'.sha256').write_text(f"{d}  {p.name}\n")
 PY
+fi
 
 file "$BIN" || true
 ls -lh "$OUT" "$OUT.sha256"

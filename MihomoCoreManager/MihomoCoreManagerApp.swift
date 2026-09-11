@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 @main
@@ -72,15 +73,17 @@ private struct MenuBarLabelView: View {
             }
 
             if model.menuBarShowSpeed {
-                VStack(alignment: .leading, spacing: -2) {
-                    speedLine(model.menuBarRateParts(live.status?.speed?.up))
-                    speedLine(model.menuBarRateParts(live.status?.speed?.down))
-                }
-                .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
-                .monospacedDigit()
-                .frame(width: 55, height: 18, alignment: .bottomLeading)
-                .offset(y: 1)
-                .fixedSize(horizontal: true, vertical: true)
+                // v1.2.1: MenuBarExtra can compress a multiline SwiftUI label into
+                // a single baseline on the real NSStatusItem. Render the two speed
+                // rows into one fixed-size template image instead, so GitHub/Xcode
+                // builds get the same deterministic two-row layout as the portable
+                // AppKit implementation.
+                Image(nsImage: menuBarSpeedImage)
+                    .renderingMode(.template)
+                    .frame(width: 55, height: 18, alignment: .bottomLeading)
+                    .offset(y: 1)
+                    .fixedSize(horizontal: true, vertical: true)
+                    .accessibilityHidden(true)
             } else if model.menuBarShowStatus && model.menuBarShowIcon {
                 Text(statusText)
                     .font(.system(size: 9.2, weight: .medium))
@@ -90,17 +93,11 @@ private struct MenuBarLabelView: View {
         .accessibilityLabel("Mihomo Core Manager, \(model.menuBarSummary)")
     }
 
-    private func speedLine(_ rate: (value: String, unit: String)) -> some View {
-        HStack(spacing: 0) {
-            // Four monospaced character cells are always reserved for the numeric
-            // part. Both rows therefore share the same left edge while B/s, KB/s,
-            // MB/s and larger units can change independently.
-            Text(rate.value)
-                .frame(width: 24, alignment: .leading)
-            Text(rate.unit)
-                .frame(width: 31, alignment: .leading)
-        }
-        .frame(width: 55, alignment: .leading)
+    private var menuBarSpeedImage: NSImage {
+        MenuBarSpeedImageRenderer.make(
+            upload: model.menuBarRateParts(live.status?.speed?.up),
+            download: model.menuBarRateParts(live.status?.speed?.down)
+        )
     }
 
     private var statusText: String {
@@ -113,3 +110,42 @@ private struct MenuBarLabelView: View {
         return status.service.active ? DashboardPalette.green : Color.orange
     }
 }
+
+private enum MenuBarSpeedImageRenderer {
+    private static let imageSize = NSSize(width: 55, height: 18)
+    private static let numericWidth: CGFloat = 24
+    private static let unitWidth: CGFloat = 31
+
+    static func make(
+        upload: (value: String, unit: String),
+        download: (value: String, unit: String)
+    ) -> NSImage {
+        let image = NSImage(size: imageSize, flipped: false) { _ in
+            // AppKit's status button can safely host one fixed-size template image.
+            // Draw upper upload and lower download rows into that image; this avoids
+            // the MenuBarExtra multiline-label compression seen in GitHub builds.
+            drawSpeedLine(upload, y: 8.6)
+            drawSpeedLine(download, y: -0.4)
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
+    private static func drawSpeedLine(_ rate: (value: String, unit: String), y: CGFloat) {
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 8.3, weight: .semibold)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: NSColor.black
+        ]
+
+        // The numeric area always reserves four monospaced character cells. Both
+        // rows start at x=0 and their unit starts at the same x position, while the
+        // formatter is free to switch B/s, KB/s, MB/s, GB/s or TB/s independently.
+        NSAttributedString(string: rate.value, attributes: attributes)
+            .draw(in: NSRect(x: 0, y: y, width: numericWidth, height: 9.8))
+        NSAttributedString(string: rate.unit, attributes: attributes)
+            .draw(in: NSRect(x: numericWidth, y: y, width: unitWidth, height: 9.8))
+    }
+}
+

@@ -1,6 +1,16 @@
 # Mihomo Core Manager for macOS
 
-基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.2.0 (build 120)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.2.1 (build 121)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+
+## v1.2.1
+
+v1.2.1 是针对 GitHub Actions 正式 Xcode/SwiftUI 构建的状态栏热修复；portable/AppKit v1.2.0 已验证正常的行为保持不变：
+
+- 修复正式 SwiftUI `MenuBarExtra` 直接承载双行 `VStack` 时被 macOS 状态栏压缩为单行，导致 GitHub 自动构建版只显示单个数字/单位缺失的问题。
+- 正式版把上传/下载两行速率预渲染为一个固定 55×18pt 的 template `NSImage`，再作为单一状态栏元素交给 `MenuBarExtra`，避免系统重新排版内部两行文本。
+- 上传在上、下载在下；数字左对齐并固定预留 4 个等宽字符位，单位独立列自动切换 `B/s / KB/s / MB/s / GB/s / TB/s`，状态栏本体仍不显示箭头。
+- v1.1.9 自定义下拉面板以及 v1.2.0 portable/AppKit 双行状态栏实现均保持不变。
+- GitHub Release workflow 现在同时构建并发布正式 SwiftUI `.pkg/.zip` 与已验证的 portable arm64 安装包，便于直接回归对比。
 
 ## v1.2.0
 
@@ -163,12 +173,13 @@ xcodebuild \
 
 ## Release
 
-正式 tag `v1.2.0` 成功后生成：
+正式 tag `v1.2.1` 成功后生成：
 
 ```text
-MihomoCoreManager-v1.2.0-arm64.pkg
-MihomoCoreManager-v1.2.0-arm64.zip
-release_v1.2.0_notes_zh-CN.md
+MihomoCoreManager-v1.2.1-arm64.pkg
+MihomoCoreManager-v1.2.1-arm64.zip
+MihomoCoreManager-v1.2.1-arm64-portable-installer.zip
+release_v1.2.1_notes_zh-CN.md
 SHA256SUMS.txt
 ```
 

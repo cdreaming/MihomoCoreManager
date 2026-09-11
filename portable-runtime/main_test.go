@@ -271,8 +271,8 @@ func TestPortableInteractionRegressionV118(t *testing.T) {
 	}
 }
 
-func TestPortableVersionV120(t *testing.T) {
-	if appVersion != "1.2.0" || buildNumber != "120" {
+func TestPortableVersionV121(t *testing.T) {
+	if appVersion != "1.2.1" || buildNumber != "121" {
 		t.Fatalf("unexpected portable version/build: %s/%s", appVersion, buildNumber)
 	}
 }

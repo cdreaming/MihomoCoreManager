@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: '要发布的版本，例如 1.2.0 或 v1.2.0'
+        description: '要发布的版本，例如 1.2.1 或 v1.2.1'
         required: true
         type: string
 
@@ -56,6 +56,14 @@ jobs:
         shell: bash
         run: bash scripts/build-release.sh --unsigned
 
+      - name: 构建已验证的 portable arm64 安装包
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          bash scripts/build-portable-installer.sh
+          PORTABLE="dist-portable/MihomoCoreManager-v${{ steps.version.outputs.version }}-arm64-portable-installer.zip"
+          printf '%s  %s\n' "$(shasum -a 256 "$PORTABLE" | awk '{print $1}')" "$(basename "$PORTABLE")" >> dist/SHA256SUMS.txt
+
       - name: 为 workflow_dispatch 准备 tag
         if: github.event_name == 'workflow_dispatch'
         shell: bash
@@ -91,7 +99,7 @@ jobs:
           else
             gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$NOTES"
           fi
-          gh release upload "$TAG" dist/* --clobber
+          gh release upload "$TAG" dist/* dist-portable/* --clobber
 
       - name: 在线回读 Release 资产并验证 SHA-256
         shell: bash
@@ -108,4 +116,5 @@ jobs:
           shasum -a 256 -c SHA256SUMS.txt
           test -f "MihomoCoreManager-${TAG}-arm64.pkg"
           test -f "MihomoCoreManager-${TAG}-arm64.zip"
+          test -f "MihomoCoreManager-${TAG}-arm64-portable-installer.zip"
           echo "GitHub Release online verification: PASS"
