@@ -17,20 +17,27 @@ struct MenuBarView: View {
     ]
 
     var body: some View {
-        VStack(spacing: 12) {
-            header
-            speedCard
-            serverCard
-            coreActions
-            shortcutGrid
-            updateActions
-            displayOptions
-            footer
+        ScrollView {
+            VStack(spacing: 12) {
+                header
+                speedCard
+                serverCard
+                proxyMenus
+                coreActions
+                shortcutGrid
+                updateActions
+                displayOptions
+                footer
+            }
+            .padding(14)
         }
-        .padding(14)
-        .frame(width: 344)
+        .frame(width: 360)
+        .frame(maxHeight: 720)
         .background(DashboardPalette.background)
         .preferredColorScheme(.dark)
+        .task(id: model.selectedProfileID) {
+            await model.ensureProxiesLoaded()
+        }
     }
 
     private var header: some View {
@@ -171,6 +178,102 @@ struct MenuBarView: View {
         }
         .menuStyle(.borderlessButton)
         .buttonStyle(MenuPanelPressStyle())
+    }
+
+    private var proxyMenus: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionTitle("代理组")
+
+            if model.proxyGroupsInDefaultOrder.isEmpty {
+                Button {
+                    showWindow(.proxies)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.triangle.branch")
+                            .foregroundStyle(DashboardPalette.secondary)
+                        Text("打开代理切换…")
+                        Spacer()
+                    }
+                }
+                .buttonStyle(MenuPanelPressStyle(fillsWidth: true))
+            } else {
+                ForEach(model.proxyGroupsInDefaultOrder) { group in
+                    Menu {
+                        Button {
+                            Task { await model.testProxyGroup(group.name) }
+                        } label: {
+                            Label(
+                                model.activeOperation == .testProxyGroup(group.name) ? "测速中…" : "测速此组",
+                                systemImage: "gauge.with.dots.needle.33percent"
+                            )
+                        }
+                        .disabled(model.isBusy && model.activeOperation != .testProxyGroup(group.name))
+
+                        Divider()
+
+                        if group.isSelectableGroup {
+                            ForEach(group.all, id: \.self) { proxyName in
+                                Button {
+                                    guard group.now != proxyName else { return }
+                                    Task { await model.selectProxy(proxyName, in: group.name) }
+                                } label: {
+                                    if group.now == proxyName {
+                                        Label(menuProxyTitle(proxyName, group: group), systemImage: "checkmark")
+                                    } else {
+                                        Text(menuProxyTitle(proxyName, group: group))
+                                    }
+                                }
+                                .disabled(model.isBusy || group.now == proxyName)
+                            }
+                        } else {
+                            Text("自动策略组，不支持手动选择")
+                        }
+
+                        Divider()
+
+                        Button {
+                            showWindow(.proxies)
+                        } label: {
+                            Label("打开代理切换…", systemImage: "macwindow")
+                        }
+                    } label: {
+                        HStack(spacing: 9) {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(group.name)
+                                    .font(.system(size: 11.5, weight: .semibold))
+                                    .lineLimit(1)
+                                Text(group.now ?? group.type)
+                                    .font(.system(size: 9.8, weight: .medium))
+                                    .foregroundStyle(DashboardPalette.tertiary)
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: 8)
+                            if let now = group.now {
+                                Text(menuDelayText(model.effectiveProxyDelay(now, preferredTestURL: group.testURL)))
+                                    .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(DashboardPalette.tertiary)
+                            }
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(DashboardPalette.tertiary)
+                        }
+                    }
+                    .menuStyle(.borderlessButton)
+                    .buttonStyle(MenuPanelPressStyle(fillsWidth: true))
+                }
+            }
+        }
+    }
+
+    private func menuProxyTitle(_ proxyName: String, group: MihomoProxy) -> String {
+        let delay = menuDelayText(model.effectiveProxyDelay(proxyName, preferredTestURL: group.testURL))
+        return delay == "--" ? proxyName : "\(proxyName)  ·  \(delay)"
+    }
+
+    private func menuDelayText(_ delay: Int?) -> String {
+        guard let delay else { return "--" }
+        if delay <= 0 { return "超时" }
+        return "\(delay) ms"
     }
 
     private var coreActions: some View {
