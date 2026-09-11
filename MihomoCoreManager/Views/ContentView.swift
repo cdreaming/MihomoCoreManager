@@ -102,6 +102,14 @@ private struct WindowBehaviorConfigurator: NSViewRepresentable {
         window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none
         window.styleMask.insert(.fullSizeContentView)
+        // Keep any exposed title-bar/chrome pixels on the same dark neutral used
+        // by the dashboard instead of the default macOS gray backing.
+        window.backgroundColor = NSColor(
+            red: 0.055,
+            green: 0.063,
+            blue: 0.082,
+            alpha: 1.0
+        )
 
         window.isMovable = true
         window.isMovableByWindowBackground = true
@@ -144,7 +152,7 @@ private struct DashboardSidebar: View {
             .padding(.horizontal, 22)
             // Clear the native traffic-light controls now that content extends
             // into the title-bar region, without recreating a tall top strip.
-            .padding(.top, 38)
+            .padding(.top, 26)
             .padding(.bottom, 14)
 
             VStack(spacing: 6) {
@@ -710,11 +718,10 @@ private struct DashboardNotice: View {
 }
 
 
-// Keep the segmented sort control in its own small View.  Xcode 16 can spend
-// a disproportionate amount of time type-checking large SwiftUI result-builder
-// expressions, especially when a generic Picker/ForEach helper is embedded in
-// an already large view.  Isolating it also gives each tag an explicit enum
-// type, which keeps Release builds deterministic across Swift compiler versions.
+// Release guardrail (v1.2.4 incident): keep the segmented sort control in its
+// own small View with explicit enum tags. This reduces SwiftUI result-builder
+// type-checker pressure in optimized Xcode builds and makes the Picker tag type
+// unambiguous across Swift compiler versions.
 private struct ProxySortPicker: View {
     @Binding var selection: ProxySortOption
 
