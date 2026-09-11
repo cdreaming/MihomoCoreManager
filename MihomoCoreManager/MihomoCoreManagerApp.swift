@@ -13,8 +13,8 @@ struct MihomoCoreManagerApp: App {
                 .environmentObject(model.live)
                 .preferredColorScheme(.dark)
         }
-        // v1.1.2: remove the tall standard title-bar backing so the dashboard
-        // can use that vertical space while preserving native window controls.
+        // v1.2.5: the Dashboard is a full-height left/right surface with no
+        // dedicated visual title bar; keep only the native window controls.
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1220, height: 780)
         .windowResizability(.contentMinSize)

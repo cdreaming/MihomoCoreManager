@@ -209,6 +209,8 @@ struct MenuBarView: View {
                 .buttonStyle(MenuPanelPressStyle(fillsWidth: true))
             } else {
                 ForEach(model.proxyGroupsInDefaultOrder) { group in
+                    let currentSelection = model.currentProxySelection(in: group.name) ?? group.now
+
                     Menu {
                         Button {
                             Task { await model.testProxyGroup(group.name) }
@@ -224,17 +226,18 @@ struct MenuBarView: View {
 
                         if group.isSelectableGroup {
                             ForEach(group.all, id: \.self) { proxyName in
+                                let selected = currentSelection == proxyName
                                 Button {
-                                    guard group.now != proxyName else { return }
+                                    guard !selected else { return }
                                     Task { await model.selectProxy(proxyName, in: group.name) }
                                 } label: {
-                                    if group.now == proxyName {
+                                    if selected {
                                         Label(menuProxyTitle(proxyName, group: group), systemImage: "checkmark")
                                     } else {
                                         Text(menuProxyTitle(proxyName, group: group))
                                     }
                                 }
-                                .disabled(model.isBusy || group.now == proxyName)
+                                .disabled(model.isBusy || selected)
                             }
                         } else {
                             Text("自动策略组，不支持手动选择")
@@ -253,14 +256,14 @@ struct MenuBarView: View {
                                 Text(group.name)
                                     .font(.system(size: 11.5, weight: .semibold))
                                     .lineLimit(1)
-                                Text(group.now ?? group.type)
+                                Text(currentSelection ?? group.type)
                                     .font(.system(size: 9.8, weight: .medium))
                                     .foregroundStyle(DashboardPalette.tertiary)
                                     .lineLimit(1)
                             }
                             Spacer(minLength: 8)
-                            if let now = group.now {
-                                Text(menuDelayText(model.effectiveProxyDelay(now, preferredTestURL: group.testURL)))
+                            if let currentSelection {
+                                Text(menuDelayText(model.effectiveProxyDelay(currentSelection, preferredTestURL: group.testURL)))
                                     .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
                                     .foregroundStyle(DashboardPalette.tertiary)
                             }
@@ -269,6 +272,10 @@ struct MenuBarView: View {
                                 .foregroundStyle(DashboardPalette.tertiary)
                         }
                     }
+                    // NSMenu/MenuBarExtra can retain a Menu label subtree by its
+                    // stable group id. Include the selected target in identity so
+                    // the `组名 · 线路/代理组` suffix is rebuilt immediately.
+                    .id("\(group.name)|\(currentSelection ?? group.type)")
                     .menuStyle(.borderlessButton)
                     .buttonStyle(MenuPanelPressStyle(fillsWidth: true))
                 }

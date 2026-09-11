@@ -8,11 +8,15 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: macos-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   arm64-build:
     name: Apple Silicon arm64 full release simulation
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
 
@@ -22,30 +26,47 @@ jobs:
           go-version-file: portable-runtime/go.mod
           cache: false
 
-      - name: Verify runner architecture
+      - name: Verify runner architecture and toolchain
         shell: bash
         run: |
           set -Eeuo pipefail
+          test "$(uname -s)" = "Darwin"
           test "$(uname -m)" = "arm64"
           xcodebuild -version
           go version
 
-      - name: 真实 macOS arm64 发布全链路模拟
+      # SOURCE-SHA256SUMS.txt is generated metadata.  v1.2.5 release proved
+      # that release/CI must refresh it from the exact checkout before any hard
+      # check; otherwise harmless carried-forward release notes can block Xcode.
+      - name: Refresh source manifest from exact checkout
         shell: bash
-        run: bash scripts/simulate-release.sh
+        run: |
+          set -Eeuo pipefail
+          python3 scripts/build-source-manifest.py --write
+          python3 scripts/build-source-manifest.py --check
+          if ! git diff --quiet -- SOURCE-SHA256SUMS.txt; then
+            echo "::warning::Committed SOURCE-SHA256SUMS.txt was stale; regenerated from this exact checkout."
+          fi
 
-      - name: Upload Xcode diagnostics on failure
-        if: failure()
+      - name: Full release simulation
+        shell: bash
+        run: bash scripts/simulate-release.sh --strict-macos
+
+      - name: Upload Xcode diagnostics
+        if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: xcode-diagnostics-${{ github.run_id }}
+          name: xcodebuild-release-log-${{ github.run_id }}
           path: build/xcodebuild-release.log
           if-no-files-found: ignore
 
-      - uses: actions/upload-artifact@v6
+      - name: Upload verified release artifacts
+        if: success()
+        uses: actions/upload-artifact@v6
         with:
-          name: MihomoCoreManager-arm64-release-simulation
+          name: MihomoCoreManager-v1.2.6-arm64-release-simulation
           path: |
             dist/
             dist-portable/
             build/release-simulation-verify/
+          if-no-files-found: warn

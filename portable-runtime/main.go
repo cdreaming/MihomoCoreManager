@@ -23,8 +23,8 @@ import (
 )
 
 const (
-	appVersion                = "1.2.5"
-	buildNumber               = "125"
+	appVersion                = "1.2.6"
+	buildNumber               = "126"
 	keychainService           = "cc.kkr.MihomoCoreManager"
 	controllerKeychainService = "cc.kkr.MihomoCoreManager.controller-secret"
 )
@@ -64,8 +64,6 @@ type appState struct {
 	done     chan struct{}
 	doneOnce sync.Once
 
-	backgroundWG sync.WaitGroup
-
 	client *http.Client
 
 	secretMu    sync.RWMutex
@@ -93,6 +91,36 @@ type appState struct {
 	statusUpdatedAt time.Time
 	statusErr       string
 	statusReachable bool
+
+	// Short-lived fire-and-forget work is tracked so tests and shutdown can
+	// wait for file/cache refreshes to finish before temporary state disappears.
+	// Long-lived pollers/server loops intentionally stay outside this WaitGroup.
+	backgroundMu     sync.Mutex
+	backgroundWG     sync.WaitGroup
+	backgroundClosed bool
+}
+
+func (s *appState) goBackground(work func()) {
+	s.backgroundMu.Lock()
+	if s.backgroundClosed {
+		s.backgroundMu.Unlock()
+		return
+	}
+	s.backgroundWG.Add(1)
+	s.backgroundMu.Unlock()
+
+	go func() {
+		defer s.backgroundWG.Done()
+		work()
+	}()
+}
+
+func (s *appState) waitBackground() {
+	// Close registration before waiting so no new Add can race a zero-counter Wait.
+	s.backgroundMu.Lock()
+	s.backgroundClosed = true
+	s.backgroundMu.Unlock()
+	s.backgroundWG.Wait()
 }
 
 func defaultProfile() Profile {
@@ -165,21 +193,6 @@ func loadState() *appState {
 		_ = s.saveLocked()
 	}
 	return s
-}
-
-// goBackground owns short-lived asynchronous work spawned by request handlers.
-// Tests and shutdown paths can wait for it before removing Runtime files, which
-// prevents background cache refreshes from racing temporary-directory cleanup.
-func (s *appState) goBackground(fn func()) {
-	s.backgroundWG.Add(1)
-	go func() {
-		defer s.backgroundWG.Done()
-		fn()
-	}()
-}
-
-func (s *appState) waitBackground() {
-	s.backgroundWG.Wait()
 }
 
 func (s *appState) saveLocked() error {
@@ -769,7 +782,7 @@ func (s *appState) refreshProxyMenuCache() {
 }
 
 func (s *appState) startProxyMenuPoller() {
-	s.goBackground(func() {
+	go func() {
 		s.refreshProxyMenuCache()
 		ticker := time.NewTicker(4 * time.Second)
 		defer ticker.Stop()
@@ -781,7 +794,7 @@ func (s *appState) startProxyMenuPoller() {
 				return
 			}
 		}
-	})
+	}()
 }
 
 func (s *appState) handleProxyMenuCache(w http.ResponseWriter, r *http.Request) {
@@ -924,7 +937,7 @@ func (s *appState) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *appState) startStatusPoller() {
-	s.goBackground(func() {
+	go func() {
 		s.refreshStatusCache()
 		ticker := time.NewTicker(1200 * time.Millisecond)
 		defer ticker.Stop()
@@ -936,7 +949,7 @@ func (s *appState) startStatusPoller() {
 				return
 			}
 		}
-	})
+	}()
 }
 
 func normalizeBase(raw string, allowHTTP bool) (*url.URL, error) {
@@ -1604,6 +1617,61 @@ type proxySelectRequest struct {
 	Name  string `json:"name"`
 }
 
+// applyProxyMenuSelectionSnapshot updates the last-good status-menu snapshot
+// immediately after a confirmed Controller PUT. The status-bar menu is backed by
+// this local file, so the visible `group · selected` suffix can refresh without
+// waiting for the next remote polling cycle. A delayed authoritative refresh
+// still follows to pick up the Controller's full state.
+func (s *appState) applyProxyMenuSelectionSnapshot(group, name string) {
+	profile, err := s.current()
+	if err != nil {
+		return
+	}
+
+	s.proxyMenuMu.Lock()
+	var payload map[string]any
+	if len(s.proxyMenuData) == 0 || json.Unmarshal(s.proxyMenuData, &payload) != nil {
+		s.proxyMenuMu.Unlock()
+		return
+	}
+	proxies, ok := payload["proxies"].(map[string]any)
+	if !ok {
+		s.proxyMenuMu.Unlock()
+		return
+	}
+	proxy, ok := proxies[group].(map[string]any)
+	if !ok {
+		s.proxyMenuMu.Unlock()
+		return
+	}
+	proxy["now"] = name
+
+	decorated, err := json.Marshal(payload)
+	if err != nil {
+		s.proxyMenuMu.Unlock()
+		return
+	}
+	s.proxyMenuGeneration++
+	s.proxyMenuData = append(s.proxyMenuData[:0], decorated...)
+	s.proxyMenuProfileID = profile.ID
+	s.proxyMenuUpdatedAt = time.Now()
+	s.proxyMenuErr = ""
+
+	payload["ok"] = true
+	payload["generation"] = s.proxyMenuGeneration
+	payload["_profileID"] = profile.ID
+	payload["_snapshot_unix_ms"] = s.proxyMenuUpdatedAt.UnixMilli()
+	encoded, encodeErr := json.Marshal(payload)
+	var responseCopy []byte
+	if encodeErr == nil {
+		s.proxyMenuResponse = append(s.proxyMenuResponse[:0], encoded...)
+		responseCopy = append(responseCopy, encoded...)
+	}
+	s.proxyMenuMu.Unlock()
+
+	s.writeProxyMenuFile(responseCopy)
+}
+
 func (s *appState) runProxySelect(in proxySelectRequest) error {
 	in.Group = strings.TrimSpace(in.Group)
 	in.Name = strings.TrimSpace(in.Name)
@@ -1628,7 +1696,13 @@ func (s *appState) runProxySelect(in proxySelectRequest) error {
 		}
 		return err
 	}
-	s.goBackground(s.refreshProxyMenuCache)
+	s.applyProxyMenuSelectionSnapshot(in.Group, in.Name)
+	s.goBackground(func() {
+		// Give Mihomo/remote tunnel state a brief moment to converge so an
+		// immediately stale GET does not undo the confirmed local menu label.
+		time.Sleep(220 * time.Millisecond)
+		s.refreshProxyMenuCache()
+	})
 	return nil
 }
 
@@ -1969,9 +2043,10 @@ function proxyMenuFromFile(){
 }
 
 // WKWebView consumes mouse events inside a full-size content view, so
-// movableByWindowBackground alone is not enough. A transparent native drag strip
-// sits over the Dashboard title bar and forwards mouse-down to NSWindow's native
-// performWindowDragWithEvent:, restoring normal macOS title-bar movement.
+// movableByWindowBackground alone is not enough. The visual Dashboard title bar
+// is intentionally gone in v1.2.5, so a slim invisible top-edge drag region
+// forwards mouse-down to NSWindow's native performWindowDragWithEvent:. It stays
+// above the 26px page inset and below the sidebar brand content.
 ObjC.registerSubclass({name:'MihomoWindowDragView', superclass:'NSView', methods:{
 'mouseDown:':{types:['void',['id']],implementation:function(event){try{this.window.performWindowDragWithEvent(event);}catch(e){}}}
 }});
@@ -1990,12 +2065,12 @@ var win=$.NSWindow.alloc.initWithContentRectStyleMaskBackingDefer(rect,32783,2,f
 win.title='Mihomo Core 管理面板'; win.titleVisibility=1; win.titlebarAppearsTransparent=true; win.movableByWindowBackground=true;
 var host=$.NSView.alloc.initWithFrame(rect); host.autoresizingMask=18; win.contentView=host;
 var web=$.WKWebView.alloc.initWithFrame(host.bounds); web.autoresizingMask=18; host.addSubview(web);
-var dragStrip=$.MihomoWindowDragView.alloc.initWithFrame($.NSMakeRect(0,rect.size.height-36,rect.size.width,36)); dragStrip.autoresizingMask=10; host.addSubview(dragStrip);
+var dragStrip=$.MihomoWindowDragView.alloc.initWithFrame($.NSMakeRect(0,rect.size.height-22,rect.size.width,22)); dragStrip.autoresizingMask=10; host.addSubview(dragStrip);
 win.center;
 function showURL(u){ try{var url=$.NSURL.URLWithString($(u));var req=$.NSURLRequest.requestWithURL(url);web.loadRequest(req);win.makeKeyAndOrderFront(null);cocoaApp.activateIgnoringOtherApps(true);}catch(e){std.displayNotification(String(e),{withTitle:'Mihomo Core Manager'});} }
 function openHash(h){ showURL(BASE+'/#'+h); }
 
-var statusItem=null, statusHeader=null, speedHeader=null, prefIconItem=null, prefStatusItem=null, prefSpeedItem=null, iconOnlyItem=null, startItem=null, stopItem=null, serverMenu=null, serverRoot=null, proxyHeader=null, proxyEndSeparator=null, proxyMenuRoots=[], proxyMenuData={}, proxyMenuGeneration=-1, proxySubmenuBuilt={}, proxyMenuTick=0;
+var statusItem=null, statusHeader=null, speedHeader=null, prefIconItem=null, prefStatusItem=null, prefSpeedItem=null, iconOnlyItem=null, startItem=null, stopItem=null, serverMenu=null, serverRoot=null, proxyHeader=null, proxyEndSeparator=null, proxyMenuRoots=[], proxyMenuRootByGroup={}, proxyMenuData={}, proxyMenuGeneration=-1, proxySubmenuBuilt={}, proxyMenuTick=0;
 var showIcon=true, showStatus=true, showSpeed=true, lastRunning=false, lastReachable=false, lastUp=0, lastDown=0, lastCoreVersion='--';
 var appSymbol=null, missingSnapshotTicks=0;
 var statusOverlay=null, statusIconView=null, statusDot=null, upValueLabel=null, upUnitLabel=null, downValueLabel=null, downUnitLabel=null;
@@ -2243,13 +2318,30 @@ function buildProxySubmenu(sub){
   open.target=delegate; addSymbol(open,'macwindow'); sub.addItem(open);
   proxySubmenuBuilt[key]=true;
 }
+function proxyMenuRootTitle(group){
+  var p=proxyMenuData[group]||{}, current=p.now||p.type||'';
+  return group+(current?'  ·  '+current:'');
+}
+function refreshProxyMenuRootTitle(group){
+  try{
+    var root=proxyMenuRootByGroup[group];
+    if(root)root.title=proxyMenuRootTitle(group);
+  }catch(e){}
+}
 function rebuildProxyMenus(){
   if(!menu||!coreRoot)return;
   // Read the Go-side atomic snapshot directly from disk. No curl, no process
   // spawn, and no remote controller request can run on AppKit's menu event loop.
   var data=proxyMenuFromFile(); if(!data||!data.proxies)return;
   var generation=Number(data.generation||0);
-  if(generation===proxyMenuGeneration)return;
+  if(generation===proxyMenuGeneration){
+    // Reconcile optimistic menu labels even when an async selection failed and
+    // the Go snapshot generation therefore did not advance. This prevents a
+    // queued-but-failed choice from leaving a wrong suffix indefinitely.
+    proxyMenuData=data.proxies||{};
+    Object.keys(proxyMenuRootByGroup).forEach(refreshProxyMenuRootTitle);
+    return;
+  }
 
   proxyMenuGeneration=generation;
   proxyMenuData=data.proxies||{};
@@ -2257,13 +2349,13 @@ function rebuildProxyMenus(){
 
   proxyMenuRoots.forEach(function(root){try{menu.removeItem(root);}catch(e){}});
   proxyMenuRoots=[];
+  proxyMenuRootByGroup={};
 
   var groups=proxyConfigOrderedGroups(proxyMenuData);
   var index=proxyEndSeparator?menu.indexOfItem(proxyEndSeparator):menu.indexOfItem(coreRoot); if(index<0)index=menu.numberOfItems;
   groups.forEach(function(name){
-    var p=proxyMenuData[name], current=p.now||p.type||'';
-    var title=name+(current?'  ·  '+current:'');
-    var root=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent(title,'','');
+    var p=proxyMenuData[name];
+    var root=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent(proxyMenuRootTitle(name),'','');
     var sub=$.NSMenu.alloc.initWithTitle(name);
     // A one-item placeholder keeps the submenu affordance visible. Real node
     // items are created lazily only when this one group is opened.
@@ -2274,6 +2366,7 @@ function rebuildProxyMenus(){
     // with a flag/emoji and the extra icon made the tray visually noisy.
     menu.insertItemAtIndex(root,index); index++;
     proxyMenuRoots.push(root);
+    proxyMenuRootByGroup[name]=root;
   });
 }
 ObjC.registerSubclass({name:'MihomoMenuDelegate', methods:{
@@ -2303,6 +2396,7 @@ ObjC.registerSubclass({name:'MihomoMenuDelegate', methods:{
     var payload=JSON.parse(ObjC.unwrap(sender.representedObject));
     if(post('/local/proxy-select-async',payload,false)){
       if(proxyMenuData[payload.group])proxyMenuData[payload.group].now=payload.name;
+      refreshProxyMenuRootTitle(payload.group);
       proxySubmenuBuilt={};
     }
   }catch(e){std.displayNotification(String(e),{withTitle:'Mihomo Core Manager'});}
@@ -2512,4 +2606,5 @@ func main() {
 		}
 	}
 	<-s.done
+	s.waitBackground()
 }

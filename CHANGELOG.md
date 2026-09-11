@@ -1,18 +1,26 @@
-- portable runtime 发布稳定性修复：统一跟踪异步缓存刷新，测试清理前等待后台任务；macOS 预检新增 100 次定向压力、全套 shuffle、Go race/vet 与 darwin/arm64 测试二进制交叉编译。
-- 发布预检修复：macOS Swift semantic typecheck 显式绑定 Xcode macOS SDK 与 `arm64-apple-macos14.0` target，修复 Xcode 16.4 `unable to load standard library` 假失败。
-- 发布预检再加固：`release-preflight.py --strict-macos` 自身先从精确 checkout 重建并验证源码 manifest，不再依赖前置 workflow 步骤；补齐 `BUILD-FIX-v1.2.4.md` 的清单覆盖。
-- 发布流程修复：Release 在严格 macOS/Xcode 预检前从精确 tag checkout 刷新并验证 `SOURCE-SHA256SUMS.txt`；CI 仍保持 stale manifest 硬门禁，并增强差异诊断。
 # Changelog
+
+## v1.2.6
+
+- 将 v1.2.4 / v1.2.5 实际发布故障沉淀为统一发布模拟：CI 与 Release 均执行 `scripts/simulate-release.sh --strict-macos`。
+- 新增 `release-preflight.py`：严格模式要求 Darwin arm64，绑定当前 Xcode macOS SDK，以 `arm64-apple-macos14.0` 进行 Swift typecheck，并检查 Release build settings。
+- Release Swift 编译显式关闭 batch mode；完整 Xcode 日志写入 `build/xcodebuild-release.log`，失败时自动回显编译诊断。
+- 固化 SwiftUI Release 兼容修复：`ProxySortOption: Hashable`、独立 `ProxySortPicker`、拆分代理组详情 ViewBuilder、`Bool?` 显式 Optional switch、现代 `onChange` 签名。
+- 增强 source manifest：严格 Release 可在精确 checkout 自动重建并复核；stale 诊断列出新增、删除和 SHA-256 变化文件。
+- 修复 portable 后台刷新生命周期：短任务统一通过 `backgroundWG/goBackground` 跟踪，测试退出前等待，消除 `TempDir RemoveAll ... Runtime: directory not empty` 竞态。
+- 发布模拟增加目标回归 300 次、全套 shuffle 10 次、`go test -race`、`go vet`、Darwin arm64 test binary 交叉编译及 Mach-O 检查。
+- portable 与 native 产物新增版本、结构、CRC、架构和 SHA-256 校验；GitHub Release 上传后仍在线回读校验。
+- 版本升级为 v1.2.6 / build 126。
 
 ## v1.2.5
 
-- 发布工程回归修复：恢复 v1.2.4 已验证的 Xcode 16.4 编译兼容规则（显式 Optional case、拆分大型 SwiftUI ViewBuilder、显式 Hashable、关闭 Swift batch mode），新增 `release-preflight.py` / `simulate-release.sh` 与 CI 失败日志上传，防止同类 `exit code 65` 回归。
-- 状态栏下拉菜单上传/下载网速改为单行显示，减少菜单高度并保持实时刷新。
-- 状态栏代理组区域增加前后分隔，代理组独立成组；portable 动态代理组插入位置固定在代理组结束分隔线之前。
-- 原生 SwiftUI 状态栏面板同步将网速卡片收紧为单行，并在代理组前后增加分隔线。
-- portable 主窗口标题栏/拖拽区由 52px 调整为 36px；原生窗口顶部安全间距由 38pt 调整为 26pt，约为原高度的 2/3。
-- 标题栏底色改为与 Dashboard/侧栏一致的中性背景色；原生窗口暴露的 chrome backing 同步使用 Dashboard 深色背景。
-- 版本升级为 v1.2.5 / build 125。
+- 状态栏下拉菜单上传/下载网速改为单行显示，代理组区域使用前后分隔线独立成组。
+- 修复状态栏重新选择线路/代理组后顶层代理组后缀不刷新的问题：portable 立即更新本地菜单快照与可见 NSMenu 根标题，原生 SwiftUI 立即保留确认选择并重建对应 Menu identity。
+- 防止成功切换后紧接着的短暂旧 Controller `now` 响应把界面重新覆盖回旧线路；portable 代理页同步采用同一确认选择策略。
+- 主窗口重构为完整左右布局，移除独立视觉标题栏；portable 删除原 36px HTML titlebar，仅保留 22px 不可见拖拽区域，原生继续使用 hidden title bar / full-size content。
+- 左侧标题区重排为蓝紫 `M` 图标 + 两行 `Mihomo Core / 管理面板`，并将标题改为与界面一致的系统字体和主文字色（深色界面呈柔和白色）；版本信息置于其下，移除重复标题。
+- 左侧栏宽度统一为 256pt/px，标题字体、字重、间距、主文字色和深色背景与 Dashboard 整体风格统一。
+- 版本保持 v1.2.5 / build 125。
 
 ## v1.2.4
 

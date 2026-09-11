@@ -1,5 +1,6 @@
 # Portable arm64 delivery runtime
 
+- v1.2.6 把短生命周期后台刷新统一纳入 `backgroundWG/goBackground()`；发布模拟会连续压力测试测速缓存竞态、执行 shuffle/race/vet，并验证 Darwin arm64 Mach-O 与 portable ZIP。
 - v1.2.5 将状态栏下拉菜单上传/下载速率合并为单行；代理组前后使用分隔线独立成组；窗口标题栏/拖拽区由 52px 收紧为 36px，并改用与整体 Dashboard 协调的标题栏色。
 - v1.2.4 新增代理组/代理列表四种排序、当前组测速与共享节点测速缓存；状态栏将各代理组放到顶层菜单，每组均可测速和选择线路。
 此目录用于在非 macOS 环境交叉构建可运行的 Apple Silicon 测试/即时安装版，不替代仓库根目录的 SwiftUI/Xcode 正式实现。
@@ -25,4 +26,4 @@
 - 下拉菜单中的上传/下载速度在 v1.2.5 合并为一个单行只读菜单项。
 - 主菜单栏 JXA shell 异常退出时自动启动最小恢复 shell，并记录 `Runtime/menubar.log`；标题栏 drag strip、集中状态缓存、标准 Edit responder chain、`⌘V`/显式粘贴继续保留。
 
-正式 GitHub Release 由 `.github/workflows/release.yml` 在 macOS arm64 Runner 上构建 SwiftUI App；v1.2.5 会先通过 `actions/setup-go@v6` 按 `go.mod` 显式配置 Go，再测试并构建本 portable arm64 安装包，默认使用无需 Apple Developer 凭据的 `--unsigned` 发布路径。普通 macOS CI 也执行相同 portable 构建脚本，避免 Release 阶段才发现工具链缺失。
+正式 GitHub Release 由 `.github/workflows/release.yml` 在 macOS arm64 Runner 上构建 SwiftUI App；v1.2.6 的 CI 与 Release 均统一调用 `scripts/simulate-release.sh --strict-macos`，先通过 `actions/setup-go@v6` 按 `go.mod` 配置 Go，再完成 Go 压力/竞态检查、portable 构建和真实 Xcode Release build，默认使用无需 Apple Developer 凭据的 `--unsigned` 发布路径。

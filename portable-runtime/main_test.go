@@ -65,7 +65,7 @@ func TestGroupDelayCacheDecoratesSharedProxyData(t *testing.T) {
 		case r.URL.EscapedPath() == "/group/HK%20%2F%20Auto/delay" && r.Method == http.MethodGet:
 			if r.URL.Query().Get("timeout") != "5000" {
 				t.Errorf("unexpected timeout: %s", r.URL.RawQuery)
-				http.Error(w, "unexpected timeout", http.StatusBadRequest)
+				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
 			_, _ = w.Write([]byte(`{"Shared-A":88,"Only-HK":143}`))
@@ -175,6 +175,11 @@ func TestStatusMenuProxyHotfixUsesCacheLazySubmenusAndAsyncActions(t *testing.T)
 		"/local/proxy-select-async",
 		"proxyMenuGeneration",
 		"proxyMenuTick%3===0",
+		"proxyMenuRootByGroup={}",
+		"function proxyMenuRootTitle(group)",
+		"function refreshProxyMenuRootTitle(group)",
+		"refreshProxyMenuRootTitle(payload.group)",
+		"Object.keys(proxyMenuRootByGroup).forEach(refreshProxyMenuRootTitle)",
 		"menuProxyDelayText(node,p.testUrl||'')",
 		"function menuExtraHistory(value)",
 		"function menuResolvedProxyName(name)",
@@ -191,6 +196,80 @@ func TestStatusMenuProxyHotfixUsesCacheLazySubmenusAndAsyncActions(t *testing.T)
 	if strings.Contains(script, "var data=get('/local/proxies',true)") ||
 		strings.Contains(script, "var data=get('/local/proxy-menu-cache',true)") {
 		t.Fatal("status-menu refresh must not spawn curl or synchronously fetch proxy data")
+	}
+}
+
+func TestProxySelectionImmediatelyRefreshesMenuSnapshot(t *testing.T) {
+	dir := t.TempDir()
+	state := &appState{
+		path: filepath.Join(dir, "settings.json"),
+		settings: Settings{
+			SelectedID: "test",
+			Profiles: []Profile{{
+				ID: "test", Name: "test", ManagementURL: "https://example.com",
+				CoreControllerURL: "https://controller.example.com",
+			}},
+		},
+		proxyMenuGeneration: 7,
+		proxyMenuData:       []byte(`{"proxies":{"GLOBAL":{"name":"GLOBAL","type":"Selector","now":"Old","all":["Old","New"]},"Old":{"name":"Old","type":"Direct"},"New":{"name":"New","type":"Direct"}}}`),
+	}
+
+	state.applyProxyMenuSelectionSnapshot("GLOBAL", "New")
+
+	var got struct {
+		Generation uint64                    `json:"generation"`
+		ProfileID  string                    `json:"_profileID"`
+		Proxies    map[string]map[string]any `json:"proxies"`
+	}
+	if err := json.Unmarshal(state.proxyMenuResponse, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Generation != 8 {
+		t.Fatalf("expected generation 8, got %d", got.Generation)
+	}
+	if got.ProfileID != "test" {
+		t.Fatalf("unexpected profile id: %q", got.ProfileID)
+	}
+	if got.Proxies["GLOBAL"]["now"] != "New" {
+		t.Fatalf("menu snapshot suffix was not refreshed: %#v", got.Proxies["GLOBAL"])
+	}
+
+	fileData, err := os.ReadFile(filepath.Join(dir, "Runtime", "proxies.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var disk map[string]any
+	if err := json.Unmarshal(fileData, &disk); err != nil {
+		t.Fatal(err)
+	}
+	proxies := disk["proxies"].(map[string]any)
+	global := proxies["GLOBAL"].(map[string]any)
+	if global["now"] != "New" {
+		t.Fatalf("disk-backed status menu did not receive new suffix: %#v", global)
+	}
+}
+
+func TestPortableWindowUsesUnifiedLeftRightBrandWithoutTitlebar(t *testing.T) {
+	page, err := assets.ReadFile("ui/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(page)
+	for _, marker := range []string{
+		"grid-template-columns:256px minmax(0,1fr)",
+		"grid-template-rows:minmax(0,1fr)",
+		".brand-product{color:var(--text)",
+		`class="brand-head"`,
+		`class="brand-product">Mihomo Core`,
+		`class="brand-title">管理面板`,
+		"A just-confirmed PUT is authoritative for this group",
+	} {
+		if !strings.Contains(text, marker) {
+			t.Fatalf("portable v1.2.5 unified window missing marker %q", marker)
+		}
+	}
+	if strings.Contains(text, `<div class="titlebar">`) || strings.Contains(text, "--titlebar:") {
+		t.Fatal("portable main window must not render a separate visual title bar")
 	}
 }
 
@@ -212,6 +291,7 @@ func TestPortableProxyPageHotfixUsesGlobalOrderAndImmediateLatencyMerge(t *testi
 		"if(data._stale)",
 		"Controller 暂时不可达，正在显示最近一次代理数据",
 		"if(proxyData?.[group])proxyData[group].now=name",
+		"A just-confirmed PUT is authoritative for this group",
 		"测速完成，共 '+Object.keys(delays).length",
 	} {
 		if !strings.Contains(text, marker) {
@@ -513,7 +593,9 @@ func controllerURLForTest(raw string) string { return raw }
 func TestDirectControllerPrefersControllerSecret(t *testing.T) {
 	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer controller-secret" {
-			t.Fatalf("expected controller bearer secret, got %q", got)
+			t.Errorf("expected controller bearer secret, got %q", got)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"mode":"rule"}`))
@@ -544,7 +626,9 @@ func TestDirectControllerPrefersControllerSecret(t *testing.T) {
 func TestDirectControllerAllowsNoAuth(t *testing.T) {
 	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "" {
-			t.Fatalf("expected no Authorization header, got %q", got)
+			t.Errorf("expected no Authorization header, got %q", got)
+			w.WriteHeader(http.StatusBadRequest)
+			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"mode":"direct"}`))
@@ -577,7 +661,9 @@ func TestProxyControllerModeListAndSelection(t *testing.T) {
 	selected := "A"
 	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer secret" {
-			t.Fatalf("missing bearer secret: %q", r.Header.Get("Authorization"))
+			t.Errorf("missing bearer secret: %q", r.Header.Get("Authorization"))
+			w.WriteHeader(http.StatusUnauthorized)
+			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		switch {
@@ -884,8 +970,8 @@ func TestPortableInteractionRegressionV118(t *testing.T) {
 	}
 }
 
-func TestPortableVersionV125(t *testing.T) {
-	if appVersion != "1.2.5" || buildNumber != "125" {
+func TestPortableVersionV126(t *testing.T) {
+	if appVersion != "1.2.6" || buildNumber != "126" {
 		t.Fatalf("unexpected portable version/build: %s/%s", appVersion, buildNumber)
 	}
 }
