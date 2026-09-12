@@ -130,9 +130,10 @@ Mihomo Core Manager v${VERSION} (build ${BUILD_NUMBER}) portable arm64 installer
 
 1. Requires Apple Silicon Mac and macOS 14.0 or later.
 2. Double-click Install-MihomoCoreManager.command. It will ask for the administrator password and copy MihomoCoreManager.app to /Applications.
-3. This artifact is built from portable-runtime for cross-platform delivery and is not the Xcode SwiftUI release package.
-4. It is not Developer ID signed/notarized. If Gatekeeper blocks the first launch, right-click the app in /Applications and choose Open.
-5. The official SwiftUI .pkg is produced by scripts/build-release.sh --unsigned on Apple Silicon macOS + Xcode or by the macOS Release GitHub Actions workflow.
+3. This artifact is built from portable-runtime only for regression testing. It is a different UI implementation and is NOT a formal GitHub Release UI-validation package.
+4. Do not use this portable artifact to compare UI with the official .pkg. Starting with v1.2.12, use the GitHub-produced arm64-native-installer.zip; it contains the exact same native App bundle as the .pkg.
+5. This regression artifact is not Developer ID signed/notarized. If Gatekeeper blocks the first launch, right-click the app in /Applications and choose Open.
+6. The formal SwiftUI assets are produced by scripts/build-release.sh on Apple Silicon macOS + Xcode.
 EOF
 
 PACKAGE_DIR="$PACKAGE_DIR" OUT="$OUT" python3 - <<'PY'

@@ -18,6 +18,9 @@ required = [
     ".github/workflows/ci.yml",
     "SOURCE-SHA256SUMS.txt",
     "scripts/build-portable-installer.sh",
+    "scripts/app-bundle-manifest.py",
+    "scripts/package-native-installer.sh",
+    "scripts/verify-native-release-parity.sh",
     "scripts/release-preflight.py",
     "scripts/simulate-release.sh",
     "docs/RELEASE-GUARDRAILS.md",
@@ -320,24 +323,38 @@ for marker in ["detailBackground", "detailBackgroundTop", "menuBackground", "Lin
 for marker in [
     "26.0 / 255.0, green: 26.0 / 255.0, blue: 29.0 / 255.0",
     "28.0 / 255.0, green: 28.0 / 255.0, blue: 33.0 / 255.0",
-    'sidebarVersion("程序版本", applicationVersion)',
+    'sidebarVersion("本程序版本", applicationVersion)',
+    'sidebarVersion("Core 版本", live.status?.versions?.core ?? live.status?.version ?? "--")',
+    'sidebarVersion("Core 面板", live.status?.versions?.managementPanel ?? "--")',
+    'sidebarVersion("MetaCubeXD", live.status?.versions?.metacubexd ?? "--")',
     'CFBundleShortVersionString',
 ]:
     if marker not in content:
-        errors.append(f"native v1.2.11 reference-color/app-version gate missing: {marker}")
-if 'sidebarVersion("Core 面板", live.status?.versions?.managementPanel' in content:
-    errors.append("native sidebar must show this App version instead of the management-panel v4.0.0 value")
+        errors.append(f"native v1.2.12 reference-color/version-block gate missing: {marker}")
+sidebar_order = [
+    'sidebarVersion("本程序版本", applicationVersion)',
+    'sidebarVersion("Core 版本",',
+    'sidebarVersion("Core 面板",',
+    'sidebarVersion("MetaCubeXD",',
+]
+sidebar_positions = [content.find(marker) for marker in sidebar_order]
+if any(position < 0 for position in sidebar_positions) or sidebar_positions != sorted(sidebar_positions):
+    errors.append("native sidebar version order must be: 本程序版本 -> Core 版本 -> Core 面板 -> MetaCubeXD")
+if 'sidebarVersion("程序版本", applicationVersion)' in content:
+    errors.append("native sidebar must use the requested label 本程序版本")
 portable_ui = (root / "portable-runtime" / "ui" / "index.html").read_text(encoding="utf-8")
 for marker in [
-    '程序版本：<span data-field="brandPanelVersion">',
-    "setField('brandPanelVersion',appVersion",
+    '本程序版本：<span data-field="brandAppVersion">',
+    'Core 版本：<span data-field="brandCoreVersion">',
+    'Core 面板：<span data-field="brandPanelVersion">',
+    'MetaCubeXD：<span data-field="brandXdVersion">',
+    "setField('brandAppVersion',appVersion",
+    "setField('brandPanelVersion',vv.management_panel||'--')",
 ]:
     if marker not in portable_ui:
-        errors.append(f"portable sidebar app-version gate missing: {marker}")
-if 'Core 面板：<span data-field="brandPanelVersion">' in portable_ui:
-    errors.append("portable sidebar must show this App version instead of the management-panel version")
-if "setField('brandPanelVersion',vv.management_panel" in portable_ui:
-    errors.append("portable refresh must not overwrite the App version with the management-panel version")
+        errors.append(f"portable v1.2.12 version-block parity gate missing: {marker}")
+if '程序版本：<span data-field="brandPanelVersion">' in portable_ui:
+    errors.append("portable sidebar still uses the old program-version label/data field")
 for marker in ["LiveStatusStore", "secretCache", "ensureSubscriptionsLoaded", "ensureLogsLoaded"]:
     if marker not in app_model:
         errors.append(f"native performance gate missing: {marker}")
@@ -720,6 +737,18 @@ for marker in [
     if marker not in build_release:
         errors.append(f"v1.2.4 Xcode diagnostics/build guard missing: {marker}")
 for marker in [
+    'CANONICAL_APP="$CANONICAL_DIR/MihomoCoreManager.app"',
+    'scripts/app-bundle-manifest.py',
+    'scripts/package-native-installer.sh',
+    'scripts/verify-native-release-parity.sh',
+    'NATIVE-APP-MANIFEST.json',
+    'RELEASE-PROVENANCE.txt',
+    'packaging_contract=one-canonical-native-app',
+    'one canonical native app -> ZIP / native installer / PKG',
+]:
+    if marker not in build_release:
+        errors.append(f"v1.2.12 canonical native artifact gate missing: {marker}")
+for marker in [
     "bash scripts/simulate-release.sh",
     "真实 macOS arm64 发布全链路模拟",
     "Upload Xcode diagnostics on failure",
@@ -737,17 +766,23 @@ for marker in [
     "go-version-file: portable-runtime/go.mod",
     "cache: false",
     "bash scripts/simulate-release.sh",
-    'gh release upload "$TAG" dist/* dist-portable/* --clobber',
-    'test -f "MihomoCoreManager-${TAG}-arm64-portable-installer.zip"',
+    'gh release upload "$TAG" dist/* --clobber',
+    'test -f "MihomoCoreManager-${TAG}-arm64-native-installer.zip"',
+    'test -f "NATIVE-APP-MANIFEST.json"',
+    'test -f "RELEASE-PROVENANCE.txt"',
+    'grep -Fq "source_commit=${GITHUB_SHA}" RELEASE-PROVENANCE.txt',
+    'bash scripts/verify-native-release-parity.sh "$VERIFY"',
 ]:
     if marker not in workflow:
-        errors.append(f"v1.2.2 GitHub Release portable parity gate missing: {marker}")
+        errors.append(f"v1.2.12 GitHub single-native-app release gate missing: {marker}")
+if 'dist-portable/*' in workflow or 'arm64-portable-installer.zip' in workflow:
+    errors.append("GitHub Release must not publish the alternate portable UI as a formal release asset")
 for marker in [
     "actions/setup-go@v6",
     "go-version-file: portable-runtime/go.mod",
     "cache: false",
     "bash scripts/simulate-release.sh",
-    "Apple Silicon arm64 full release simulation",
+    "Apple Silicon arm64 canonical native release simulation",
     "dist-portable/",
 ]:
     if marker not in ci_workflow:

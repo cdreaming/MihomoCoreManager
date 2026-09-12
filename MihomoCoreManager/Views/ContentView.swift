@@ -241,8 +241,9 @@ private struct DashboardSidebarBrand: View {
             }
 
             VStack(alignment: .leading, spacing: 5) {
-                sidebarVersion("Core 版本", live.status?.versions?.core ?? "--")
-                sidebarVersion("程序版本", applicationVersion)
+                sidebarVersion("本程序版本", applicationVersion)
+                sidebarVersion("Core 版本", live.status?.versions?.core ?? live.status?.version ?? "--")
+                sidebarVersion("Core 面板", live.status?.versions?.managementPanel ?? "--")
                 sidebarVersion("MetaCubeXD", live.status?.versions?.metacubexd ?? "--")
             }
             .padding(.top, 18)

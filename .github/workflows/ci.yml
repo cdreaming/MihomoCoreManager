@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   arm64-build:
-    name: Apple Silicon arm64 full release simulation
+    name: Apple Silicon arm64 canonical native release simulation
     runs-on: macos-15
     timeout-minutes: 45
     steps:
@@ -44,8 +44,12 @@ jobs:
 
       - uses: actions/upload-artifact@v6
         with:
-          name: MihomoCoreManager-arm64-release-simulation
+          name: MihomoCoreManager-native-release-parity
           path: |
             dist/
-            dist-portable/
             build/release-simulation-verify/
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: MihomoCoreManager-portable-regression-only
+          path: dist-portable/

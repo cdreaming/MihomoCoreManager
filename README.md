@@ -1,6 +1,17 @@
 # Mihomo Core Manager for macOS
 
-基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.2.11 (build 1211)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.2.12 (build 1212)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+
+## v1.2.12
+
+v1.2.12 解决“本地/portable 验证正常，但 GitHub 原生 `.pkg` UI 又不同”的发布结构问题，并调整主窗口版本区：
+
+- 主窗口左上版本信息固定为四行，顺序为 **本程序版本 / Core 版本 / Core 面板 / MetaCubeXD**。本程序版本读取 App bundle；Core 面板读取远端 `versions.management_panel`，两者不再混用。
+- 正式 Release 改为 **One Canonical Native App**：Xcode Release 只编译一次，签名完成后冻结唯一 `MihomoCoreManager.app`；`.app.zip`、`native-installer.zip`、`.pkg` 全部只封装这一份 App。
+- 新增 `NATIVE-APP-MANIFEST.json`：对冻结 App 内每个文件和符号链接生成确定性的 SHA-256 树清单。发布前会重新解包 `.zip`、native installer 和 `.pkg`，逐文件比较；任何差异都会让 GitHub Release 失败。
+- 新增 `RELEASE-PROVENANCE.txt`，记录版本、build、Git commit、Xcode/Swift 版本、App tree SHA-256 与主二进制 SHA-256，Release 上传后还会在线下载全部资产再次验证。
+- **portable-runtime 仍保留回归测试，但不再作为正式 GitHub Release 安装包发布。** 以后需要先验证 UI，请使用 GitHub 生成的 `arm64-native-installer.zip`；它与 `.pkg` 内是同一份原生 App，而不是另一套 UI 实现。
+- 保留 v1.2.11 的状态栏背景色、隐藏滚动条、代理组当前线路刷新，以及此前窗口/状态栏稳定性修复。
 
 ## v1.2.11
 

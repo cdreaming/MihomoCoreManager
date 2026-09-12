@@ -1,6 +1,6 @@
 # macOS Release Guardrails
 
-These rules were proven by the successful v1.2.5 release baseline and are mandatory for v1.2.11. They were promoted from the
+These rules were proven by the successful v1.2.5 release baseline and are mandatory for v1.2.12. They were promoted from the
 v1.2.4 release incident so later UI work cannot silently reintroduce the same
 Xcode failures.
 
@@ -115,7 +115,7 @@ Rules:
 This policy preserves the manifest as useful release metadata without allowing a
 generated checksum file to prevent the real compiler and runtime gates from
 running. Historical files such as `BUILD-FIX-v1.2.4.md`, `QA-v1.2.6.md`, and
-`RELEASE-HARDENING-v1.2.6.md` are included in the final v1.2.11 source manifest.
+`RELEASE-HARDENING-v1.2.6.md` are included in the final v1.2.12 source manifest.
 
 ### Standalone Swift probes must be SDK-bound on macOS
 
@@ -123,7 +123,7 @@ Syntax-only `swiftc -frontend -parse` does not need the macOS SDK. Semantic
 `swiftc -typecheck` does. On macOS/Xcode runners, semantic probes must resolve
 the SDK with `xcrun --sdk macosx --show-sdk-path`, invoke
 `xcrun --sdk macosx swiftc`, pass `-sdk`, and pass the project-compatible target
-(`arm64-apple-macos14.0` for v1.2.11). The authoritative full compile remains
+(`arm64-apple-macos14.0` for v1.2.12). The authoritative full compile remains
 `xcodebuild`.
 
 ### Background work must be owned and quiesced in tests
@@ -146,3 +146,17 @@ Apple Silicon runner used for publishing. That script owns the portable runtime
 stress/race suite, darwin/arm64 cross-compiles, portable installer verification,
 strict Xcode preflight, native unsigned Xcode build, architecture check, and
 checksum replay. A release is uploaded only after this complete script passes.
+
+## One Canonical Native App release contract (v1.2.12+)
+
+The portable Go/AppKit/Web application remains useful for regression testing, but it is a different UI implementation and therefore cannot be used as proof that the SwiftUI `.pkg` will render identically. Formal releases must use one native App bundle:
+
+- Xcode Release builds the native app once.
+- Signing/notarization of the App completes before the bundle is frozen at `build/Canonical/MihomoCoreManager.app`.
+- `MihomoCoreManager-v<version>-arm64.zip`, `-arm64-native-installer.zip`, and `.pkg` are packaged only from that frozen bundle.
+- `NATIVE-APP-MANIFEST.json` hashes every regular file and symlink target in the bundle.
+- `scripts/verify-native-release-parity.sh` must extract all three public containers and prove their manifests are identical before upload and again after GitHub Release download.
+- GitHub Release must not publish `dist-portable/*`; portable output is CI regression-only.
+- `RELEASE-PROVENANCE.txt` records the source commit and toolchain plus the frozen App tree/binary hashes.
+
+This turns UI parity into a binary-content invariant rather than a best-effort source synchronization rule. On the same macOS version and settings, the native installer and `.pkg` execute the exact same App code and resources.

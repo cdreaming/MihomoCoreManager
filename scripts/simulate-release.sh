@@ -54,7 +54,7 @@ if data[:4] != bytes.fromhex("cffaedfe"):
 print("darwin/arm64 Go test cross-compile: PASS")
 PYTEST
 
-echo "== build portable arm64 release artifact =="
+echo "== build portable arm64 regression artifact (test-only; not a public Release asset) =="
 bash scripts/build-portable-installer.sh
 
 PORTABLE="$ROOT/dist-portable/MihomoCoreManager-v${VERSION}-arm64-portable-installer.zip"
@@ -96,15 +96,9 @@ if [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]]; then
   python3 scripts/release-preflight.py --strict-macos
   bash scripts/build-release.sh --unsigned
 
-  # Include the portable installer in the same release checksum contract.
-  PORTABLE_HASH="$(shasum -a 256 "$PORTABLE" | awk '{print $1}')"
-  if ! grep -Fq "  $(basename "$PORTABLE")" dist/SHA256SUMS.txt; then
-    printf '%s  %s\n' "$PORTABLE_HASH" "$(basename "$PORTABLE")" >> dist/SHA256SUMS.txt
-  fi
-
-  BIN="$ROOT/build/DerivedData/Build/Products/Release/MihomoCoreManager.app/Contents/MacOS/MihomoCoreManager"
+  BIN="$ROOT/build/Canonical/MihomoCoreManager.app/Contents/MacOS/MihomoCoreManager"
   [[ "$(lipo -archs "$BIN" | xargs)" == "arm64" ]] || {
-    echo "native app is not arm64-only" >&2
+    echo "native canonical app is not arm64-only" >&2
     exit 1
   }
 
@@ -112,12 +106,12 @@ if [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]]; then
   rm -rf "$VERIFY"
   mkdir -p "$VERIFY"
   cp dist/* "$VERIFY/"
-  cp "$PORTABLE" "$VERIFY/"
   (
     cd "$VERIFY"
     shasum -a 256 -c SHA256SUMS.txt
   )
-  echo "native unsigned release simulation: PASS"
+  bash scripts/verify-native-release-parity.sh "$VERIFY"
+  echo "native unsigned release simulation: PASS (one canonical app parity verified)"
 else
   echo "native Xcode stage: SKIPPED on $(uname -s)/$(uname -m)"
   echo "The hard gate is .github/workflows/ci.yml on macos-15 arm64 before release."

@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.2.12
+
+- 主窗口左上版本区调整为 `本程序版本 / Core 版本 / Core 面板 / MetaCubeXD` 四行；App 版本与远端 Core 面板版本分别显示，不再互相替代。
+- 正式 Release 引入 One Canonical Native App 契约：Xcode Release 只生成并冻结一份原生 `MihomoCoreManager.app`，`.app.zip`、`arm64-native-installer.zip` 与 `.pkg` 全部从同一冻结 App 打包。
+- 新增 `NATIVE-APP-MANIFEST.json` 和 `scripts/verify-native-release-parity.sh`，发布前/发布后均重新解包三种正式容器并逐文件 SHA-256 比对；App bundle 任意字节差异都会阻止发布。
+- 新增 `RELEASE-PROVENANCE.txt`，记录 source commit、Xcode/Swift、App tree hash 和 executable hash，GitHub Release 在线回读时复核 commit 与所有资产校验和。
+- portable Go/AppKit/Web 版本降级为 **回归测试专用**，不再上传为正式 GitHub Release 安装包，避免用户把两套 UI 实现误认为同一个构建。
+- 正式新增 `MihomoCoreManager-v1.2.12-arm64-native-installer.zip`；它包含与 `.pkg` 完全相同的原生 App，可用于安装前 UI 验收。
+- App / Xcode / portable regression runtime 统一为 v1.2.12 / build 1212。
+
 ## v1.2.11
 
 - 状态栏下拉菜单根背景改为参考图中性深灰 #1A1A1D，并增加独立 menu surface palette，避免 GitHub/Xcode `.pkg` 继续使用偏蓝近黑背景。

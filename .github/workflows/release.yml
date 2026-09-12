@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: '要发布的版本，例如 1.2.11 或 v1.2.11'
+        description: '要发布的版本，例如 1.2.12 或 v1.2.12'
         required: true
         type: string
 
@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   release:
-    name: arm64 发布（真实环境全链路模拟后发布）
+    name: arm64 发布（单一原生 App 全链路校验后发布）
     runs-on: macos-15
     timeout-minutes: 75
     steps:
@@ -52,7 +52,7 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: 真实 macOS arm64 发布全链路模拟并构建最终资产
+      - name: 真实 macOS arm64 发布全链路模拟并冻结唯一原生 App
         shell: bash
         run: bash scripts/simulate-release.sh
 
@@ -99,7 +99,7 @@ jobs:
           else
             gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$NOTES"
           fi
-          gh release upload "$TAG" dist/* dist-portable/* --clobber
+          gh release upload "$TAG" dist/* --clobber
 
       - name: 在线回读 Release 资产并验证 SHA-256
         shell: bash
@@ -116,5 +116,10 @@ jobs:
           shasum -a 256 -c SHA256SUMS.txt
           test -f "MihomoCoreManager-${TAG}-arm64.pkg"
           test -f "MihomoCoreManager-${TAG}-arm64.zip"
-          test -f "MihomoCoreManager-${TAG}-arm64-portable-installer.zip"
-          echo "GitHub Release online verification: PASS"
+          test -f "MihomoCoreManager-${TAG}-arm64-native-installer.zip"
+          test -f "NATIVE-APP-MANIFEST.json"
+          test -f "RELEASE-PROVENANCE.txt"
+          grep -Fq "source_commit=${GITHUB_SHA}" RELEASE-PROVENANCE.txt
+          cd "$GITHUB_WORKSPACE"
+          bash scripts/verify-native-release-parity.sh "$VERIFY"
+          echo "GitHub Release online verification: PASS (ZIP/native installer/PKG contain one identical native app)"

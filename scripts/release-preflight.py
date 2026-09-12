@@ -79,8 +79,15 @@ if args.strict_macos:
     if platform.machine() != "arm64":
         fail("--strict-macos requires an arm64 Apple Silicon runner")
 
-for script in ["scripts/build-release.sh", "scripts/build-portable-installer.sh", "scripts/simulate-release.sh"]:
+for script in [
+    "scripts/build-release.sh",
+    "scripts/build-portable-installer.sh",
+    "scripts/package-native-installer.sh",
+    "scripts/verify-native-release-parity.sh",
+    "scripts/simulate-release.sh",
+]:
     run(["bash", "-n", script])
+run([sys.executable, "-m", "py_compile", "scripts/app-bundle-manifest.py"])
 
 # 2. Project membership: every Swift source on disk must be represented in the Xcode project.
 pbx_path = root / "MihomoCoreManager.xcodeproj/project.pbxproj"
@@ -177,9 +184,18 @@ for marker in [
 ]:
     if marker not in build_script:
         fail(f"release compiler diagnostic guard missing: {marker}")
+for marker in [
+    'CANONICAL_APP="$CANONICAL_DIR/MihomoCoreManager.app"',
+    'NATIVE-APP-MANIFEST.json',
+    'package-native-installer.sh',
+    'verify-native-release-parity.sh',
+    'packaging_contract=one-canonical-native-app',
+]:
+    if marker not in build_script:
+        fail(f"v1.2.12 canonical native packaging guard missing: {marker}")
 
-# 5. Portable runtime is a first-class Release asset. Exercise both the exact
-#    CGO-disabled release configuration and concurrency/lifecycle stress probes.
+# 5. Portable runtime remains a regression target, but is no longer a public
+#    Release installer. Exercise it so shared behavior does not regress.
 go = shutil.which("go")
 if not go:
     fail("Go is required for portable release parity")
@@ -197,7 +213,7 @@ run([go, "vet", "./..."], cwd=portable_root, env=go_env)
 
 # 6. Strict runner checks used by GitHub macos-15 CI/Release.
 if args.strict_macos:
-    for tool in ["xcodebuild", "xcrun", "lipo", "codesign", "ditto", "pkgbuild", "productbuild", "shasum"]:
+    for tool in ["xcodebuild", "xcrun", "lipo", "codesign", "ditto", "pkgbuild", "productbuild", "pkgutil", "shasum"]:
         if not shutil.which(tool):
             fail(f"required macOS release tool is missing: {tool}")
 

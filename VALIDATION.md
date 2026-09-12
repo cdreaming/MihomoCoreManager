@@ -1,6 +1,6 @@
 # Validation
 
-v1.2.11 发布前执行：
+v1.2.12 发布前执行：
 
 ```bash
 python3 scripts/validate-source.py
@@ -14,31 +14,22 @@ Apple Silicon macOS / GitHub `macos-15` 的 `simulate-release.sh` 还会自动�
 ```bash
 python3 scripts/release-preflight.py --strict-macos
 bash scripts/build-release.sh --unsigned
+bash scripts/verify-native-release-parity.sh dist
 (cd build/release-simulation-verify && shasum -a 256 -c SHA256SUMS.txt)
 ```
 
 重点门禁：
 
-- App/Xcode/portable 版本一致为 v1.2.11 / build 1211。
-- Xcode Release 固定 `arm64`、macOS 14.0、Swift 5、`SWIFT_ENABLE_BATCH_MODE=NO`。
-- 14 个 Swift 文件必须进入 Xcode project / Sources phase，并逐文件 Swift 5 parse；`Models.swift` 在 macOS 上使用当前 Xcode macOS SDK + `arm64-apple-macos14.0` 做 semantic typecheck。
-- v1.2.4 的 `Bool?` Optional switch、`ProxySortPicker`、大型 SwiftUI result-builder 拆分、`Hashable`、具体 history 中间类型、macOS 14 `onChange` 写法不得回退。
-- Xcode 完整输出保存到 `build/xcodebuild-release.log`；CI/Release 失败时上传日志。
-- `SOURCE-SHA256SUMS.txt` 在普通 CI 严格检查；正式 Release 基于精确 checkout 自愈后立即复核，strict preflight 再次自检。
-- portable 自有异步刷新必须由 `backgroundWG + goBackground()` 管理；TempDir 测试在清理前等待后台任务完成。
-- portable 目标竞态测试重复、全套 shuffle、race、vet、Darwin/arm64 runtime/test binary 交叉编译、portable ZIP CRC/版本/Mach-O 全部进入发布模拟。
-- v1.2.11 必须保留 v1.2.8 窗口生命周期门禁： `releasedWhenClosed=false`、`ensureWindowUsable()`、恢复模式 drag strip 与主状态栏单次自动重启。
-- CI 和 Release 使用同一个 `scripts/simulate-release.sh`，不能恢复为两套手写步骤。
-- 原生与 portable 保留 v1.2.8 已验证功能：代理即时后缀刷新、状态缓存平滑、Cloudflare 530/1033 快照回退、完整左右布局与安全 HTTP/TLS 策略。
+- App/Xcode/portable regression runtime 版本一致为 v1.2.12 / build 1212。
+- 主窗口左上版本区顺序固定为：`本程序版本` → `Core 版本` → `Core 面板` → `MetaCubeXD`。
+- `本程序版本` 只读取 `CFBundleShortVersionString`；`Core 面板` 只读取远端 `versions.management_panel`。
+- Xcode Release 固定 arm64、macOS 14.0、Swift 5、`SWIFT_ENABLE_BATCH_MODE=NO`；所有 Swift 文件进入 Xcode Sources phase。
+- Xcode 只编译一次，签名完成后冻结 `build/Canonical/MihomoCoreManager.app`；正式 ZIP、native installer ZIP、PKG 只从该 App 打包。
+- `NATIVE-APP-MANIFEST.json` 对 App bundle 全树做内容级 SHA-256；`verify-native-release-parity.sh` 必须证明三个正式容器解包后的 App manifest 完全一致。
+- GitHub Release 只上传 `dist/*`，禁止发布 `dist-portable/*` 或 `arm64-portable-installer.zip`。
+- Release 在线回读后必须验证 `SHA256SUMS.txt`、`RELEASE-PROVENANCE.txt` 的 source commit，并再次执行 native parity verifier。
+- portable runtime 继续作为 regression target 执行目标竞态测试、shuffle、race、vet 与 Darwin/arm64 交叉编译，但不作为正式 UI 验收包。
+- 保留 v1.2.11 状态栏参考背景 `#1A1A1D`、隐藏系统滚动条、`组名 · 当前线路`、`/proxies + /group` 动态 now 刷新。
+- 保留 v1.2.8 窗口生命周期门禁：`releasedWhenClosed=false`、`ensureWindowUsable()`、恢复模式 drag strip 与主状态栏单次自动重启。
 
 详细规则见 `docs/RELEASE-GUARDRAILS.md`。
-
-- GitHub/Xcode 原生状态栏窗口默认按内容自然高度全部展开；不得恢复固定 720pt ScrollView。仅当内容超过当前屏幕 `visibleFrame` 可用高度时启用纵向滚动。
-
-- GitHub/Xcode 原生状态栏标签必须由一个 `MenuBarStatusImageRenderer` 图像承载图标/状态/网速，禁止恢复为会被 Release 裁剪的多子视图标签。
-- 超屏状态栏菜单必须同时保持 SwiftUI `showsIndicators: false` / `.scrollIndicators(.hidden)` 与 AppKit `hasVerticalScroller=false`：可滚动但不得显示系统粗滚动条。
-- 代理组状态栏行必须使用单一 `组名 · now` 文本，并通过原生窗口 `didBecomeKey` + `refreshProxiesForMenuBar()` 在每次菜单呈现时刷新。
-- 主窗口右侧必须使用 `DashboardPalette.detailBackground` 层级，不回退到全屏近纯黑 `background`。
-
-- 主窗口左上版本区必须读取 `CFBundleShortVersionString` 并显示“程序版本”，不得再把服务端 `managementPanel v4.0.0` 当成客户端版本。
-- 状态栏菜单参考背景色固定为 `#1A1A1D`，GitHub/Xcode 原生窗口和 SwiftUI 根视图必须一致。
