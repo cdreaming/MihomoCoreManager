@@ -25,8 +25,8 @@ import (
 )
 
 const (
-	appVersion                = "1.2.7"
-	buildNumber               = "127"
+	appVersion                = "1.2.8"
+	buildNumber               = "128"
 	keychainService           = "cc.kkr.MihomoCoreManager"
 	controllerKeychainService = "cc.kkr.MihomoCoreManager.controller-secret"
 )
@@ -2153,12 +2153,20 @@ ObjC.registerSubclass({name:'MihomoStatusIconView', superclass:'NSImageView', me
 var cocoaApp=$.NSApplication.sharedApplication; cocoaApp.setActivationPolicy(1);
 var rect=$.NSMakeRect(0,0,1180,760);
 var win=$.NSWindow.alloc.initWithContentRectStyleMaskBackingDefer(rect,32783,2,false);
-win.title='Mihomo Core 管理面板'; win.titleVisibility=1; win.titlebarAppearsTransparent=true; win.movableByWindowBackground=true;
+// v1.2.8: a programmatically-created NSWindow may be released when the user
+// closes it. The menu shell keeps a JS bridge reference to the window and then
+// reuses it from "打开主窗口"; touching a released native object can terminate
+// osascript and force the whole status item into recovery mode. Keep the native
+// window alive for the lifetime of the menu shell and re-assert movement before
+// every reopen.
+win.title='Mihomo Core 管理面板'; win.titleVisibility=1; win.titlebarAppearsTransparent=true;
+win.releasedWhenClosed=false; win.movable=true; win.movableByWindowBackground=true;
 var host=$.NSView.alloc.initWithFrame(rect); host.autoresizingMask=18; win.contentView=host;
 var web=$.WKWebView.alloc.initWithFrame(host.bounds); web.autoresizingMask=18; host.addSubview(web);
 var dragStrip=$.MihomoWindowDragView.alloc.initWithFrame($.NSMakeRect(0,rect.size.height-22,rect.size.width,22)); dragStrip.autoresizingMask=10; host.addSubview(dragStrip);
 win.center;
-function showURL(u){ try{var url=$.NSURL.URLWithString($(u));var req=$.NSURLRequest.requestWithURL(url);web.loadRequest(req);win.makeKeyAndOrderFront(null);cocoaApp.activateIgnoringOtherApps(true);}catch(e){std.displayNotification(String(e),{withTitle:'Mihomo Core Manager'});} }
+function ensureWindowUsable(){try{win.releasedWhenClosed=false;win.movable=true;win.movableByWindowBackground=true;}catch(e){}}
+function showURL(u){ try{ensureWindowUsable();var url=$.NSURL.URLWithString($(u));var req=$.NSURLRequest.requestWithURL(url);web.loadRequest(req);win.makeKeyAndOrderFront(null);cocoaApp.activateIgnoringOtherApps(true);}catch(e){std.displayNotification(String(e),{withTitle:'Mihomo Core Manager'});} }
 function openHash(h){ showURL(BASE+'/#'+h); }
 
 var statusItem=null, statusHeader=null, speedHeader=null, prefIconItem=null, prefStatusItem=null, prefSpeedItem=null, iconOnlyItem=null, startItem=null, stopItem=null, serverMenu=null, serverRoot=null, proxyHeader=null, proxyEndSeparator=null, proxyMenuRoots=[], proxyMenuRootByGroup={}, proxyMenuData={}, proxyMenuGeneration=-1, proxyMenuStructureKey='', proxyPendingReconcile={}, proxySubmenuBuilt={}, proxyMenuTick=0;
@@ -2578,7 +2586,7 @@ addSep(menu);
 
 addSymbol(addItem(menu,'打开主窗口','openManager:','o'),'macwindow');
 addSymbol(addItem(menu,'刷新状态','refresh:','r'),'arrow.clockwise');
-serverRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('服务器  ·  未选择','', ''); serverMenu=$.NSMenu.alloc.initWithTitle('服务器'); serverRoot.submenu=serverMenu; addSymbol(serverRoot,'server.rack'); menu.addItem(serverRoot); rebuildServers();
+serverRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('服务器  ·  未选择','', ''); serverMenu=$.NSMenu.alloc.initWithTitle('服务器'); serverRoot.submenu=serverMenu; addSymbol(serverRoot,'server.rack'); menu.addItem(serverRoot); try{rebuildServers();}catch(e){}
 addSep(menu);
 
 proxyHeader=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('代理组','',''); proxyHeader.enabled=false; menu.addItem(proxyHeader);
@@ -2604,9 +2612,10 @@ addSep(menu);
 addSymbol(addItem(menu,'设置…','settings:',','),'gearshape');
 addSymbol(addItem(menu,'退出 Mihomo Core Manager','quitApp:','q'),'power');
 menu.delegate=delegate;
-rebuildProxyMenus();
+// Corrupt/stale local menu snapshots must never abort the entire JXA shell.
+try{rebuildProxyMenus();}catch(e){}
 statusItem.menu=menu;
-updateStatus(true);
+try{updateStatus(true);}catch(e){}
 $.NSTimer.scheduledTimerWithTimeIntervalTargetSelectorUserInfoRepeats(1.2,delegate,'tick:',null,true);
 showURL(BASE+'/'); cocoaApp.run;
 `, base, token, statusFile, appVersion)
@@ -2615,14 +2624,23 @@ showURL(BASE+'/'); cocoaApp.run;
 func fallbackMenuScript(base string) string {
 	// Minimal recovery shell. It intentionally avoids custom status-bar text
 	// rendering so a JXA/AppKit compatibility issue cannot make the App flash-quit.
+	// v1.2.8 still gives this last-resort window the same retained lifetime and
+	// native drag strip as the primary shell, so recovery never leaves an
+	// immovable main window behind.
 	return fmt.Sprintf(`ObjC.import('Cocoa'); ObjC.import('WebKit');
 var BASE=%q;
 var app=$.NSApplication.sharedApplication; app.setActivationPolicy(1);
+ObjC.registerSubclass({name:'MihomoRecoveryDragView', superclass:'NSView', methods:{
+'mouseDown:':{types:['void',['id']],implementation:function(event){try{this.window.performWindowDragWithEvent(event);}catch(e){}}}
+}});
 var rect=$.NSMakeRect(0,0,1180,760);
 var win=$.NSWindow.alloc.initWithContentRectStyleMaskBackingDefer(rect,32783,2,false);
-win.title='Mihomo Core 管理面板'; win.titleVisibility=1; win.titlebarAppearsTransparent=true; win.movableByWindowBackground=true;
-var web=$.WKWebView.alloc.initWithFrame(win.contentView.bounds); web.autoresizingMask=18; win.contentView.addSubview(web);
-function show(){var u=$.NSURL.URLWithString($(BASE+'/'));web.loadRequest($.NSURLRequest.requestWithURL(u));win.center;win.makeKeyAndOrderFront(null);app.activateIgnoringOtherApps(true);}
+win.title='Mihomo Core 管理面板'; win.titleVisibility=1; win.titlebarAppearsTransparent=true;
+win.releasedWhenClosed=false; win.movable=true; win.movableByWindowBackground=true;
+var host=$.NSView.alloc.initWithFrame(rect); host.autoresizingMask=18; win.contentView=host;
+var web=$.WKWebView.alloc.initWithFrame(host.bounds); web.autoresizingMask=18; host.addSubview(web);
+var dragStrip=$.MihomoRecoveryDragView.alloc.initWithFrame($.NSMakeRect(0,rect.size.height-22,rect.size.width,22)); dragStrip.autoresizingMask=10; host.addSubview(dragStrip);
+function show(){try{win.releasedWhenClosed=false;win.movable=true;win.movableByWindowBackground=true;}catch(e){}var u=$.NSURL.URLWithString($(BASE+'/'));web.loadRequest($.NSURLRequest.requestWithURL(u));win.center;win.makeKeyAndOrderFront(null);app.activateIgnoringOtherApps(true);}
 ObjC.registerSubclass({name:'MihomoRecoveryDelegate',methods:{
 'open:':{types:['void',['id']],implementation:function(){show();}},
 'quit:':{types:['void',['id']],implementation:function(){$.NSApplication.sharedApplication.terminate(null);}}
@@ -2683,20 +2701,40 @@ func launchMenu(base string, s *appState) error {
 		return err
 	}
 	go func() {
-		err := cmd.Wait()
-		if appDone(s) {
+		current := cmd
+		for attempt := 0; ; attempt++ {
+			waitErr := current.Wait()
+			if appDone(s) {
+				return
+			}
+
+			// v1.2.8: a single transient JXA/AppKit failure should not immediately
+			// downgrade the user to the minimal recovery menu. Restart the complete
+			// status shell once; only a second failure falls back to recovery mode.
+			if attempt == 0 {
+				log.Printf("menu shell exited (%v); retrying primary shell once", waitErr)
+				time.Sleep(250 * time.Millisecond)
+				restarted, restartErr := startJXA(script, logPath)
+				if restartErr == nil {
+					current = restarted
+					continue
+				}
+				log.Printf("menu shell restart failed: %v", restartErr)
+			} else {
+				log.Printf("menu shell exited again (%v); starting recovery shell", waitErr)
+			}
+
+			recovery, startErr := startJXA(fallback, logPath)
+			if startErr != nil {
+				log.Printf("menu recovery: %v", startErr)
+				s.doneOnce.Do(func() { close(s.done) })
+				return
+			}
+			_ = recovery.Wait()
+			if !appDone(s) {
+				s.doneOnce.Do(func() { close(s.done) })
+			}
 			return
-		}
-		log.Printf("menu shell exited (%v); starting recovery shell", err)
-		recovery, startErr := startJXA(fallback, logPath)
-		if startErr != nil {
-			log.Printf("menu recovery: %v", startErr)
-			s.doneOnce.Do(func() { close(s.done) })
-			return
-		}
-		_ = recovery.Wait()
-		if !appDone(s) {
-			s.doneOnce.Do(func() { close(s.done) })
 		}
 	}()
 	return nil

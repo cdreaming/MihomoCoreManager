@@ -1,6 +1,17 @@
 # Mihomo Core Manager for macOS
 
-基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.2.7 (build 127)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.2.8 (build 128)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+
+## v1.2.8
+
+v1.2.8 以 v1.2.7 为稳定基线，集中修复 portable 安装版在“关闭主窗口 → 从状态栏重新打开”路径上的窗口生命周期与状态栏稳定性问题：
+
+- App / Xcode / portable runtime 统一为 **v1.2.8 / build 128**。
+- portable 主窗口显式关闭 `releasedWhenClosed`，主窗口关闭后保留原生 `NSWindow` 与 WebKit/拖拽视图，状态栏再次打开时不再访问已释放窗口对象。
+- 每次从状态栏打开主窗口前重新确认 `movable` / `movableByWindowBackground`，保留顶部 22px 原生拖拽区，修复重新打开后窗口无法移动。
+- 主状态栏 JXA shell 若发生一次瞬时退出，会先自动重启完整状态栏一次；连续失败才进入最小恢复模式，减少无必要的“状态栏渲染已降级”。
+- 初次构建服务器/代理菜单与状态刷新增加 fail-soft 保护，损坏或暂时不完整的本地快照不会带退出整个状态栏进程。
+- 恢复模式窗口也改为保留窗口对象并加入原生拖拽区；即使真正进入恢复模式，主窗口仍可正常移动和再次打开。
 
 ## v1.2.7
 

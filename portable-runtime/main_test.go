@@ -884,7 +884,7 @@ func TestInvalidateStatusCacheRemovesSnapshot(t *testing.T) {
 	}
 }
 
-func TestMenuScriptUsesCachedSnapshotNativeDragAndV120StatusSpeed(t *testing.T) {
+func TestMenuScriptUsesCachedSnapshotNativeDragAndV128WindowLifecycle(t *testing.T) {
 	script := menuScript("http://127.0.0.1:12345", "token", "/tmp/status.json")
 	for _, marker := range []string{
 		"function statusFromFile()",
@@ -892,6 +892,9 @@ func TestMenuScriptUsesCachedSnapshotNativeDragAndV120StatusSpeed(t *testing.T) 
 		"missingSnapshotTicks>=4",
 		"MihomoWindowDragView",
 		"performWindowDragWithEvent",
+		"win.releasedWhenClosed=false",
+		"win.movable=true",
+		"function ensureWindowUsable()",
 		"function fmtMenuRate(raw)",
 		"function statusRateParts(raw)",
 		"MihomoStatusOverlayView",
@@ -943,7 +946,7 @@ func TestMenuScriptUsesCachedSnapshotNativeDragAndV120StatusSpeed(t *testing.T) 
 
 func TestFallbackMenuScriptIsMinimalAndUsable(t *testing.T) {
 	script := fallbackMenuScript("http://127.0.0.1:12345")
-	for _, marker := range []string{"WKWebView", "恢复模式：状态栏渲染已降级", "打开主窗口…", "show(); app.run"} {
+	for _, marker := range []string{"WKWebView", "恢复模式：状态栏渲染已降级", "打开主窗口…", "MihomoRecoveryDragView", "performWindowDragWithEvent", "win.releasedWhenClosed=false", "win.movable=true", "show(); app.run"} {
 		if !strings.Contains(script, marker) {
 			t.Fatalf("fallback menu script missing marker %q", marker)
 		}
@@ -979,8 +982,8 @@ func TestPortableInteractionRegressionV118(t *testing.T) {
 	}
 }
 
-func TestPortableVersionV127(t *testing.T) {
-	if appVersion != "1.2.7" || buildNumber != "127" {
+func TestPortableVersionV128(t *testing.T) {
+	if appVersion != "1.2.8" || buildNumber != "128" {
 		t.Fatalf("unexpected portable version/build: %s/%s", appVersion, buildNumber)
 	}
 }

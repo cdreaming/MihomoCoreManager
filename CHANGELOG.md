@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.2.8
+
+- 以 v1.2.7 为稳定基线，App / Xcode / portable runtime 统一升级为 v1.2.8 / build 128。
+- 修复 portable 主窗口关闭后被 AppKit 释放、状态栏再次打开时 JXA 访问失效 `NSWindow` 并异常退出的问题：窗口生命周期改为 `releasedWhenClosed=false`。
+- 状态栏重新打开主窗口前重新确认窗口可移动，并保留 22px 原生 `performWindowDragWithEvent:` 拖拽区，修复重新打开后无法拖动。
+- 主状态栏 shell 单次异常退出时先自动重启完整模式一次，第二次失败才进入恢复模式，避免瞬时 AppKit/JXA 故障直接降级。
+- portable 状态栏初始服务器/代理菜单与状态刷新改为 fail-soft，异常快照不会中断状态栏进程。
+- 恢复模式同步加入窗口保活与原生拖拽区，确保极端降级路径下窗口仍可移动。
+
 ## v1.2.7
 
 - 以 `source-4` 为功能基线，并恢复已经成功发布的 v1.2.5 fixed5 发布工程配置。

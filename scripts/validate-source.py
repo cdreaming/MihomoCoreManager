@@ -548,6 +548,10 @@ for marker in [
 for marker in [
     "MihomoWindowDragView",
     "performWindowDragWithEvent",
+    "win.releasedWhenClosed=false",
+    "function ensureWindowUsable()",
+    "MihomoRecoveryDragView",
+    "retrying primary shell once",
     "function fmtMenuRate(raw)",
     "function statusRateParts(raw)",
     "function renderStatusSpeedOverlay()",
