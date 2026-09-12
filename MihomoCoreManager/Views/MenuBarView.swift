@@ -4,6 +4,8 @@ import SwiftUI
 struct MenuBarView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.openWindow) private var openWindow
+    @State private var maximumMenuHeight = MenuBarScreenMetrics.fallbackMaximumHeight
+    @State private var measuredMenuHeight: CGFloat = 0
 
     private let shortcutColumns = [
         GridItem(.flexible(), spacing: 8),
@@ -12,28 +14,65 @@ struct MenuBarView: View {
     ]
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 12) {
-                MenuBarLiveSummary()
-                serverCard
-                menuSectionDivider
-                proxyMenus
-                menuSectionDivider
-                MenuBarCoreActions()
-                shortcutGrid
-                updateActions
-                displayOptions
-                footer
+        Group {
+            if shouldScrollMenu {
+                // Only create a scroll container when the complete menu really is
+                // taller than the usable area of the display.
+                ScrollView(.vertical) {
+                    measuredMenuContent
+                }
+                .frame(height: maximumMenuHeight)
+            } else {
+                // Normal case: render the menu at its natural intrinsic height so
+                // every item is visible at once and no fixed scroll box appears.
+                measuredMenuContent
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(14)
         }
         .frame(width: 360)
-        .frame(maxHeight: 720)
+        .frame(maxHeight: maximumMenuHeight)
         .background(DashboardPalette.background)
+        .background(MenuBarScreenHeightReader(maximumHeight: $maximumMenuHeight))
+        .onPreferenceChange(MenuBarContentHeightPreferenceKey.self) { height in
+            guard height > 0, abs(measuredMenuHeight - height) > 0.5 else { return }
+            measuredMenuHeight = height
+        }
         .preferredColorScheme(.dark)
         .task(id: model.selectedProfileID) {
             await model.ensureProxiesLoaded()
         }
+    }
+
+    private var shouldScrollMenu: Bool {
+        measuredMenuHeight > maximumMenuHeight + 0.5
+    }
+
+    private var measuredMenuContent: some View {
+        menuContent
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: MenuBarContentHeightPreferenceKey.self,
+                        value: proxy.size.height
+                    )
+                }
+            }
+    }
+
+    private var menuContent: some View {
+        VStack(spacing: 12) {
+            MenuBarLiveSummary()
+            serverCard
+            menuSectionDivider
+            proxyMenus
+            menuSectionDivider
+            MenuBarCoreActions()
+            shortcutGrid
+            updateActions
+            displayOptions
+            footer
+        }
+        .padding(14)
     }
 
     private var menuSectionDivider: some View {
@@ -279,6 +318,95 @@ struct MenuBarView: View {
         model.selectedSection = section
         openWindow(id: "main")
         NSApp.activate(ignoringOtherApps: true)
+    }
+}
+
+private struct MenuBarContentHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+private enum MenuBarScreenMetrics {
+    static var fallbackMaximumHeight: CGFloat {
+        maximumHeight(for: NSScreen.main ?? NSScreen.screens.first)
+    }
+
+    static func maximumHeight(for screen: NSScreen?) -> CGFloat {
+        // visibleFrame already excludes the menu bar and Dock. Keep a small
+        // bottom margin so MenuBarExtra never lands flush against the screen.
+        max(320, floor((screen?.visibleFrame.height ?? 760) - 16))
+    }
+}
+
+private struct MenuBarScreenHeightReader: NSViewRepresentable {
+    @Binding var maximumHeight: CGFloat
+
+    func makeNSView(context: Context) -> MenuBarScreenTrackingView {
+        let view = MenuBarScreenTrackingView()
+        bind(view)
+        return view
+    }
+
+    func updateNSView(_ nsView: MenuBarScreenTrackingView, context: Context) {
+        bind(nsView)
+        nsView.refreshScreenHeight()
+    }
+
+    private func bind(_ view: MenuBarScreenTrackingView) {
+        let binding = $maximumHeight
+        view.onMaximumHeightChange = { height in
+            guard abs(binding.wrappedValue - height) > 0.5 else { return }
+            binding.wrappedValue = height
+        }
+    }
+}
+
+private final class MenuBarScreenTrackingView: NSView {
+    var onMaximumHeightChange: ((CGFloat) -> Void)?
+    private var notificationTokens: [NSObjectProtocol] = []
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        installObservers()
+        refreshScreenHeight()
+    }
+
+    deinit {
+        notificationTokens.forEach { NotificationCenter.default.removeObserver($0) }
+    }
+
+    func refreshScreenHeight() {
+        let height = MenuBarScreenMetrics.maximumHeight(for: window?.screen ?? NSScreen.main ?? NSScreen.screens.first)
+        onMaximumHeightChange?(height)
+    }
+
+    private func installObservers() {
+        notificationTokens.forEach { NotificationCenter.default.removeObserver($0) }
+        notificationTokens.removeAll()
+
+        guard let window else { return }
+        let center = NotificationCenter.default
+        notificationTokens.append(
+            center.addObserver(
+                forName: NSWindow.didChangeScreenNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                self?.refreshScreenHeight()
+            }
+        )
+        notificationTokens.append(
+            center.addObserver(
+                forName: NSApplication.didChangeScreenParametersNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.refreshScreenHeight()
+            }
+        )
     }
 }
 

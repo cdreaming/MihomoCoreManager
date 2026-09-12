@@ -76,6 +76,11 @@ for marker in ["menuProxyTitle(proxyName, group: group)", "preferredTestURL: gro
         errors.append(f"native v1.2.4 tray latency hotfix gate missing: {marker}")
 if 'Image(systemName: "point.3.connected.trianglepath.dotted")' in menu:
     errors.append("native v1.2.4 hotfix must not add a synthetic symbol before proxy-group names")
+for marker in ["shouldScrollMenu", "MenuBarContentHeightPreferenceKey", "MenuBarScreenHeightReader", "visibleFrame.height", "ScrollView(.vertical)"]:
+    if marker not in menu:
+        errors.append(f"native v1.2.9 adaptive status-menu height gate missing: {marker}")
+if ".frame(maxHeight: 720)" in menu:
+    errors.append("native v1.2.9 status menu must not use the legacy fixed 720pt scroll box")
 
 settings = (root / "MihomoCoreManager/Views/SettingsView.swift").read_text(encoding="utf-8")
 for marker in ["Management URL", "Core Secret", "Controller Secret", "Direct Core Controller URL", "config.yaml path", "MetaCubeXD URL", "允许不安全 HTTP"]:

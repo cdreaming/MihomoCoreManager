@@ -25,8 +25,8 @@ import (
 )
 
 const (
-	appVersion                = "1.2.8"
-	buildNumber               = "128"
+	appVersion                = "1.2.9"
+	buildNumber               = "129"
 	keychainService           = "cc.kkr.MihomoCoreManager"
 	controllerKeychainService = "cc.kkr.MihomoCoreManager.controller-secret"
 )
