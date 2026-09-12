@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.2.11
+
+- 状态栏下拉菜单根背景改为参考图中性深灰 #1A1A1D，并增加独立 menu surface palette，避免 GitHub/Xcode `.pkg` 继续使用偏蓝近黑背景。
+- 超屏状态栏菜单由 AppKit `NSScrollView` 层显式 `hasVerticalScroller=false`，彻底隐藏右侧系统拖动条，同时保留滚轮、触控板与键盘滚动能力。
+- 代理组根标题固定为一个 `组名 · 当前线路` Text，避免 Release `Menu` 丢弃自定义 label 的次要子视图；菜单窗口每次呈现时重新刷新 Controller `now`，并等待冲突中的首次代理加载。
+- 主窗口左上“Core 面板：v4.0.0”替换为“程序版本：v1.2.11”，版本从 App bundle 的 `CFBundleShortVersionString` 读取。
+- App / Xcode / portable runtime 统一为 v1.2.11 / build 1211。
+
 ## v1.2.10
 
 - 修复 GitHub/Xcode `.pkg` 状态栏常驻区只显示图标的问题：图标、Running/Stopped 与双行实时网速统一渲染成一个可变宽 AppKit template image，避免 `MenuBarExtra` Release 标签裁剪。

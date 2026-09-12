@@ -250,9 +250,21 @@ struct MihomoAPIClient {
             profile: profile,
             secret: secret
         )
+        // Some Controller builds expose a complete group `now` value through
+        // /group even when the bulk /proxies payload omits it. Fetch that one
+        // small snapshot in parallel and merge it below. This keeps the native
+        // GitHub/Xcode MenuBarExtra able to show the selected route reliably.
+        async let groupDataTask = controllerData(
+            path: "/group",
+            method: "GET",
+            body: nil,
+            profile: profile,
+            secret: secret
+        )
 
         let data = try await proxyData
         let providerData = try? await providerDataTask
+        let groupData = try? await groupDataTask
         let response: ControllerProxiesResponse
         do {
             response = try decoder.decode(ControllerProxiesResponse.self, from: data)
@@ -298,6 +310,41 @@ struct MihomoAPIClient {
                         expectedStatus: current.expectedStatus
                     )
                 }
+            }
+        }
+
+        if let groupData,
+           let groups = try? decoder.decode(ControllerGroupsResponse.self, from: groupData) {
+            for group in groups.proxies {
+                guard let name = group.name?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !name.isEmpty else { continue }
+
+                guard let current = merged[name] else {
+                    merged[name] = group
+                    continue
+                }
+
+                // Prefer /group for dynamic group metadata (`now` in particular),
+                // but keep richer /proxies/provider history and capability data.
+                // This is intentionally a field-by-field merge rather than a
+                // replacement so latency/provider information is never lost.
+                merged[name] = ControllerProxyWire(
+                    name: current.name ?? group.name,
+                    type: current.type ?? group.type,
+                    now: group.now?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                        ? group.now
+                        : current.now,
+                    all: (current.all?.isEmpty == false ? current.all : group.all),
+                    history: current.history ?? group.history,
+                    extra: current.extra ?? group.extra,
+                    alive: current.alive ?? group.alive,
+                    hidden: current.hidden ?? group.hidden,
+                    udp: current.udp ?? group.udp,
+                    xudp: current.xudp ?? group.xudp,
+                    tfo: current.tfo ?? group.tfo,
+                    testUrl: current.testUrl ?? group.testUrl,
+                    expectedStatus: current.expectedStatus ?? group.expectedStatus
+                )
             }
         }
 

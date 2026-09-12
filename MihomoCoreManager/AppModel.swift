@@ -383,13 +383,26 @@ final class AppModel: ObservableObject {
     }
 
     func refreshProxiesForMenuBar() async {
-        guard let id = selectedProfileID, !proxyBackgroundLoads.contains(id) else { return }
+        guard let id = selectedProfileID else { return }
+
+        // Opening the MenuBarExtra can overlap the first proxy-page/background
+        // load. Older builds simply returned in that case, which left the native
+        // GitHub/.pkg menu with group names but no `now` suffix. Wait briefly for
+        // that single-flight load to finish, then take an explicit fresh snapshot.
+        var waitCount = 0
+        while proxyBackgroundLoads.contains(id), waitCount < 40 {
+            try? await Task.sleep(nanoseconds: 25_000_000)
+            guard !Task.isCancelled, selectedProfileID == id else { return }
+            waitCount += 1
+        }
+        guard !proxyBackgroundLoads.contains(id), selectedProfileID == id else { return }
+
         proxyBackgroundLoads.insert(id)
         defer { proxyBackgroundLoads.remove(id) }
 
         // Unlike ensureProxiesLoaded(), this intentionally refreshes an existing
-        // snapshot whenever the status menu is presented. The Controller's `now`
-        // value can change outside this App and must stay visible beside each group.
+        // snapshot whenever the native status window is presented. The Controller's
+        // `now` value can change outside this App and must stay visible in the title.
         await fetchProxiesInBackground(for: id)
     }
 

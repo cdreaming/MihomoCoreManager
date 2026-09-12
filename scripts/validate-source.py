@@ -45,6 +45,9 @@ for marker in ["/configs", "/proxies", "proxyMode", "setProxyMode", "selectProxy
 for marker in ["/group", "proxyGroupOrder", "testProxyGroup", "makeControllerNamedURL", "testUrl", "expectedStatus"]:
     if marker not in client:
         errors.append(f"native v1.2.4 proxy delay/order API gate missing: {marker}")
+for marker in ["groupDataTask", "decode(ControllerGroupsResponse.self", "Prefer /group for dynamic group metadata"]:
+    if marker not in client:
+        errors.append(f"native v1.2.11 selected-route fallback gate missing: {marker}")
 for marker in ["extra: [String: MihomoProxyDelayExtra]?", "JSONSerialization.jsonObject", "number.intValue"]:
     if marker not in client:
         errors.append(f"native v1.2.4 latency hotfix gate missing: {marker}")
@@ -84,13 +87,20 @@ if ".frame(maxHeight: 720)" in menu:
 for marker in [
     "ScrollView(.vertical, showsIndicators: false)",
     ".scrollIndicators(.hidden)",
+    "MenuBarScrollIndicatorSuppressor",
+    "scrollView.hasVerticalScroller = false",
+    "scrollView.verticalScroller?.isHidden = true",
     "DashboardPalette.menuBackground",
-    "Text(currentSelection)",
-    "DashboardPalette.menuSelection",
+    "DashboardPalette.menuSurface",
+    "DashboardPalette.menuSurfaceRaised",
+    "proxyGroupMenuTitle(group: group, currentSelection: currentSelection)",
+    "MenuBarWindowConfigurator",
+    "NSWindow.didBecomeKeyNotification",
+    "NSWindow.didExposeNotification",
     "refreshProxiesForMenuBar()",
 ]:
     if marker not in menu:
-        errors.append(f"native v1.2.10 status-menu visual/selection gate missing: {marker}")
+        errors.append(f"native v1.2.11 status-menu visual/selection gate missing: {marker}")
 
 settings = (root / "MihomoCoreManager/Views/SettingsView.swift").read_text(encoding="utf-8")
 for marker in ["Management URL", "Core Secret", "Controller Secret", "Direct Core Controller URL", "config.yaml path", "MetaCubeXD URL", "允许不安全 HTTP"]:
@@ -306,7 +316,28 @@ if "miniBrandMark" in content or 'Text("M")\n                                   
     errors.append("native v1.1.1 backend selector must not repeat the M brand tile")
 for marker in ["detailBackground", "detailBackgroundTop", "menuBackground", "LinearGradient(", "DashboardPalette.detailBackground"]:
     if marker not in content:
-        errors.append(f"native v1.2.10 dashboard palette gate missing: {marker}")
+        errors.append(f"native v1.2.11 dashboard palette gate missing: {marker}")
+for marker in [
+    "26.0 / 255.0, green: 26.0 / 255.0, blue: 29.0 / 255.0",
+    "28.0 / 255.0, green: 28.0 / 255.0, blue: 33.0 / 255.0",
+    'sidebarVersion("程序版本", applicationVersion)',
+    'CFBundleShortVersionString',
+]:
+    if marker not in content:
+        errors.append(f"native v1.2.11 reference-color/app-version gate missing: {marker}")
+if 'sidebarVersion("Core 面板", live.status?.versions?.managementPanel' in content:
+    errors.append("native sidebar must show this App version instead of the management-panel v4.0.0 value")
+portable_ui = (root / "portable-runtime" / "ui" / "index.html").read_text(encoding="utf-8")
+for marker in [
+    '程序版本：<span data-field="brandPanelVersion">',
+    "setField('brandPanelVersion',appVersion",
+]:
+    if marker not in portable_ui:
+        errors.append(f"portable sidebar app-version gate missing: {marker}")
+if 'Core 面板：<span data-field="brandPanelVersion">' in portable_ui:
+    errors.append("portable sidebar must show this App version instead of the management-panel version")
+if "setField('brandPanelVersion',vv.management_panel" in portable_ui:
+    errors.append("portable refresh must not overwrite the App version with the management-panel version")
 for marker in ["LiveStatusStore", "secretCache", "ensureSubscriptionsLoaded", "ensureLogsLoaded"]:
     if marker not in app_model:
         errors.append(f"native performance gate missing: {marker}")
@@ -338,12 +369,23 @@ for marker in ["isTransientControllerError", "applyLocalProxySelection", "已保
 for marker in ["currentProxySelection", "proxiesByApplyingSelection", "A just-confirmed PUT remains authoritative for this group"]:
     if marker not in app_model:
         errors.append(f"native v1.2.5 immediate proxy selection refresh gate missing: {marker}")
-for marker in ["refreshProxiesForMenuBar", "Unlike ensureProxiesLoaded()", "await fetchProxiesInBackground(for: id)"]:
+for marker in [
+    "refreshProxiesForMenuBar",
+    "while proxyBackgroundLoads.contains(id)",
+    "waitCount < 40",
+    "Unlike ensureProxiesLoaded()",
+    "await fetchProxiesInBackground(for: id)",
+]:
     if marker not in app_model:
-        errors.append(f"native v1.2.10 tray proxy refresh gate missing: {marker}")
-for marker in ['let currentSelection = model.currentProxySelection', r'.id("\(group.name)|\(currentSelection ?? group.type)")']:
+        errors.append(f"native v1.2.11 tray proxy refresh gate missing: {marker}")
+for marker in [
+    'let currentSelection = model.currentProxySelection',
+    'private func proxyGroupMenuTitle(group: MihomoProxy, currentSelection: String?) -> String',
+    r'return current.isEmpty ? group.name : "\(group.name)  ·  \(current)"',
+    r'.id("\(group.name)|\(currentSelection ?? group.type)")',
+]:
     if marker not in menu:
-        errors.append(f"native v1.2.5 status-menu proxy suffix refresh gate missing: {marker}")
+        errors.append(f"native v1.2.11 status-menu proxy suffix refresh gate missing: {marker}")
 if "guard model.selectedSection == .subscriptions" not in subscriptions_view:
     errors.append("subscriptions must load only when its tab becomes active")
 if "guard model.selectedSection == .logs" not in logs_view:

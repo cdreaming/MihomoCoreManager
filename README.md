@@ -1,6 +1,16 @@
 # Mihomo Core Manager for macOS
 
-基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.2.10 (build 1210)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.2.11 (build 1211)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+
+## v1.2.11
+
+v1.2.11 针对 GitHub/Xcode 原生 `.pkg` 中仍可复现的状态栏差异继续修正：
+
+- 状态栏下拉窗口背景按提供的 macOS 网络面板参考图改为中性深灰 **#1A1A1D**，卡片使用 #1C1C21 / #201F23，避免偏蓝和过深。
+- 超屏菜单保留滚轮/触控板纵向滚动，但通过 AppKit 直接关闭 `NSScrollView` 的 vertical scroller；不再依赖 SwiftUI `scrollIndicators(.hidden)`，GitHub Release 版也不会显示右侧粗拖动条。
+- 代理组标题改为一个不可拆分的 `组名 · 当前线路` 文本，并在原生 MenuBarExtra 窗口每次成为 key 时刷新 Controller `now`；同时处理首次加载与菜单打开并发，避免只显示组名。
+- 主窗口左上版本区将原“Core 面板 v4.0.0”改为“程序版本”，直接读取 App 自身 `CFBundleShortVersionString`；服务端 v4.0.0 只作为 API 兼容基线，不再冒充客户端版本。
+- 保留 v1.2.10 的单图状态栏实时网速、v1.2.9 自适应菜单高度与 v1.2.8 窗口生命周期修复。
 
 ## v1.2.10
 

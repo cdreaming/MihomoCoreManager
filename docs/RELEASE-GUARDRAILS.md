@@ -1,6 +1,6 @@
 # macOS Release Guardrails
 
-These rules were proven by the successful v1.2.5 release baseline and are mandatory for v1.2.10. They were promoted from the
+These rules were proven by the successful v1.2.5 release baseline and are mandatory for v1.2.11. They were promoted from the
 v1.2.4 release incident so later UI work cannot silently reintroduce the same
 Xcode failures.
 
@@ -115,7 +115,7 @@ Rules:
 This policy preserves the manifest as useful release metadata without allowing a
 generated checksum file to prevent the real compiler and runtime gates from
 running. Historical files such as `BUILD-FIX-v1.2.4.md`, `QA-v1.2.6.md`, and
-`RELEASE-HARDENING-v1.2.6.md` are included in the final v1.2.10 source manifest.
+`RELEASE-HARDENING-v1.2.6.md` are included in the final v1.2.11 source manifest.
 
 ### Standalone Swift probes must be SDK-bound on macOS
 
@@ -123,7 +123,7 @@ Syntax-only `swiftc -frontend -parse` does not need the macOS SDK. Semantic
 `swiftc -typecheck` does. On macOS/Xcode runners, semantic probes must resolve
 the SDK with `xcrun --sdk macosx --show-sdk-path`, invoke
 `xcrun --sdk macosx swiftc`, pass `-sdk`, and pass the project-compatible target
-(`arm64-apple-macos14.0` for v1.2.10). The authoritative full compile remains
+(`arm64-apple-macos14.0` for v1.2.11). The authoritative full compile remains
 `xcodebuild`.
 
 ### Background work must be owned and quiesced in tests

@@ -20,6 +20,11 @@ struct MenuBarView: View {
                 // taller than the usable area of the display.
                 ScrollView(.vertical, showsIndicators: false) {
                     measuredMenuContent
+                        // SwiftUI's indicator flag is not sufficient for the native
+                        // MenuBarExtra NSScrollView in some Xcode Release builds.
+                        // Suppress the AppKit scroller itself while preserving wheel
+                        // and trackpad scrolling.
+                        .background(MenuBarScrollIndicatorSuppressor())
                 }
                 .scrollIndicators(.hidden)
                 .frame(height: maximumMenuHeight)
@@ -34,6 +39,14 @@ struct MenuBarView: View {
         .frame(maxHeight: maximumMenuHeight)
         .background(DashboardPalette.menuBackground)
         .background(MenuBarScreenHeightReader(maximumHeight: $maximumMenuHeight))
+        .background(
+            MenuBarWindowConfigurator {
+                // MenuBarExtra may keep the same SwiftUI tree alive between
+                // presentations. Refresh the Controller snapshot every time the
+                // native status window becomes key, not merely on first creation.
+                Task { await model.refreshProxiesForMenuBar() }
+            }
+        )
         .onPreferenceChange(MenuBarContentHeightPreferenceKey.self) { height in
             guard height > 0, abs(measuredMenuHeight - height) > 0.5 else { return }
             measuredMenuHeight = height
@@ -81,7 +94,7 @@ struct MenuBarView: View {
 
     private var menuSectionDivider: some View {
         Rectangle()
-            .fill(DashboardPalette.separator)
+            .fill(DashboardPalette.menuSeparator)
             .frame(height: 1)
             .padding(.vertical, 1)
     }
@@ -120,11 +133,11 @@ struct MenuBarView: View {
             }
             .padding(.horizontal, 12)
             .frame(height: 49)
-            .background(DashboardPalette.surface.opacity(0.92))
+            .background(DashboardPalette.menuSurface)
             .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .stroke(DashboardPalette.separator, lineWidth: 1)
+                    .stroke(DashboardPalette.menuSeparator, lineWidth: 1)
             }
             .contentShape(Rectangle())
         }
@@ -193,54 +206,35 @@ struct MenuBarView: View {
                         }
                     } label: {
                         HStack(spacing: 8) {
-                            Text(group.name)
+                            // Keep group + selected route in ONE Text value. In a
+                            // release MenuBarExtra, SwiftUI may collapse a custom
+                            // Menu label to its primary text representation; using
+                            // one title guarantees the selected `now` survives.
+                            Text(proxyGroupMenuTitle(group: group, currentSelection: currentSelection))
                                 .font(.system(size: 11.5, weight: .semibold))
                                 .lineLimit(1)
-                                .truncationMode(.tail)
-                                .frame(maxWidth: 132, alignment: .leading)
-
-                            Spacer(minLength: 4)
-
-                            if let currentSelection {
-                                // Keep the chosen route on the SAME row. SwiftUI
-                                // Menu labels can compress a two-line VStack in
-                                // GitHub/Xcode release builds, hiding the old
-                                // second-line `now` value entirely.
-                                Text(currentSelection)
-                                    .font(.system(size: 10.2, weight: .semibold))
-                                    .foregroundStyle(DashboardPalette.secondary)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                    .frame(maxWidth: 126, alignment: .trailing)
-                                    .padding(.horizontal, 7)
-                                    .frame(height: 23)
-                                    .background(DashboardPalette.menuSelection)
-                                    .clipShape(Capsule())
-                                    .overlay {
-                                        Capsule()
-                                            .stroke(DashboardPalette.separator, lineWidth: 1)
-                                    }
-                            } else {
-                                Text(group.type)
-                                    .font(.system(size: 9.8, weight: .medium))
-                                    .foregroundStyle(DashboardPalette.tertiary)
-                                    .lineLimit(1)
-                            }
+                                .truncationMode(.middle)
+                                .minimumScaleFactor(0.82)
+                                .frame(maxWidth: .infinity, alignment: .leading)
 
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 9, weight: .bold))
                                 .foregroundStyle(DashboardPalette.tertiary)
                         }
                     }
-                    // NSMenu/MenuBarExtra can retain a Menu label subtree by its
-                    // stable group id. Include the selected target in identity so
-                    // the `组名 · 线路/代理组` suffix is rebuilt immediately.
+                    // Force the native Menu control to rebuild when `now` changes;
+                    // this avoids a cached group-only title after a route switch.
                     .id("\(group.name)|\(currentSelection ?? group.type)")
                     .menuStyle(.borderlessButton)
                     .buttonStyle(MenuPanelPressStyle(fillsWidth: true))
                 }
             }
         }
+    }
+
+    private func proxyGroupMenuTitle(group: MihomoProxy, currentSelection: String?) -> String {
+        let current = currentSelection?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return current.isEmpty ? group.name : "\(group.name)  ·  \(current)"
     }
 
     private func menuProxyTitle(_ proxyName: String, group: MihomoProxy) -> String {
@@ -433,6 +427,144 @@ private final class MenuBarScreenTrackingView: NSView {
     }
 }
 
+private struct MenuBarWindowConfigurator: NSViewRepresentable {
+    let onPresented: () -> Void
+
+    func makeNSView(context: Context) -> MenuBarWindowTrackingView {
+        let view = MenuBarWindowTrackingView()
+        view.onPresented = onPresented
+        return view
+    }
+
+    func updateNSView(_ nsView: MenuBarWindowTrackingView, context: Context) {
+        nsView.onPresented = onPresented
+        nsView.configureCurrentWindow()
+    }
+}
+
+private final class MenuBarWindowTrackingView: NSView {
+    var onPresented: (() -> Void)?
+    private weak var observedWindow: NSWindow?
+    private var presentationObservers: [NSObjectProtocol] = []
+    private var lastPresentationAt = Date.distantPast
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        configureCurrentWindow()
+    }
+
+    deinit {
+        presentationObservers.forEach { NotificationCenter.default.removeObserver($0) }
+    }
+
+    func configureCurrentWindow() {
+        guard let window else { return }
+
+        // Match the supplied macOS network-panel reference (#1A1A1D) at the
+        // AppKit window layer as well as the SwiftUI root, so GitHub/Xcode builds
+        // cannot fall back to the darker MenuBarExtra material behind our view.
+        window.backgroundColor = NSColor(
+            srgbRed: 26.0 / 255.0,
+            green: 26.0 / 255.0,
+            blue: 29.0 / 255.0,
+            alpha: 1.0
+        )
+
+        guard observedWindow !== window else { return }
+        presentationObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        presentationObservers.removeAll()
+        observedWindow = window
+
+        let center = NotificationCenter.default
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didExposeNotification] {
+            presentationObservers.append(
+                center.addObserver(
+                    forName: name,
+                    object: window,
+                    queue: .main
+                ) { [weak self] _ in
+                    self?.notifyPresented()
+                }
+            )
+        }
+
+        if window.isVisible {
+            DispatchQueue.main.async { [weak self] in
+                self?.notifyPresented()
+            }
+        }
+    }
+
+    private func notifyPresented() {
+        // didBecomeKey can be emitted more than once during a single opening
+        // animation. One refresh per presentation is enough.
+        let now = Date()
+        guard now.timeIntervalSince(lastPresentationAt) > 0.35 else { return }
+        lastPresentationAt = now
+        onPresented?()
+    }
+}
+
+private struct MenuBarScrollIndicatorSuppressor: NSViewRepresentable {
+    func makeNSView(context: Context) -> MenuBarScrollIndicatorSuppressingView {
+        let view = MenuBarScrollIndicatorSuppressingView()
+        DispatchQueue.main.async { [weak view] in
+            view?.suppressIndicators()
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: MenuBarScrollIndicatorSuppressingView, context: Context) {
+        DispatchQueue.main.async { [weak nsView] in
+            nsView?.suppressIndicators()
+        }
+    }
+}
+
+private final class MenuBarScrollIndicatorSuppressingView: NSView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        DispatchQueue.main.async { [weak self] in
+            self?.suppressIndicators()
+        }
+    }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        DispatchQueue.main.async { [weak self] in
+            self?.suppressIndicators()
+        }
+    }
+
+    override func layout() {
+        super.layout()
+        suppressIndicators()
+    }
+
+    func suppressIndicators() {
+        guard let scrollView = nearestScrollView() else { return }
+        // Removing the NSScroller does NOT disable scrolling. Wheel, trackpad,
+        // keyboard and accessibility scrolling keep working normally.
+        scrollView.hasVerticalScroller = false
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.verticalScroller?.isHidden = true
+        scrollView.verticalScroller?.alphaValue = 0
+        scrollView.horizontalScroller?.isHidden = true
+        scrollView.horizontalScroller?.alphaValue = 0
+    }
+
+    private func nearestScrollView() -> NSScrollView? {
+        var candidate: NSView? = self
+        while let view = candidate {
+            if let scrollView = view as? NSScrollView { return scrollView }
+            if let scrollView = view.enclosingScrollView { return scrollView }
+            candidate = view.superview
+        }
+        return nil
+    }
+}
+
 private struct MenuBarLiveSummary: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var live: LiveStatusStore
@@ -476,9 +608,9 @@ private struct MenuBarLiveSummary: View {
                 }
                 .padding(.horizontal, 10)
                 .frame(height: 29)
-                .background(DashboardPalette.surfaceRaised.opacity(0.84))
+                .background(DashboardPalette.menuSurfaceRaised)
                 .clipShape(Capsule())
-                .overlay { Capsule().stroke(DashboardPalette.separator, lineWidth: 1) }
+                .overlay { Capsule().stroke(DashboardPalette.menuSeparator, lineWidth: 1) }
             }
 
             HStack(spacing: 9) {
@@ -490,7 +622,7 @@ private struct MenuBarLiveSummary: View {
 
                 Spacer(minLength: 6)
                 Rectangle()
-                    .fill(DashboardPalette.separator)
+                    .fill(DashboardPalette.menuSeparator)
                     .frame(width: 1, height: 18)
                 Spacer(minLength: 6)
 
@@ -502,11 +634,11 @@ private struct MenuBarLiveSummary: View {
             }
             .padding(.horizontal, 12)
             .frame(height: 42)
-            .background(DashboardPalette.surface.opacity(0.92))
+            .background(DashboardPalette.menuSurface)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(DashboardPalette.separator, lineWidth: 1)
+                    .stroke(DashboardPalette.menuSeparator, lineWidth: 1)
             }
         }
     }
@@ -693,13 +825,13 @@ private struct MenuPanelPressStyle: ButtonStyle {
                     .fill(
                         selected
                             ? DashboardPalette.accent.opacity(configuration.isPressed ? 0.26 : 0.18)
-                            : DashboardPalette.surfaceRaised.opacity(configuration.isPressed ? 0.92 : 0.66)
+                            : DashboardPalette.menuSurfaceRaised.opacity(configuration.isPressed ? 0.96 : 0.84)
                     )
             )
             .overlay {
                 RoundedRectangle(cornerRadius: compact ? 9 : 10, style: .continuous)
                     .stroke(
-                        selected ? DashboardPalette.accent.opacity(0.36) : DashboardPalette.separator,
+                        selected ? DashboardPalette.accent.opacity(0.36) : DashboardPalette.menuSeparator,
                         lineWidth: 1
                     )
             }
