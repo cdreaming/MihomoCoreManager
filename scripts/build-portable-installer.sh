@@ -3,75 +3,23 @@ set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
-BUILD_NUMBER="${VERSION//./}"
+BUILD_NUMBER="$(tr -d '[:space:]' < "$ROOT/BUILD_NUMBER")"
 DIST="$ROOT/dist-portable"
 STAGE="$ROOT/build/portable-installer"
-BUNDLE_NAME="MihomoCoreManager.app"
-PACKAGE_NAME="MihomoCoreManager-v${VERSION}-arm64-portable-installer"
+PACKAGE_NAME="MihomoCoreManager-v${VERSION}-GoWebUI-arm64-portable-installer"
 PACKAGE_DIR="$STAGE/$PACKAGE_NAME"
-APP="$PACKAGE_DIR/$BUNDLE_NAME"
-BIN="$APP/Contents/MacOS/MihomoCoreManager"
+APP="$PACKAGE_DIR/MihomoCoreManager.app"
 OUT="$DIST/$PACKAGE_NAME.zip"
 
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid VERSION: $VERSION" >&2; exit 1; }
-command -v go >/dev/null || { echo "Go is required" >&2; exit 1; }
-command -v python3 >/dev/null || { echo "Python 3 is required" >&2; exit 1; }
+[[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]] || { echo "Invalid BUILD_NUMBER: $BUILD_NUMBER" >&2; exit 1; }
 
 rm -rf "$STAGE" "$DIST"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$DIST"
+mkdir -p "$PACKAGE_DIR" "$DIST"
 
-(
-  cd "$ROOT/portable-runtime"
-  GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 \
-    go build -trimpath -ldflags='-s -w' -o "$BIN" .
-)
-chmod 0755 "$BIN"
-
-ROOT="$ROOT" APP="$APP" VERSION="$VERSION" BUILD_NUMBER="$BUILD_NUMBER" python3 - <<'PY'
-from pathlib import Path
-import os, plistlib, struct
-
-root = Path(os.environ['ROOT'])
-app = Path(os.environ['APP'])
-version = os.environ['VERSION']
-build = os.environ['BUILD_NUMBER']
-
-plist = {
-    'CFBundleDevelopmentRegion': 'zh_CN',
-    'CFBundleDisplayName': 'Mihomo Core Manager',
-    'CFBundleExecutable': 'MihomoCoreManager',
-    'CFBundleIdentifier': 'cc.kkr.MihomoCoreManager.portable',
-    'CFBundleInfoDictionaryVersion': '6.0',
-    'CFBundleName': 'MihomoCoreManager',
-    'CFBundlePackageType': 'APPL',
-    'CFBundleShortVersionString': version,
-    'CFBundleVersion': build,
-    'LSApplicationCategoryType': 'public.app-category.utilities',
-    'LSMinimumSystemVersion': '14.0',
-    'NSHighResolutionCapable': True,
-    'CFBundleIconFile': 'AppIcon.icns',
-    'NSAppTransportSecurity': {'NSAllowsArbitraryLoads': True},
-}
-with (app/'Contents/Info.plist').open('wb') as f:
-    plistlib.dump(plist, f, sort_keys=False)
-
-# Modern icns accepts PNG payloads for these element types.
-icon_dir = root/'MihomoCoreManager/Resources/Assets.xcassets/AppIcon.appiconset'
-parts = []
-for code, filename in [
-    (b'ic10', 'AppIcon-1024.png'),
-    (b'ic09', 'AppIcon-512.png'),
-    (b'ic08', 'AppIcon-256.png'),
-    (b'ic07', 'AppIcon-128.png'),
-    (b'icp6', 'AppIcon-64.png'),
-    (b'icp5', 'AppIcon-32.png'),
-    (b'icp4', 'AppIcon-16.png'),
-]:
-    data = (icon_dir/filename).read_bytes()
-    parts.append(code + struct.pack('>I', 8 + len(data)) + data)
-payload = b''.join(parts)
-(app/'Contents/Resources/AppIcon.icns').write_bytes(b'icns' + struct.pack('>I', 8 + len(payload)) + payload)
-PY
+# Critical v1.3.0 contract: the quick preview and GitHub GoWebUI.pkg use the
+# same app-bundle builder. There is no second Go/Web UI implementation.
+bash "$ROOT/scripts/build-gowebui-app.sh" "$APP"
 
 cat > "$PACKAGE_DIR/Install-MihomoCoreManager.command" <<'CMD'
 #!/bin/zsh
@@ -80,7 +28,7 @@ HERE="${0:A:h}"
 SOURCE="$HERE/MihomoCoreManager.app"
 TARGET="/Applications/MihomoCoreManager.app"
 
-echo "Mihomo Core Manager installer"
+echo "Mihomo Core Manager GoWebUI portable installer"
 echo "Source: $SOURCE"
 echo "Target: $TARGET"
 
@@ -100,7 +48,7 @@ sudo /usr/bin/ditto "$SOURCE" "$TARGET"
 sudo /usr/bin/codesign --force --deep --sign - "$TARGET" >/dev/null 2>&1 || true
 
 echo "Installation complete."
-echo "This portable build is ad-hoc/unsigned and not notarized; macOS may require right-click > Open on first launch."
+echo "This preview is ad-hoc/unsigned and not notarized; macOS may require right-click > Open on first launch."
 /usr/bin/open "$TARGET" || true
 printf "\nPress any key to close…"
 read -k 1
@@ -126,26 +74,33 @@ CMD
 chmod 0755 "$PACKAGE_DIR/Uninstall-MihomoCoreManager.command"
 
 cat > "$PACKAGE_DIR/README-安装.txt" <<EOF
-Mihomo Core Manager v${VERSION} (build ${BUILD_NUMBER}) portable arm64 installer
+Mihomo Core Manager v${VERSION} (build ${BUILD_NUMBER}) GoWebUI portable preview
 
-1. Requires Apple Silicon Mac and macOS 14.0 or later.
-2. Double-click Install-MihomoCoreManager.command. It will ask for the administrator password and copy MihomoCoreManager.app to /Applications.
-3. This artifact is built from portable-runtime only for regression testing. It is a different UI implementation and is NOT a formal GitHub Release UI-validation package.
-4. Do not use this portable artifact to compare UI with the official .pkg. Starting with v1.2.12, use the GitHub-produced arm64-native-installer.zip; it contains the exact same native App bundle as the .pkg.
-5. This regression artifact is not Developer ID signed/notarized. If Gatekeeper blocks the first launch, right-click the app in /Applications and choose Open.
-6. The formal SwiftUI assets are produced by scripts/build-release.sh on Apple Silicon macOS + Xcode.
+用途：ChatGPT Web / Linux 环境可以直接构建，用于快速安装验证 UI 和功能。
+
+正式 GitHub Release 会并行生成：
+  - MihomoCoreManager-v${VERSION}-GoWebUI-arm64.pkg
+  - MihomoCoreManager-v${VERSION}-SwiftUI-arm64.pkg
+
+GoWebUI portable 与 GitHub GoWebUI.pkg 都调用 scripts/build-gowebui-app.sh，
+共享同一份 Go/AppKit/Web UI 源码、HTML/CSS/JS、版本和 AppIcon 资产。
+SwiftUI.pkg 是另一套原生 SwiftUI/AppKit 实现，文件名明确区分，不要求像素级一致。
+
+1. 需要 Apple Silicon Mac 和 macOS 14.0+。
+2. 双击 Install-MihomoCoreManager.command 安装到 /Applications。
+3. 此 preview 未做 Developer ID 签名/公证；首次启动若被 Gatekeeper 拦截，请右键 App -> 打开。
 EOF
 
 PACKAGE_DIR="$PACKAGE_DIR" OUT="$OUT" python3 - <<'PY'
 from pathlib import Path
-import os, stat, zipfile
+import os, zipfile
 src = Path(os.environ['PACKAGE_DIR'])
 out = Path(os.environ['OUT'])
 with zipfile.ZipFile(out, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
     for path in sorted(src.rglob('*')):
-        rel = Path(src.name) / path.relative_to(src)
         if path.is_dir():
             continue
+        rel = Path(src.name) / path.relative_to(src)
         info = zipfile.ZipInfo.from_file(path, arcname=rel.as_posix())
         info.compress_type = zipfile.ZIP_DEFLATED
         info.external_attr = (path.stat().st_mode & 0xFFFF) << 16
@@ -153,18 +108,5 @@ with zipfile.ZipFile(out, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=9
             zf.writestr(info, f.read(), compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
 PY
 
-if command -v shasum >/dev/null 2>&1; then
-  printf '%s  %s\n' "$(shasum -a 256 "$OUT" | awk '{print $1}')" "$(basename "$OUT")" > "$OUT.sha256"
-else
-  python3 - "$OUT" <<'PY'
-from pathlib import Path
-import hashlib, sys
-p = Path(sys.argv[1])
-d = hashlib.sha256(p.read_bytes()).hexdigest()
-Path(str(p)+'.sha256').write_text(f"{d}  {p.name}\n")
-PY
-fi
-
-file "$BIN" || true
-ls -lh "$OUT" "$OUT.sha256"
-echo "portable installer build: PASS"
+ls -lh "$OUT"
+echo "GoWebUI portable installer: PASS"

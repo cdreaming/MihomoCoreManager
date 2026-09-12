@@ -217,19 +217,12 @@ private struct DashboardSidebarBrand: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 14) {
-                ZStack {
-                    LinearGradient(
-                        colors: [Color(red: 0.16, green: 0.59, blue: 1.0), Color(red: 0.43, green: 0.32, blue: 1.0)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    Text("M")
-                        .font(.system(size: 25, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                }
-                .frame(width: 54, height: 54)
-                .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-                .shadow(color: DashboardPalette.accent.opacity(0.24), radius: 18, y: 8)
+                Image(nsImage: NSApplication.shared.applicationIconImage)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 54, height: 54)
+                    .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+                    .shadow(color: DashboardPalette.accent.opacity(0.24), radius: 18, y: 8)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Mihomo Core")
@@ -292,13 +285,13 @@ private struct DashboardSidebarStatus: View {
     private var panelLabel: String {
         if let raw = live.status?.management?.publicUrl,
            let url = URL(string: raw), let port = url.port {
-            return "Panel :\(port)"
+            return "SwiftUI :\(port)"
         }
         if let raw = model.selectedProfile?.managementURL,
            let url = URL(string: raw), let port = url.port {
-            return "Panel :\(port)"
+            return "SwiftUI :\(port)"
         }
-        return "Panel · Remote"
+        return "SwiftUI · Remote"
     }
 }
 

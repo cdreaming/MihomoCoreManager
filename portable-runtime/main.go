@@ -25,13 +25,13 @@ import (
 )
 
 const (
-	appVersion                = "1.2.12"
-	buildNumber               = "1212"
+	appVersion                = "1.3.0"
+	buildNumber               = "1300"
 	keychainService           = "cc.kkr.MihomoCoreManager"
 	controllerKeychainService = "cc.kkr.MihomoCoreManager.controller-secret"
 )
 
-//go:embed ui/index.html
+//go:embed ui/*
 var assets embed.FS
 
 type Profile struct {
@@ -1264,6 +1264,17 @@ func (s *appState) auth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+func (s *appState) handleAppIcon(w http.ResponseWriter, r *http.Request) {
+	b, err := assets.ReadFile("ui/app-icon-128.png")
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	_, _ = w.Write(b)
+}
+
 func (s *appState) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
@@ -2041,6 +2052,7 @@ func (s *appState) handleClipboard(w http.ResponseWriter, r *http.Request) {
 
 func (s *appState) routes() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/assets/app-icon-128.png", s.handleAppIcon)
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/local/profiles", s.auth(s.handleProfiles))
 	mux.HandleFunc("/local/profile/save", s.auth(s.handleProfileSave))

@@ -982,8 +982,18 @@ func TestPortableInteractionRegressionV118(t *testing.T) {
 	}
 }
 
-func TestPortableVersionV1212(t *testing.T) {
-	if appVersion != "1.2.12" || buildNumber != "1212" {
+func TestEmbeddedModernAppIconV130(t *testing.T) {
+	b, err := assets.ReadFile("ui/app-icon-128.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b) < 1024 || len(b) < 8 || string(b[:8]) != "\x89PNG\r\n\x1a\n" {
+		t.Fatalf("embedded v1.3.0 app icon is missing or invalid PNG: %d bytes", len(b))
+	}
+}
+
+func TestPortableVersionV130(t *testing.T) {
+	if appVersion != "1.3.0" || buildNumber != "1300" {
 		t.Fatalf("unexpected portable version/build: %s/%s", appVersion, buildNumber)
 	}
 }

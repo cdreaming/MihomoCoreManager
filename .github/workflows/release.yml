@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: '要发布的版本，例如 1.2.12 或 v1.2.12'
+        description: '要发布的版本，例如 1.3.0 或 v1.3.0'
         required: true
         type: string
 
@@ -16,19 +16,22 @@ permissions:
 
 jobs:
   release:
-    name: arm64 发布（单一原生 App 全链路校验后发布）
+    name: arm64 双实现发布（GoWebUI + SwiftUI）
     runs-on: macos-15
-    timeout-minutes: 75
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - name: 配置 portable Go 工具链
+      - name: 配置 GoWebUI Go 工具链
         uses: actions/setup-go@v6
         with:
-          go-version-file: portable-runtime/go.mod
+          go-version: '1.23.2'
           cache: false
+
+      - name: Verify GoWebUI release lock
+        run: python3 scripts/build-gowebui-release-lock.py --check
 
       - name: 解析并校验版本
         id: version
@@ -38,30 +41,35 @@ jobs:
         run: |
           set -Eeuo pipefail
           VERSION="$(tr -d '[:space:]' < VERSION)"
+          BUILD_NUMBER="$(tr -d '[:space:]' < BUILD_NUMBER)"
           if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
             REQUESTED="${GITHUB_REF_NAME#v}"
           else
             REQUESTED="${MANUAL_VERSION#v}"
           fi
           [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]]
           [[ "$REQUESTED" == "$VERSION" ]] || {
             echo "请求版本 v${REQUESTED} 与 VERSION v${VERSION} 不一致" >&2
             exit 1
           }
           [[ "$(uname -m)" == "arm64" ]] || { echo "Release runner 必须为 arm64" >&2; exit 1; }
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: 真实 macOS arm64 发布全链路模拟并冻结唯一原生 App
+      - name: 双实现发布全链路模拟
         shell: bash
         run: bash scripts/simulate-release.sh
 
-      - name: Upload Xcode diagnostics on failure
+      - name: Upload diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@v6
         with:
-          name: xcode-diagnostics-${{ github.run_id }}
-          path: build/xcodebuild-release.log
+          name: release-diagnostics-${{ github.run_id }}
+          path: |
+            build/xcodebuild-release.log
+            dist-portable/
           if-no-files-found: ignore
 
       - name: 为 workflow_dispatch 准备 tag
@@ -101,25 +109,21 @@ jobs:
           fi
           gh release upload "$TAG" dist/* --clobber
 
-      - name: 在线回读 Release 资产并验证 SHA-256
+      - name: 在线回读正式资产并验证
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -Eeuo pipefail
           VERIFY="$RUNNER_TEMP/release-verify"
-          rm -rf "$VERIFY"
-          mkdir -p "$VERIFY"
+          rm -rf "$VERIFY" && mkdir -p "$VERIFY"
           gh release download "$TAG" -D "$VERIFY"
           cd "$VERIFY"
           shasum -a 256 -c SHA256SUMS.txt
-          test -f "MihomoCoreManager-${TAG}-arm64.pkg"
-          test -f "MihomoCoreManager-${TAG}-arm64.zip"
-          test -f "MihomoCoreManager-${TAG}-arm64-native-installer.zip"
-          test -f "NATIVE-APP-MANIFEST.json"
-          test -f "RELEASE-PROVENANCE.txt"
-          grep -Fq "source_commit=${GITHUB_SHA}" RELEASE-PROVENANCE.txt
-          cd "$GITHUB_WORKSPACE"
-          bash scripts/verify-native-release-parity.sh "$VERIFY"
-          echo "GitHub Release online verification: PASS (ZIP/native installer/PKG contain one identical native app)"
+          test -f "MihomoCoreManager-v${VERSION}-GoWebUI-arm64.pkg"
+          test -f "MihomoCoreManager-v${VERSION}-SwiftUI-arm64.pkg"
+          grep -Fq 'variant=GoWebUI' GoWebUI-RELEASE-PROVENANCE.txt
+          grep -Fq 'variant=SwiftUI' SwiftUI-RELEASE-PROVENANCE.txt
+          echo "GitHub Release online verification: PASS (GoWebUI.pkg + SwiftUI.pkg)"

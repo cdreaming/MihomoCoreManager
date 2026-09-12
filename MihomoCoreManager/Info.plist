@@ -26,6 +26,8 @@
     <string>$(MACOSX_DEPLOYMENT_TARGET)</string>
     <key>CFBundleIconName</key>
     <string>AppIcon</string>
+    <key>MCMBuildVariant</key>
+    <string>SwiftUI</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>NSHighResolutionCapable</key>

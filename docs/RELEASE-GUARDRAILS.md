@@ -160,3 +160,27 @@ The portable Go/AppKit/Web application remains useful for regression testing, bu
 - `RELEASE-PROVENANCE.txt` records the source commit and toolchain plus the frozen App tree/binary hashes.
 
 This turns UI parity into a binary-content invariant rather than a best-effort source synchronization rule. On the same macOS version and settings, the native installer and `.pkg` execute the exact same App code and resources.
+
+
+## Dual implementation release contract (v1.3.0+)
+
+This section supersedes the v1.2.12 “One Canonical Native App” publishing rule while retaining its historical context above.
+
+- Maintain both Go/AppKit/Web UI and SwiftUI/AppKit implementations.
+- ChatGPT-Web preview is always the GoWebUI portable installer.
+- The portable preview and official GoWebUI `.pkg` MUST call the same `scripts/build-gowebui-app.sh`; no duplicated GoWebUI app-bundle generator is allowed.
+- GitHub Release MUST publish two separately named packages: `...-GoWebUI-arm64.pkg` and `...-SwiftUI-arm64.pkg`.
+- The two implementations share `VERSION`, `BUILD_NUMBER`, the AppIcon asset catalog, and release notes.
+- SwiftUI is not used as a pixel-parity proof for GoWebUI and vice versa; variant naming makes this explicit.
+- CI and Release continue to share `scripts/simulate-release.sh` as the single top-level gate.
+
+## GoWebUI preview / GitHub PKG release lock (v1.3.0+)
+
+The GoWebUI portable preview is again a first-class development artifact and the GitHub GoWebUI `.pkg` is an official release variant. To prevent those two paths from drifting:
+
+- both paths must call `scripts/build-gowebui-app.sh`;
+- `GoWebUI-RELEASE-LOCK.json` hashes the Go runtime, Web UI, AppIcon master/generated sizes, shared app builder and both GoWebUI packaging scripts;
+- `python3 scripts/build-gowebui-release-lock.py --check` is a hard preflight gate;
+- Go is pinned to `1.23.2` locally and in GitHub Actions;
+- changing any locked input requires intentionally regenerating the lock and re-running the portable regression suite;
+- the strict visual comparison target is GoWebUI portable ↔ GoWebUI.pkg. SwiftUI.pkg remains a separately named implementation and must be tested independently on macOS.

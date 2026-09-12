@@ -1,6 +1,17 @@
 # Mihomo Core Manager for macOS
 
-基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.2.12 (build 1212)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.3.0 (build 1300)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
+
+## v1.3.0
+
+v1.3.0 固化新的双实现开发/发布工作流，并更换全套现代化应用图标：
+
+- **开发交付固定为：源码 + GoWebUI portable。** ChatGPT Web/Linux 直接调用 `scripts/build-gowebui-app.sh` 构建 Go/AppKit/Web UI，再由 `scripts/build-portable-installer.sh` 打成可快速安装的 portable preview。
+- **GitHub Release 同时生成两个明确区分的 PKG：** `MihomoCoreManager-v1.3.0-GoWebUI-arm64.pkg` 与 `MihomoCoreManager-v1.3.0-SwiftUI-arm64.pkg`。GoWebUI.pkg 与 portable preview 共用同一个 App builder，因此不再发生“portable 是一套 UI、GitHub Go 版又是另一套 UI”的翻译漂移；SwiftUI.pkg 作为独立原生实现并行维护。
+- 新增共享 `BUILD_NUMBER`，v1.3.0 使用 **build 1300**，避免简单去掉版本点号后出现 build 倒退。VERSION、BUILD_NUMBER、AppIcon、Release Notes 均为两套实现的共享发布输入。
+- 新图标采用蓝青→蓝紫渐变的 macOS 圆角方形底，中心为抽象流动 M/网络路径和连接节点；SwiftUI Xcode AppIcon 与 GoWebUI `.icns` 均从同一份 `AppIcon.appiconset` 生成。
+- 主窗口左上版本信息继续保持 **本程序版本 / Core 版本 / Core 面板 / MetaCubeXD**。侧栏底部增加实现标识：GoWebUI 与 SwiftUI 分别明确显示自身变体。
+- `ai-project-development-template` 同步固化“双实现 macOS 发布”规则：开发阶段交付源码 + GoWebUI portable，GitHub 同时构建 GoWebUI.pkg + SwiftUI.pkg，并要求 preview/GoWebUI.pkg 共用单一 App builder 与 release lock。
 
 ## v1.2.12
 

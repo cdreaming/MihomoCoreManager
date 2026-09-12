@@ -10,17 +10,20 @@ permissions:
 
 jobs:
   arm64-build:
-    name: Apple Silicon arm64 canonical native release simulation
+    name: Apple Silicon arm64 dual implementation release simulation
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
 
-      - name: 配置 portable Go 工具链
+      - name: 配置 GoWebUI Go 工具链
         uses: actions/setup-go@v6
         with:
-          go-version-file: portable-runtime/go.mod
+          go-version: '1.23.2'
           cache: false
+
+      - name: Verify GoWebUI release lock
+        run: python3 scripts/build-gowebui-release-lock.py --check
 
       - name: Verify runner architecture
         shell: bash
@@ -30,26 +33,24 @@ jobs:
           xcodebuild -version
           go version
 
-      - name: 真实 macOS arm64 发布全链路模拟
+      - name: 真实 macOS arm64 双实现发布模拟
         shell: bash
         run: bash scripts/simulate-release.sh
 
-      - name: Upload Xcode diagnostics on failure
+      - name: Upload diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@v6
         with:
-          name: xcode-diagnostics-${{ github.run_id }}
+          name: release-diagnostics-${{ github.run_id }}
           path: build/xcodebuild-release.log
           if-no-files-found: ignore
 
       - uses: actions/upload-artifact@v6
         with:
-          name: MihomoCoreManager-native-release-parity
-          path: |
-            dist/
-            build/release-simulation-verify/
+          name: MihomoCoreManager-dual-release
+          path: dist/
 
       - uses: actions/upload-artifact@v6
         with:
-          name: MihomoCoreManager-portable-regression-only
+          name: MihomoCoreManager-GoWebUI-portable-preview
           path: dist-portable/

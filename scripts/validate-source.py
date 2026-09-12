@@ -19,8 +19,13 @@ required = [
     "SOURCE-SHA256SUMS.txt",
     "scripts/build-portable-installer.sh",
     "scripts/app-bundle-manifest.py",
-    "scripts/package-native-installer.sh",
-    "scripts/verify-native-release-parity.sh",
+    "BUILD_NUMBER",
+    "GoWebUI-RELEASE-LOCK.json",
+    "scripts/build-gowebui-app.sh",
+    "scripts/build-gowebui-release-lock.py",
+    "scripts/build-gowebui-release.sh",
+    "scripts/build-swiftui-release.sh",
+    "scripts/generate-app-icon.py",
     "scripts/release-preflight.py",
     "scripts/simulate-release.sh",
     "docs/RELEASE-GUARDRAILS.md",
@@ -32,7 +37,8 @@ pbx = (root / "MihomoCoreManager.xcodeproj/project.pbxproj").read_text(encoding=
 if "ARCHS = arm64;" not in pbx: errors.append("Xcode project is not arm64-only")
 if "MACOSX_DEPLOYMENT_TARGET = 14.0;" not in pbx: errors.append("deployment target must be macOS 14.0")
 if f"MARKETING_VERSION = {version};" not in pbx: errors.append(f"Xcode MARKETING_VERSION must match VERSION {version}")
-expected_build = version.replace(".", "")
+expected_build = (root / "BUILD_NUMBER").read_text(encoding="utf-8").strip()
+if not re.fullmatch(r"\d+", expected_build): errors.append(f"BUILD_NUMBER invalid: {expected_build!r}")
 if f"CURRENT_PROJECT_VERSION = {expected_build};" not in pbx: errors.append(f"Xcode build number must be {expected_build}")
 if not (root / f"docs/releases/v{version}/RELEASE-NOTES.md").is_file(): errors.append(f"release notes missing for v{version}")
 portable = root / "portable-runtime/main.go"
@@ -548,7 +554,11 @@ if "function renderStatusSpeedOverlay()" in portable_main and "function renderSt
         errors.append("v1.2.0 status-bar body must not render upload/download arrows")
 
 portable_installer = (root / "scripts/build-portable-installer.sh").read_text(encoding="utf-8")
-for marker in ["GOOS=darwin GOARCH=arm64", "MihomoCoreManager.app", "Install-MihomoCoreManager.command", "LSMinimumSystemVersion", "codesign --force --deep --sign -"]:
+goweb_app_installer = (root / "scripts/build-gowebui-app.sh").read_text(encoding="utf-8")
+for marker in ["GOOS=darwin GOARCH=arm64", "MihomoCoreManager.app", "LSMinimumSystemVersion"]:
+    if marker not in portable_installer + "\n" + goweb_app_installer:
+        errors.append(f"portable/shared GoWebUI app gate missing: {marker}")
+for marker in ["Install-MihomoCoreManager.command", "codesign --force --deep --sign -", "scripts/build-gowebui-app.sh"]:
     if marker not in portable_installer:
         errors.append(f"portable installer gate missing: {marker}")
 
@@ -675,6 +685,24 @@ for forbidden in ["profile-trigger-icon", "profile-option-icon", "profile-captio
     if forbidden in portable_ui:
         errors.append(f"portable v1.1.1 backend selector still contains removed brand-card marker: {forbidden}")
 
+
+release_lock_script = root / "scripts/build-gowebui-release-lock.py"
+if not release_lock_script.is_file():
+    errors.append("v1.3.0 GoWebUI release-lock builder missing")
+if not (root / "GoWebUI-RELEASE-LOCK.json").is_file():
+    errors.append("v1.3.0 GoWebUI release lock missing")
+
+icon_dir = root / "MihomoCoreManager/Resources/Assets.xcassets/AppIcon.appiconset"
+for size in [16, 32, 64, 128, 256, 512, 1024]:
+    if not (icon_dir / f"AppIcon-{size}.png").is_file():
+        errors.append(f"v1.3.0 modern shared AppIcon missing size: {size}")
+if not (root / "branding/AppIcon-master-1024.png").is_file():
+    errors.append("v1.3.0 branding master icon missing")
+if 'Image(nsImage: NSApplication.shared.applicationIconImage)' not in content:
+    errors.append("SwiftUI sidebar must use the shared application icon")
+if 'GoWebUI · Remote' not in portable_ui:
+    errors.append("GoWebUI preview must identify its implementation in the sidebar")
+
 with (root / "MihomoCoreManager/Info.plist").open("rb") as f:
     plist = plistlib.load(f)
 if not plist.get("NSAppTransportSecurity", {}).get("NSAllowsArbitraryLoads"):
@@ -683,6 +711,9 @@ if not plist.get("NSAppTransportSecurity", {}).get("NSAllowsArbitraryLoads"):
 workflow = (root / ".github/workflows/release.yml").read_text(encoding="utf-8")
 ci_workflow = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 build_release = (root / "scripts/build-release.sh").read_text(encoding="utf-8")
+goweb_app_build = (root / "scripts/build-gowebui-app.sh").read_text(encoding="utf-8")
+goweb_release = (root / "scripts/build-gowebui-release.sh").read_text(encoding="utf-8")
+swiftui_release = (root / "scripts/build-swiftui-release.sh").read_text(encoding="utf-8")
 release_preflight = (root / "scripts/release-preflight.py").read_text(encoding="utf-8")
 for marker in [
     'if args.strict_macos:',
@@ -714,8 +745,8 @@ for marker in [
     "go vet ./...",
     "GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go test -c",
     "darwin/arm64 Go test cross-compile: PASS",
-    "native unsigned release simulation: PASS",
-    "release-simulation-verify",
+    "GoWebUI portable preview verification: PASS",
+    "dual unsigned .pkg release simulation: PASS",
 ]:
     if marker not in simulate_release:
         errors.append(f"v1.2.5 release simulation stress gate missing: {marker}")
@@ -724,7 +755,7 @@ manifest_check_pos = simulate_release.find("python3 scripts/build-source-manifes
 preflight_pos = simulate_release.find("python3 scripts/release-preflight.py")
 if not (0 <= manifest_write_pos < manifest_check_pos < preflight_pos):
     errors.append("canonical release simulation must refresh/check source manifest before non-strict preflight")
-release_text = workflow + "\n" + build_release
+release_text = workflow + "\n" + build_release + "\n" + goweb_release + "\n" + swiftui_release
 for marker in ["macos-15", "notarytool", "productbuild", "gh release", "SHA256SUMS.txt"]:
     if marker not in release_text:
         errors.append(f"release gate missing: {marker}")
@@ -734,24 +765,30 @@ for marker in [
     "Xcode compiler diagnostics",
     "xcrun swiftc --version",
 ]:
-    if marker not in build_release:
-        errors.append(f"v1.2.4 Xcode diagnostics/build guard missing: {marker}")
+    if marker not in swiftui_release:
+        errors.append(f"SwiftUI Xcode diagnostics/build guard missing: {marker}")
 for marker in [
-    'CANONICAL_APP="$CANONICAL_DIR/MihomoCoreManager.app"',
-    'scripts/app-bundle-manifest.py',
-    'scripts/package-native-installer.sh',
-    'scripts/verify-native-release-parity.sh',
-    'NATIVE-APP-MANIFEST.json',
-    'RELEASE-PROVENANCE.txt',
-    'packaging_contract=one-canonical-native-app',
-    'one canonical native app -> ZIP / native installer / PKG',
+    'scripts/build-gowebui-release.sh',
+    'scripts/build-swiftui-release.sh',
+    'MihomoCoreManager-v${VERSION}-GoWebUI-arm64.pkg',
+    'MihomoCoreManager-v${VERSION}-SwiftUI-arm64.pkg',
 ]:
     if marker not in build_release:
-        errors.append(f"v1.2.12 canonical native artifact gate missing: {marker}")
+        errors.append(f"v1.3.0 dual-release orchestration gate missing: {marker}")
+for marker in [
+    'scripts/build-gowebui-app.sh',
+    'scripts/build-gowebui-release-lock.py',
+    'GoWebUI-RELEASE-LOCK.json',
+    'MCMBuildVariant',
+    'GoWebUI',
+    'AppIcon.icns',
+]:
+    if marker not in goweb_app_build + "\n" + goweb_release:
+        errors.append(f"v1.3.0 GoWebUI shared-builder gate missing: {marker}")
 for marker in [
     "bash scripts/simulate-release.sh",
-    "真实 macOS arm64 发布全链路模拟",
-    "Upload Xcode diagnostics on failure",
+    "双实现发布全链路模拟",
+    "Upload diagnostics on failure",
     "build/xcodebuild-release.log",
 ]:
     if marker not in workflow + "\n" + ci_workflow:
@@ -763,30 +800,29 @@ if "bash scripts/build-release.sh --unsigned" not in simulate_release:
     errors.append("canonical release simulation must use --unsigned native build by default")
 for marker in [
     "actions/setup-go@v6",
-    "go-version-file: portable-runtime/go.mod",
+    "go-version: '1.23.2'",
     "cache: false",
     "bash scripts/simulate-release.sh",
     'gh release upload "$TAG" dist/* --clobber',
-    'test -f "MihomoCoreManager-${TAG}-arm64-native-installer.zip"',
-    'test -f "NATIVE-APP-MANIFEST.json"',
-    'test -f "RELEASE-PROVENANCE.txt"',
-    'grep -Fq "source_commit=${GITHUB_SHA}" RELEASE-PROVENANCE.txt',
-    'bash scripts/verify-native-release-parity.sh "$VERIFY"',
+    'MihomoCoreManager-v${VERSION}-GoWebUI-arm64.pkg',
+    'MihomoCoreManager-v${VERSION}-SwiftUI-arm64.pkg',
+    "GoWebUI-RELEASE-PROVENANCE.txt",
+    "SwiftUI-RELEASE-PROVENANCE.txt",
+    "Verify GoWebUI release lock",
+    "python3 scripts/build-gowebui-release-lock.py --check",
 ]:
     if marker not in workflow:
-        errors.append(f"v1.2.12 GitHub single-native-app release gate missing: {marker}")
-if 'dist-portable/*' in workflow or 'arm64-portable-installer.zip' in workflow:
-    errors.append("GitHub Release must not publish the alternate portable UI as a formal release asset")
+        errors.append(f"v1.3.0 GitHub dual-release gate missing: {marker}")
 for marker in [
     "actions/setup-go@v6",
-    "go-version-file: portable-runtime/go.mod",
+    "go-version: '1.23.2'",
     "cache: false",
     "bash scripts/simulate-release.sh",
-    "Apple Silicon arm64 canonical native release simulation",
+    "Apple Silicon arm64 dual implementation release simulation",
     "dist-portable/",
 ]:
     if marker not in ci_workflow:
-        errors.append(f"v1.2.2 macOS CI portable parity gate missing: {marker}")
+        errors.append(f"v1.3.0 macOS CI dual-release gate missing: {marker}")
 for forbidden in ["secrets.APPLE_", "校验签名与公证 Secrets", "导入 Developer ID 证书"]:
     if forbidden in workflow:
         errors.append(f"unsigned release workflow must not require Apple signing secrets: {forbidden}")

@@ -12,7 +12,7 @@ import sys
 
 root = Path(__file__).resolve().parents[1]
 version = (root / "VERSION").read_text(encoding="utf-8").strip()
-build_number = version.replace(".", "")
+build_number = (root / "BUILD_NUMBER").read_text(encoding="utf-8").strip()
 
 
 def fail(message: str) -> None:
@@ -39,7 +39,7 @@ def run(cmd: list[str], *, cwd: Path = root, env: dict[str, str] | None = None, 
 
 
 parser = argparse.ArgumentParser(
-    description="Release preflight that encodes v1.2.4 macOS/Xcode incident guardrails."
+    description="Release preflight for the v1.3.0 dual GoWebUI/SwiftUI macOS release pipeline."
 )
 parser.add_argument(
     "--strict-macos",
@@ -82,12 +82,15 @@ if args.strict_macos:
 for script in [
     "scripts/build-release.sh",
     "scripts/build-portable-installer.sh",
-    "scripts/package-native-installer.sh",
-    "scripts/verify-native-release-parity.sh",
+    "scripts/build-gowebui-app.sh",
+    "scripts/build-gowebui-release.sh",
+    "scripts/build-swiftui-release.sh",
     "scripts/simulate-release.sh",
 ]:
     run(["bash", "-n", script])
 run([sys.executable, "-m", "py_compile", "scripts/app-bundle-manifest.py"])
+run([sys.executable, "-m", "py_compile", "scripts/build-gowebui-release-lock.py"])
+run([sys.executable, "scripts/build-gowebui-release-lock.py", "--check"])
 
 # 2. Project membership: every Swift source on disk must be represented in the Xcode project.
 pbx_path = root / "MihomoCoreManager.xcodeproj/project.pbxproj"
@@ -147,6 +150,8 @@ else:
 content = (root / "MihomoCoreManager/Views/ContentView.swift").read_text(encoding="utf-8")
 models = (root / "MihomoCoreManager/Models.swift").read_text(encoding="utf-8")
 build_script = (root / "scripts/build-release.sh").read_text(encoding="utf-8")
+goweb_app_script = (root / "scripts/build-gowebui-app.sh").read_text(encoding="utf-8")
+swift_build_script = (root / "scripts/build-swiftui-release.sh").read_text(encoding="utf-8")
 
 required_content_markers = [
     "private struct ProxySortPicker: View",
@@ -182,23 +187,32 @@ for marker in [
     "Xcode compiler diagnostics",
     "xcrun swiftc --version",
 ]:
-    if marker not in build_script:
-        fail(f"release compiler diagnostic guard missing: {marker}")
+    if marker not in swift_build_script:
+        fail(f"SwiftUI compiler diagnostic guard missing: {marker}")
 for marker in [
-    'CANONICAL_APP="$CANONICAL_DIR/MihomoCoreManager.app"',
-    'NATIVE-APP-MANIFEST.json',
-    'package-native-installer.sh',
-    'verify-native-release-parity.sh',
-    'packaging_contract=one-canonical-native-app',
+    'scripts/build-gowebui-release.sh',
+    'scripts/build-swiftui-release.sh',
+    'MihomoCoreManager-v${VERSION}-GoWebUI-arm64.pkg',
+    'MihomoCoreManager-v${VERSION}-SwiftUI-arm64.pkg',
 ]:
     if marker not in build_script:
-        fail(f"v1.2.12 canonical native packaging guard missing: {marker}")
+        fail(f"v1.3.0 dual-release orchestration guard missing: {marker}")
+for marker in [
+    'GOOS=darwin GOARCH=arm64 CGO_ENABLED=0',
+    'MCMBuildVariant',
+    'AppIcon.icns',
+]:
+    if marker not in goweb_app_script:
+        fail(f"v1.3.0 shared GoWebUI builder guard missing: {marker}")
 
-# 5. Portable runtime remains a regression target, but is no longer a public
-#    Release installer. Exercise it so shared behavior does not regress.
+# 5. GoWebUI runtime is both the quick portable preview and one official GitHub
+#    Release variant. Exercise it before either packaging path runs.
 go = shutil.which("go")
 if not go:
     fail("Go is required for portable release parity")
+go_version = run([go, "version"], capture=True).strip()
+if "go1.23.2" not in go_version:
+    fail(f"GoWebUI release requires Go 1.23.2; got: {go_version}")
 portable_root = root / "portable-runtime"
 go_test_tmp = root / "build" / "go-test-tmp"
 shutil.rmtree(go_test_tmp, ignore_errors=True)
@@ -260,7 +274,7 @@ if args.strict_macos:
 
 print(
     f"release preflight: PASS (v{version}, {len(swift_sources)} Swift files, "
-    f"portable Go tests/vet, v1.2.4 Xcode regression guards"
+    f"GoWebUI tests/vet, SwiftUI Xcode regression guards"
     + (", strict macOS/Xcode settings" if args.strict_macos else "")
     + ")"
 )

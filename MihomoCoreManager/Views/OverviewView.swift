@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct OverviewView: View {
@@ -53,18 +54,12 @@ struct OverviewView: View {
                 .offset(x: 90, y: -100)
 
             HStack(spacing: 14) {
-                ZStack {
-                    LinearGradient(
-                        colors: [Color(red: 0.105, green: 0.12, blue: 0.15), Color(red: 0.045, green: 0.052, blue: 0.068)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    Text("M")
-                        .font(.system(size: 22, weight: .bold))
-                }
-                .frame(width: 62, height: 62)
-                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .shadow(color: .black.opacity(0.26), radius: 16, y: 8)
+                Image(nsImage: NSApplication.shared.applicationIconImage)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 62, height: 62)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .shadow(color: .black.opacity(0.26), radius: 16, y: 8)
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Mihomo Core")

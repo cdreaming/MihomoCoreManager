@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.3.0
+
+- 全新现代化 AppIcon：蓝青/蓝紫渐变、抽象 M 网络路径 + 连接节点，16–1024px 全尺寸共享给 GoWebUI 与 SwiftUI。
+- 固定开发交付为“源码 + GoWebUI portable”，不再等待额外发布确认。
+- GitHub Release 同版本并行生成 `GoWebUI-arm64.pkg` 与 `SwiftUI-arm64.pkg`，文件名明确区分两套实现。
+- GoWebUI portable 与 GitHub GoWebUI.pkg 强制共用 `scripts/build-gowebui-app.sh`，避免预览版与 GitHub Go 版出现第二套 UI 构建逻辑。
+- 新增独立 `BUILD_NUMBER=1300`，避免 1.3.0 使用点号删除法得到 130 而导致 build 倒退。
+- 新增可固化到 AI 项目开发模板的双 macOS 构建规则文档。
+
 ## v1.2.12
 
 - 主窗口左上版本区调整为 `本程序版本 / Core 版本 / Core 面板 / MetaCubeXD` 四行；App 版本与远端 Core 面板版本分别显示，不再互相替代。
