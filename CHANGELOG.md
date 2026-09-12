@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.2.10
+
+- 修复 GitHub/Xcode `.pkg` 状态栏常驻区只显示图标的问题：图标、Running/Stopped 与双行实时网速统一渲染成一个可变宽 AppKit template image，避免 `MenuBarExtra` Release 标签裁剪。
+- 状态栏显示开关继续使用原有 UserDefaults，但切换后会强制刷新完整单图标签，避免看起来“开关失效”。
+- 下拉菜单背景调亮并保留深色层级；超屏时隐藏系统粗滚动条，触控板/鼠标滚轮滚动不受影响。
+- 代理组把当前 `now` 线路直接显示在组名同一行，并在菜单每次呈现时刷新代理快照，解决 GitHub `.pkg` 看不到当前线路的问题。
+- 主窗口右侧内容区采用更柔和的深灰蓝渐变背景，减少近纯黑空白区域。
+- App / Xcode / portable runtime 统一为 v1.2.10 / build 1210。
+
 ## v1.2.9
 
 - 修复 GitHub/Xcode `.pkg` 安装版状态栏菜单被固定为 720pt 滚动框的问题。

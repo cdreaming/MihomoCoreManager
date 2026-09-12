@@ -382,6 +382,17 @@ final class AppModel: ObservableObject {
         await fetchProxiesInBackground(for: id)
     }
 
+    func refreshProxiesForMenuBar() async {
+        guard let id = selectedProfileID, !proxyBackgroundLoads.contains(id) else { return }
+        proxyBackgroundLoads.insert(id)
+        defer { proxyBackgroundLoads.remove(id) }
+
+        // Unlike ensureProxiesLoaded(), this intentionally refreshes an existing
+        // snapshot whenever the status menu is presented. The Controller's `now`
+        // value can change outside this App and must stay visible beside each group.
+        await fetchProxiesInBackground(for: id)
+    }
+
     func ensureSubscriptionsLoaded() async {
         guard let id = selectedProfileID, subscriptionsLoadedFor != id else { return }
         try? await Task.sleep(nanoseconds: 90_000_000)

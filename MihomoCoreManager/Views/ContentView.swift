@@ -3,6 +3,12 @@ import SwiftUI
 
 enum DashboardPalette {
     static let background = Color(red: 0.055, green: 0.063, blue: 0.082)
+    // Native Xcode/.pkg surfaces use slightly lifted neutrals so the content area
+    // does not read as a near-black void next to the sidebar and cards.
+    static let detailBackground = Color(red: 0.070, green: 0.079, blue: 0.101)
+    static let detailBackgroundTop = Color(red: 0.080, green: 0.089, blue: 0.113)
+    static let menuBackground = Color(red: 0.082, green: 0.091, blue: 0.114)
+    static let menuSelection = Color.white.opacity(0.055)
     static let sidebar = Color(red: 0.095, green: 0.108, blue: 0.133)
     static let surface = Color(red: 0.118, green: 0.127, blue: 0.153)
     static let surfaceRaised = Color(red: 0.135, green: 0.145, blue: 0.175)
@@ -39,8 +45,15 @@ struct ContentView: View {
 
             persistentDetail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(
+                    LinearGradient(
+                        colors: [DashboardPalette.detailBackgroundTop, DashboardPalette.detailBackground],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
         }
-        .background(DashboardPalette.background)
+        .background(DashboardPalette.detailBackground)
         .ignoresSafeArea(.container, edges: .top)
         .background(WindowBehaviorConfigurator().frame(width: 0, height: 0))
         .frame(minWidth: 1000, minHeight: 650)
@@ -107,9 +120,9 @@ private struct WindowBehaviorConfigurator: NSViewRepresentable {
         // Keep any exposed title-bar/chrome pixels on the same dark neutral used
         // by the dashboard instead of the default macOS gray backing.
         window.backgroundColor = NSColor(
-            red: 0.055,
-            green: 0.063,
-            blue: 0.082,
+            red: 0.070,
+            green: 0.079,
+            blue: 0.101,
             alpha: 1.0
         )
 

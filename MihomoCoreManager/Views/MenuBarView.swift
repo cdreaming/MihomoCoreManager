@@ -18,9 +18,10 @@ struct MenuBarView: View {
             if shouldScrollMenu {
                 // Only create a scroll container when the complete menu really is
                 // taller than the usable area of the display.
-                ScrollView(.vertical) {
+                ScrollView(.vertical, showsIndicators: false) {
                     measuredMenuContent
                 }
+                .scrollIndicators(.hidden)
                 .frame(height: maximumMenuHeight)
             } else {
                 // Normal case: render the menu at its natural intrinsic height so
@@ -31,7 +32,7 @@ struct MenuBarView: View {
         }
         .frame(width: 360)
         .frame(maxHeight: maximumMenuHeight)
-        .background(DashboardPalette.background)
+        .background(DashboardPalette.menuBackground)
         .background(MenuBarScreenHeightReader(maximumHeight: $maximumMenuHeight))
         .onPreferenceChange(MenuBarContentHeightPreferenceKey.self) { height in
             guard height > 0, abs(measuredMenuHeight - height) > 0.5 else { return }
@@ -39,7 +40,10 @@ struct MenuBarView: View {
         }
         .preferredColorScheme(.dark)
         .task(id: model.selectedProfileID) {
-            await model.ensureProxiesLoaded()
+            // Refresh on every menu presentation instead of only the first load.
+            // This keeps the selected route suffix in sync with Controller changes
+            // made from MetaCubeXD, another client, or a previous menu session.
+            await model.refreshProxiesForMenuBar()
         }
     }
 
@@ -188,22 +192,41 @@ struct MenuBarView: View {
                             Label("打开代理切换…", systemImage: "macwindow")
                         }
                     } label: {
-                        HStack(spacing: 9) {
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(group.name)
-                                    .font(.system(size: 11.5, weight: .semibold))
+                        HStack(spacing: 8) {
+                            Text(group.name)
+                                .font(.system(size: 11.5, weight: .semibold))
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .frame(maxWidth: 132, alignment: .leading)
+
+                            Spacer(minLength: 4)
+
+                            if let currentSelection {
+                                // Keep the chosen route on the SAME row. SwiftUI
+                                // Menu labels can compress a two-line VStack in
+                                // GitHub/Xcode release builds, hiding the old
+                                // second-line `now` value entirely.
+                                Text(currentSelection)
+                                    .font(.system(size: 10.2, weight: .semibold))
+                                    .foregroundStyle(DashboardPalette.secondary)
                                     .lineLimit(1)
-                                Text(currentSelection ?? group.type)
+                                    .truncationMode(.middle)
+                                    .frame(maxWidth: 126, alignment: .trailing)
+                                    .padding(.horizontal, 7)
+                                    .frame(height: 23)
+                                    .background(DashboardPalette.menuSelection)
+                                    .clipShape(Capsule())
+                                    .overlay {
+                                        Capsule()
+                                            .stroke(DashboardPalette.separator, lineWidth: 1)
+                                    }
+                            } else {
+                                Text(group.type)
                                     .font(.system(size: 9.8, weight: .medium))
                                     .foregroundStyle(DashboardPalette.tertiary)
                                     .lineLimit(1)
                             }
-                            Spacer(minLength: 8)
-                            if let currentSelection {
-                                Text(menuDelayText(model.effectiveProxyDelay(currentSelection, preferredTestURL: group.testURL)))
-                                    .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(DashboardPalette.tertiary)
-                            }
+
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 9, weight: .bold))
                                 .foregroundStyle(DashboardPalette.tertiary)

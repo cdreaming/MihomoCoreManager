@@ -76,11 +76,21 @@ for marker in ["menuProxyTitle(proxyName, group: group)", "preferredTestURL: gro
         errors.append(f"native v1.2.4 tray latency hotfix gate missing: {marker}")
 if 'Image(systemName: "point.3.connected.trianglepath.dotted")' in menu:
     errors.append("native v1.2.4 hotfix must not add a synthetic symbol before proxy-group names")
-for marker in ["shouldScrollMenu", "MenuBarContentHeightPreferenceKey", "MenuBarScreenHeightReader", "visibleFrame.height", "ScrollView(.vertical)"]:
+for marker in ["shouldScrollMenu", "MenuBarContentHeightPreferenceKey", "MenuBarScreenHeightReader", "visibleFrame.height", "ScrollView(.vertical"]:
     if marker not in menu:
         errors.append(f"native v1.2.9 adaptive status-menu height gate missing: {marker}")
 if ".frame(maxHeight: 720)" in menu:
     errors.append("native v1.2.9 status menu must not use the legacy fixed 720pt scroll box")
+for marker in [
+    "ScrollView(.vertical, showsIndicators: false)",
+    ".scrollIndicators(.hidden)",
+    "DashboardPalette.menuBackground",
+    "Text(currentSelection)",
+    "DashboardPalette.menuSelection",
+    "refreshProxiesForMenuBar()",
+]:
+    if marker not in menu:
+        errors.append(f"native v1.2.10 status-menu visual/selection gate missing: {marker}")
 
 settings = (root / "MihomoCoreManager/Views/SettingsView.swift").read_text(encoding="utf-8")
 for marker in ["Management URL", "Core Secret", "Controller Secret", "Direct Core Controller URL", "config.yaml path", "MetaCubeXD URL", "允许不安全 HTTP"]:
@@ -294,6 +304,9 @@ for marker in [
         errors.append(f"native window/backend-selector/titlebar gate missing: {marker}")
 if "miniBrandMark" in content or 'Text("M")\n                                        .font(.system(size: 12' in content:
     errors.append("native v1.1.1 backend selector must not repeat the M brand tile")
+for marker in ["detailBackground", "detailBackgroundTop", "menuBackground", "LinearGradient(", "DashboardPalette.detailBackground"]:
+    if marker not in content:
+        errors.append(f"native v1.2.10 dashboard palette gate missing: {marker}")
 for marker in ["LiveStatusStore", "secretCache", "ensureSubscriptionsLoaded", "ensureLogsLoaded"]:
     if marker not in app_model:
         errors.append(f"native performance gate missing: {marker}")
@@ -325,6 +338,9 @@ for marker in ["isTransientControllerError", "applyLocalProxySelection", "已保
 for marker in ["currentProxySelection", "proxiesByApplyingSelection", "A just-confirmed PUT remains authoritative for this group"]:
     if marker not in app_model:
         errors.append(f"native v1.2.5 immediate proxy selection refresh gate missing: {marker}")
+for marker in ["refreshProxiesForMenuBar", "Unlike ensureProxiesLoaded()", "await fetchProxiesInBackground(for: id)"]:
+    if marker not in app_model:
+        errors.append(f"native v1.2.10 tray proxy refresh gate missing: {marker}")
 for marker in ['let currentSelection = model.currentProxySelection', r'.id("\(group.name)|\(currentSelection ?? group.type)")']:
     if marker not in menu:
         errors.append(f"native v1.2.5 status-menu proxy suffix refresh gate missing: {marker}")
@@ -335,25 +351,27 @@ if "guard model.selectedSection == .logs" not in logs_view:
 for marker in [
     ".windowStyle(.hiddenTitleBar)",
     ".menuBarExtraStyle(.window)",
-    "Image(nsImage: menuBarSpeedImage)",
-    "MenuBarSpeedImageRenderer.make(",
-    "NSImage(size: imageSize, flipped: false)",
+    "Image(nsImage: renderedStatusItem)",
+    "MenuBarStatusImageRenderer.make(",
+    "NSImage(size: size, flipped: false)",
     "image.isTemplate = true",
     "NSFont.monospacedDigitSystemFont(ofSize: 8.3, weight: .semibold)",
-    "private static let numericWidth: CGFloat = 24",
-    "private static let unitWidth: CGFloat = 31",
-    "drawSpeedLine(upload, y: 8.6)",
-    "drawSpeedLine(download, y: -0.4)",
-    '.frame(width: 55, height: 18, alignment: .bottomLeading)',
-    '.offset(y: 1)',
-    "HStack(alignment: .center, spacing: 5)",
-    "if model.menuBarShowIcon",
-    "model.menuBarShowStatus && !model.menuBarShowIcon",
+    "drawSpeedLine(upload, x: x, y: 8.6)",
+    "drawSpeedLine(download, x: x, y: -0.4)",
+    ".renderingMode(.template)",
+    ".id(renderIdentity)",
+    "let effectiveIcon = showIcon || (!showStatus && !showSpeed)",
 ]:
     if marker not in app_swift:
-        errors.append(f"native compact-window/v1.2.2 menu-bar gate missing: {marker}")
-if "private func speedLine(" in app_swift or "VStack(alignment: .leading, spacing: -2)" in app_swift:
-    errors.append("native v1.2.2 status-bar body must not use a multiline SwiftUI speed label")
+        errors.append(f"native v1.2.10 single-image menu-bar gate missing: {marker}")
+for forbidden in [
+    "Image(nsImage: menuBarSpeedImage)",
+    "MenuBarSpeedImageRenderer.make(",
+    "HStack(alignment: .center, spacing: 5)",
+    "VStack(alignment: .leading, spacing: -2)",
+]:
+    if forbidden in app_swift:
+        errors.append(f"native v1.2.10 menu-bar label must remain one rendered image: {forbidden}")
 if "menuBarRateParts" not in app_model:
     errors.append("native v1.2.2 menu-bar rate-parts formatter missing")
 
