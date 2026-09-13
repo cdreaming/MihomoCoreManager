@@ -1,15 +1,15 @@
 {
-  "build": "1300",
+  "build": "1301",
   "contract": "ChatGPT portable preview and GitHub GoWebUI.pkg share scripts/build-gowebui-app.sh and these exact release inputs",
   "files": [
     {
       "path": "VERSION",
-      "sha256": "64d23f858ef51b0f996e4966d4e27c0371b437e2d2787890b1f7ad22d4ec5663",
+      "sha256": "10e2e117b01523891ca271a615ae36e9d5e52348fd7d642f66727602c1b8dcbe",
       "size": 6
     },
     {
       "path": "BUILD_NUMBER",
-      "sha256": "57539f58c62fecbccd2d8481f4acfc667168d6a8fd7b44b42db922ce2bcc0237",
+      "sha256": "fe20f37014281955e2a6f365db6b0dd2d057b127717dc13c9accbe0cdf0e53a5",
       "size": 5
     },
     {
@@ -19,33 +19,38 @@
     },
     {
       "path": "portable-runtime/main.go",
-      "sha256": "bfc0107217854043825e3220d5037a099a779d9a07474faa3c7fa6385137b3e9",
-      "size": 98112
+      "sha256": "73b087e08c1d96d3812701a0284afb78c468f6fa2c92488bc2babc9c6e465f6a",
+      "size": 127182
     },
     {
       "path": "portable-runtime/ui/index.html",
-      "sha256": "6fd1cd12f9eeb8f4446e47fceb07fbe8ef1f478cc6383fcf2b2192a5ab94db72",
-      "size": 73870
+      "sha256": "00347c3a2aeb082c01721b9a6c2944e8ae12cf78524b89af9c3717e4336cf727",
+      "size": 79401
     },
     {
       "path": "portable-runtime/ui/app-icon-128.png",
-      "sha256": "2eb5e516ac8c3971ebe261112c70a30a5f47c92f6a7ab76c39681b7c1107c6df",
-      "size": 21659
+      "sha256": "cbdcf9650e380bba7eecd324ba9d3c9bb95f027c3b788fbec270a8c10f2f854d",
+      "size": 24107
+    },
+    {
+      "path": "branding/MihomoCoreManager-2.png",
+      "sha256": "12373e17081f05b57565c54d9e57e88fc10310cb53e39735059ee2670cfc307a",
+      "size": 1039819
     },
     {
       "path": "branding/AppIcon-master-1024.png",
-      "sha256": "67da86ede1eb396a21e824be7a3c998738dffa99d1ee78d294af1ed091d74551",
-      "size": 374414
+      "sha256": "72fbb4e72e281c2fbbb5e4b059d5090d989a06dcc906d892e8ad3c88e26de1ee",
+      "size": 779389
     },
     {
       "path": "scripts/generate-app-icon.py",
-      "sha256": "3f0a831624de9498252bfc87825e6af9d7c8237865f72e32f3828ff1b9d0b36f",
-      "size": 1014
+      "sha256": "cfd04cf72a28d388c2a0f674f1deae1ecbc1c073633bed24c610e5a9f16f7638",
+      "size": 1371
     },
     {
       "path": "scripts/build-gowebui-release-lock.py",
-      "sha256": "588693e7fb5bfe101ed574a70721aeff6f64c78d3284bdee1394afa52b73e0db",
-      "size": 2888
+      "sha256": "01755a4bc4a3d8b5d5b7b69234dcc4a7c4b067545832e6e14adde942ed0f8bb3",
+      "size": 2928
     },
     {
       "path": "scripts/build-gowebui-app.sh",
@@ -59,48 +64,48 @@
     },
     {
       "path": "scripts/build-gowebui-release.sh",
-      "sha256": "5af0715981ec7f39a8dbe8a53e9c13dc2469591a7d110f3cc4670eef503e0ea3",
-      "size": 2936
+      "sha256": "7dc1c5e8e16a85fa4f2ff41870cda468669891206a4c92c80f508fcbed65bf21",
+      "size": 2828
     },
     {
       "path": "MihomoCoreManager/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-16.png",
-      "sha256": "5280b3f8f0d3436bc9663b2846ceacfe3d6028a107120d5d2c1c3731ab1de7ed",
-      "size": 839
+      "sha256": "6da21a6ef1e7457b7f284153d138644da668169f3b4a136ab0bbcf1a32187abb",
+      "size": 905
     },
     {
       "path": "MihomoCoreManager/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-32.png",
-      "sha256": "88990a94ede38dee3c5633e251da2756782586c0962c672263cd4c09c312f531",
-      "size": 2410
+      "sha256": "70581fd35697cd9482bcdcc56a7067be489e0f9185cb7e06951ac8ddc032871c",
+      "size": 2699
     },
     {
       "path": "MihomoCoreManager/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-64.png",
-      "sha256": "a7342580b3a6eea2bc7b635c7e407ef6773f06e88c0d8474187f8e761a72fe7b",
-      "size": 6983
+      "sha256": "989655121470f2a0eb7f73ef1dae61b8c61311a40984d64d699cf0e0f4899a67",
+      "size": 8201
     },
     {
       "path": "MihomoCoreManager/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-128.png",
-      "sha256": "08fc32e8a4ffe74e9e00c1b0b34c24c17061936ac356196c6697c92cc02d5a83",
-      "size": 22032
+      "sha256": "ae1865d1cc96a86f15aa42202497060099b36337f585a0bf533e18f4512e1463",
+      "size": 24095
     },
     {
       "path": "MihomoCoreManager/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-256.png",
-      "sha256": "d0a3465cfaf6dc6e5950e99bb1f5288bf1059a2939590c37874dc82661ccc68a",
-      "size": 70638
+      "sha256": "e23a5c85718d6c8a68d7ad42dec01289a68c2f94c645eef093bad5e913398d68",
+      "size": 71800
     },
     {
       "path": "MihomoCoreManager/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-512.png",
-      "sha256": "f9f7a3bcc1b23148a53933bf20026606b3f9a69abb55d2a90f47928c483a62a1",
-      "size": 197098
+      "sha256": "e04d3ecb33116650ff663e49aa044c7e4689ae2bb233f7bdbe953d105c8fcdf2",
+      "size": 230256
     },
     {
       "path": "MihomoCoreManager/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
-      "sha256": "67da86ede1eb396a21e824be7a3c998738dffa99d1ee78d294af1ed091d74551",
-      "size": 374414
+      "sha256": "72fbb4e72e281c2fbbb5e4b059d5090d989a06dcc906d892e8ad3c88e26de1ee",
+      "size": 779389
     }
   ],
-  "input_tree_sha256": "b37f96d9b173dadd41d53d14dadea98c1c487083a71ad3d1ee8ba06e7d093c59",
+  "input_tree_sha256": "a1bc8da28675c3995835d810ba71722b56dd8be57b54943f185ea95ef329c753",
   "required_go": "go1.23.2",
   "schema": 1,
   "variant": "GoWebUI",
-  "version": "1.3.0"
+  "version": "1.3.1"
 }

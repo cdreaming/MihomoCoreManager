@@ -19,7 +19,7 @@ enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
         case .subscriptions: "订阅管理"
         case .logs: "运行日志"
         case .updates: "项目升级"
-        case .settings: "设置"
+        case .settings: "服务设置"
         }
     }
 
@@ -43,6 +43,14 @@ struct ServerProfile: Codable, Identifiable, Hashable {
     var coreControllerURL: String
     var configPath: String
     var metaCubeXDURL: String
+    /// Optional SSH destination used to manage the server's fixed `mihomo.service` unit.
+    /// Examples: `root@192.168.1.2`, `admin@mihomo.lan`, or an SSH config alias.
+    /// Empty/nil keeps direct systemd management disabled and preserves v1.3.1 profiles.
+    var systemdSSHTarget: String?
+    /// SSH port for direct `mihomo.service` control. Nil/0 means the standard port 22.
+    var systemdSSHPort: Int?
+    /// Optional local private-key path. Empty/nil uses ssh-agent / ~/.ssh/config.
+    var systemdIdentityFile: String?
     var allowInsecureHTTP: Bool
     var preserveSettingsOnUpdate: Bool
 
@@ -54,6 +62,9 @@ struct ServerProfile: Codable, Identifiable, Hashable {
             coreControllerURL: "https://mihomocore.kkr.cc",
             configPath: "/etc/mihomo/config.yaml",
             metaCubeXDURL: "https://metacubexd.kkr.cc",
+            systemdSSHTarget: nil,
+            systemdSSHPort: 22,
+            systemdIdentityFile: nil,
             allowInsecureHTTP: false,
             preserveSettingsOnUpdate: true
         )
@@ -63,14 +74,54 @@ struct ServerProfile: Codable, Identifiable, Hashable {
         ServerProfile(
             id: UUID(),
             name: "新服务器",
-            managementURL: "https://",
+            managementURL: "",
             coreControllerURL: "",
             configPath: "/etc/mihomo/config.yaml",
             metaCubeXDURL: "",
+            systemdSSHTarget: nil,
+            systemdSSHPort: 22,
+            systemdIdentityFile: nil,
             allowInsecureHTTP: false,
             preserveSettingsOnUpdate: true
         )
     }
+
+    var hasControllerEndpoint: Bool {
+        !coreControllerURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var hasManagementEndpoint: Bool {
+        !managementURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var hasSystemdServiceEndpoint: Bool {
+        !(systemdSSHTarget ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var effectiveSystemdSSHPort: Int {
+        guard let value = systemdSSHPort, (1...65_535).contains(value) else { return 22 }
+        return value
+    }
+}
+
+/// Accept a pasted MetaCubeXD/UI URL such as `http://host:9090/ui/`, but store
+/// the Mihomo Controller API root. The port is intentionally preserved and is
+/// never guessed or auto-added: non-default ports must be entered explicitly.
+func normalizedControllerURL(_ raw: String) -> String {
+    var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !value.isEmpty else { return "" }
+    if !value.contains("://") { value = "http://" + value }
+    guard var components = URLComponents(string: value), components.host != nil else { return value }
+
+    let path = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    if path == "ui" || path.hasPrefix("ui/") {
+        components.path = ""
+    }
+    components.query = nil
+    components.fragment = nil
+    guard var result = components.url?.absoluteString else { return value }
+    if components.path.isEmpty, result.hasSuffix("/") { result.removeLast() }
+    return result
 }
 
 struct APIMessage: Decodable {
@@ -102,6 +153,7 @@ struct ServiceStatus: Decodable {
     let enabled: Bool?
     let unitFileState: String?
     let pid: Int?
+    let unitFilePath: String?
 }
 
 struct SpeedInfo: Decodable {
@@ -349,6 +401,7 @@ struct AppNotice: Identifiable, Equatable {
 enum MihomoClientError: LocalizedError {
     case invalidURL(String)
     case insecureHTTPDisabled
+    case missingManagement
     case missingSecret
     case missingController
     case controllerUnauthorized
@@ -359,10 +412,11 @@ enum MihomoClientError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidURL(let value): "无效 URL：\(value)"
-        case .insecureHTTPDisabled: "该服务器未允许明文 HTTP。请在设置中启用“允许不安全 HTTP”，或改用 HTTPS。"
-        case .missingSecret: "尚未为当前服务器配置 Mihomo Core Secret。"
-        case .missingController: "尚未配置 Direct Core Controller URL，无法连接 Mihomo Core API。"
-        case .controllerUnauthorized: "Mihomo Controller HTTP 401：认证失败。请在设置 > Core 配置中填写 config.yaml 的 secret（Controller Secret）；它可以与管理面板的 Core Secret 不同。"
+        case .insecureHTTPDisabled: "该服务器未允许明文 HTTP。请在“服务设置”中启用“允许不安全 HTTP”，或改用 HTTPS。"
+        case .missingManagement: "此功能需要可选的管理面板 URL；Mihomo Core 基础连接本身不需要它。"
+        case .missingSecret: "此功能需要管理面板 Secret；Controller Secret 仅用于 Mihomo Core API。"
+        case .missingController: "尚未配置 Mihomo Core Controller URL。请填写 API 根地址，例如 http://192.168.1.2:9090，不要带 /ui/。"
+        case .controllerUnauthorized: "Mihomo Controller HTTP 401：认证失败。请在“服务设置” > Mihomo Core 连接中填写 config.yaml 的 secret（Controller Secret）。"
         case .invalidResponse: "服务器返回了无法识别的响应。"
         case .server(let status, let message): "服务器错误 HTTP \(status)：\(message)"
         case .operationFailed(let message): message
