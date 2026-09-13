@@ -7,6 +7,8 @@ errors = []
 version = (root / "VERSION").read_text(encoding="utf-8").strip()
 if not re.fullmatch(r"\d+\.\d+\.\d+", version):
     errors.append(f"VERSION invalid: {version!r}")
+if version != "1.3.1":
+    errors.append(f"v1.3.1 hotfix must not change VERSION (got {version})")
 
 required = [
     "MihomoCoreManager.xcodeproj/project.pbxproj",
@@ -26,12 +28,27 @@ required = [
     "scripts/build-gowebui-release.sh",
     "scripts/build-swiftui-release.sh",
     "scripts/generate-app-icon.py",
+    "branding/MihomoCoreManager-2.png",
     "scripts/release-preflight.py",
     "scripts/simulate-release.sh",
     "docs/RELEASE-GUARDRAILS.md",
+    "API-AUDIT-v1.3.1.md",
+    "INTERFACE-IMPLEMENTATION-v1.3.1.md",
 ]
 for rel in required:
     if not (root / rel).is_file(): errors.append(f"missing: {rel}")
+
+interface_doc = (root / "INTERFACE-IMPLEMENTATION-v1.3.1.md").read_text(encoding="utf-8") if (root / "INTERFACE-IMPLEMENTATION-v1.3.1.md").is_file() else ""
+for marker in [
+    "Controller -> systemd -> Management",
+    "127.0.0.1:0",
+    "systemdSSHPort",
+    "journalctl -u mihomo.service",
+    "不会自动补 `:9090`",
+    "不会自动补 `:29090`",
+]:
+    if marker not in interface_doc:
+        errors.append(f"v1.3.1 interface documentation gate missing: {marker}")
 
 pbx = (root / "MihomoCoreManager.xcodeproj/project.pbxproj").read_text(encoding="utf-8")
 if "ARCHS = arm64;" not in pbx: errors.append("Xcode project is not arm64-only")
@@ -39,6 +56,7 @@ if "MACOSX_DEPLOYMENT_TARGET = 14.0;" not in pbx: errors.append("deployment targ
 if f"MARKETING_VERSION = {version};" not in pbx: errors.append(f"Xcode MARKETING_VERSION must match VERSION {version}")
 expected_build = (root / "BUILD_NUMBER").read_text(encoding="utf-8").strip()
 if not re.fullmatch(r"\d+", expected_build): errors.append(f"BUILD_NUMBER invalid: {expected_build!r}")
+if expected_build != "1301": errors.append(f"v1.3.1 hotfix must keep BUILD_NUMBER=1301 (got {expected_build})")
 if f"CURRENT_PROJECT_VERSION = {expected_build};" not in pbx: errors.append(f"Xcode build number must be {expected_build}")
 if not (root / f"docs/releases/v{version}/RELEASE-NOTES.md").is_file(): errors.append(f"release notes missing for v{version}")
 portable = root / "portable-runtime/main.go"
@@ -73,6 +91,17 @@ for marker in ["controllerUnauthorized", 'if !secret.isEmpty', "Controller Secre
         errors.append(f"native v1.2.3 controller auth-fix gate missing: {marker}")
 if 'Authorization' not in client or 'Bearer' not in client: errors.append("Bearer authentication missing")
 if '.convertToSnakeCase' not in client: errors.append("JSON POST encoding must preserve v4 snake_case keys")
+for marker in [
+    "/usr/bin/ssh",
+    "BatchMode=yes",
+    "ConnectTimeout=4",
+    "systemctl show mihomo.service",
+    "systemdLifecycleAction",
+    "journalctl -u mihomo.service",
+    "SSH 执行超时",
+]:
+    if marker not in client:
+        errors.append(f"native v1.3.1 systemd/service gate missing: {marker}")
 for marker in ["shouldRetrySubscriptionApplyWithRestart", "热重载超时", "action(.stop", "action(.start", "operationFailed"]:
     if marker not in client + "\n" + (root / "MihomoCoreManager/Models.swift").read_text(encoding="utf-8"):
         errors.append(f"native subscription timeout recovery missing: {marker}")
@@ -112,16 +141,35 @@ for marker in [
         errors.append(f"native v1.2.11 status-menu visual/selection gate missing: {marker}")
 
 settings = (root / "MihomoCoreManager/Views/SettingsView.swift").read_text(encoding="utf-8")
-for marker in ["Management URL", "Core Secret", "Controller Secret", "Direct Core Controller URL", "config.yaml path", "MetaCubeXD URL", "允许不安全 HTTP"]:
+for marker in ["Management URL", "Management Secret", "Controller Secret", "Controller URL", "config.yaml path", "MetaCubeXD URL", "允许不安全 HTTP"]:
     if marker not in settings: errors.append(f"settings field missing: {marker}")
 if "NSPasteboard.general.string" not in settings or "doc.on.clipboard" not in settings:
-    errors.append("Core Secret explicit paste support missing from native settings")
+    errors.append("Secret explicit paste support missing from native settings")
+for marker in ["mihomo.service（推荐）", "扩展管理（可选）", "Core 服务面板", "systemdSSHTarget", "systemdSSHPort", "systemdIdentityFile"]:
+    if marker not in settings + "\n" + models_auth:
+        errors.append(f"native v1.3.1 systemd settings gate missing: {marker}")
 
 portable_ui = (root / "portable-runtime/ui/index.html").read_text(encoding="utf-8")
 portable_main = (root / "portable-runtime/main.go").read_text(encoding="utf-8")
-for marker in ["pasteSecret", "/local/clipboard", "支持 ⌘V"]:
+for marker in ["pasteSecret", "pasteControllerSecret", "/local/clipboard"]:
     if marker not in portable_ui + "\n" + portable_main:
         errors.append(f"portable paste support missing: {marker}")
+for marker in [
+    "systemdSSHTarget",
+    "systemdSSHPort",
+    "systemdIdentityFile",
+    "systemdStatusSnapshot",
+    "systemdLifecycleAction",
+    "systemdLogs",
+    "systemctl show mihomo.service",
+    "journalctl -u mihomo.service",
+    'net.Listen("tcp4", "127.0.0.1:0")',
+]:
+    if marker not in portable_main:
+        errors.append(f"portable v1.3.1 systemd/port gate missing: {marker}")
+for marker in ["mihomo.service（推荐）", "扩展管理（可选）", "Core 服务面板", "pSystemdTarget", "pSystemdPort", "pSystemdIdentity"]:
+    if marker not in portable_ui:
+        errors.append(f"portable v1.3.1 systemd settings UI gate missing: {marker}")
 for marker in ["'粘贴','paste:','v'", "'复制','copy:','c'", "'全选','selectAll:','a'"]:
     if marker not in portable_main:
         errors.append(f"portable standard Edit menu missing: {marker}")
@@ -245,7 +293,7 @@ models = (root / "MihomoCoreManager/Models.swift").read_text(encoding="utf-8")
 subscriptions_view = (root / "MihomoCoreManager/Views/SubscriptionsView.swift").read_text(encoding="utf-8")
 logs_view = (root / "MihomoCoreManager/Views/LogsView.swift").read_text(encoding="utf-8")
 app_swift = (root / "MihomoCoreManager/MihomoCoreManagerApp.swift").read_text(encoding="utf-8")
-for marker in ["case settings", 'case .settings: "设置"']:
+for marker in ["case settings", 'case .settings: "服务设置"']:
     if marker not in models:
         errors.append(f"native Settings tab model gate missing: {marker}")
 for marker in ["case proxies", 'case .proxies: "代理切换"', "MihomoRunMode", "MihomoProxy"]:
@@ -315,7 +363,7 @@ for marker in [
     "DashboardBackendSelector",
     "BackendPickerPopover",
     '.frame(height: 43)',
-    'Text("管理后端")',
+    'Text("后端管理")',
     'Text("选择要管理的 Mihomo Core 服务器")',
     '.frame(width: 232)',
 ]:
@@ -446,7 +494,7 @@ settings_dashboard = settings.split("struct SettingsRootView: View {", 1)[0]
 for rel_name, text in [("OverviewView.swift", overview), ("CoreView.swift", core_view), ("SubscriptionsView.swift", subscriptions_view), ("SettingsView.swift (dashboard)", settings_dashboard)]:
     if "ViewThatFits(in: .horizontal)" in text:
         errors.append(f"duplicate responsive button/view subtree is not allowed in {rel_name}")
-for marker in ["DashboardLayout.pageHorizontalPadding", "DashboardLayout.pageVerticalPadding", "DashboardLayout.pageSpacing"]:
+for marker in ["DashboardLayout.pageHorizontalPadding", "DashboardLayout.pageTopPadding", "DashboardLayout.pageBottomPadding", "DashboardLayout.pageSpacing"]:
     for rel_name, text in [("OverviewView.swift", overview), ("CoreView.swift", core_view), ("SubscriptionsView.swift", subscriptions_view), ("LogsView.swift", logs_view), ("UpdateView.swift", update_view), ("SettingsView.swift (dashboard)", settings_dashboard)]:
         if marker not in text:
             errors.append(f"shared dashboard layout marker missing in {rel_name}: {marker}")
@@ -555,10 +603,10 @@ if "function renderStatusSpeedOverlay()" in portable_main and "function renderSt
 
 portable_installer = (root / "scripts/build-portable-installer.sh").read_text(encoding="utf-8")
 goweb_app_installer = (root / "scripts/build-gowebui-app.sh").read_text(encoding="utf-8")
-for marker in ["GOOS=darwin GOARCH=arm64", "MihomoCoreManager.app", "LSMinimumSystemVersion"]:
+for marker in ["GOOS=darwin GOARCH=arm64", "MihomoManager.app", "LSMinimumSystemVersion"]:
     if marker not in portable_installer + "\n" + goweb_app_installer:
         errors.append(f"portable/shared GoWebUI app gate missing: {marker}")
-for marker in ["Install-MihomoCoreManager.command", "codesign --force --deep --sign -", "scripts/build-gowebui-app.sh"]:
+for marker in ["Install-MihomoManager.command", "codesign --force --deep --sign -", "scripts/build-gowebui-app.sh"]:
     if marker not in portable_installer:
         errors.append(f"portable installer gate missing: {marker}")
 
@@ -572,7 +620,10 @@ for marker in ['DashboardPanelHeader(title: "App 与状态栏"', 'appControlCell
     if marker not in settings_dashboard:
         errors.append(f"two-column App/status settings gate missing: {marker}")
 if ".frame(height: 336)" not in overview: errors.append("overview paired panels must use the same 336pt height")
-if ".frame(height: 300)" not in core_view: errors.append("Core paired panels must use the same 300pt height")
+if core_view.count("minHeight: 328") < 2:
+    errors.append("Core paired panels must share the same 328pt minimum height")
+if ".frame(height: 300)" in core_view:
+    errors.append("Core paired panels must not be forced into the legacy 300pt outer frame")
 
 for marker in ['data-nav="settings"', 'data-view="settings"', 'contain:layout paint style', "pageLoaded=new Set()", "document.hidden", 'id="pMenuIcon"', "showIcon:icon.checked"]:
     if marker not in portable_ui:
@@ -674,7 +725,7 @@ for marker in [
     "profile-trigger-label",
     "height:43px",
     "min-height:52px",
-    "管理后端",
+    '<span class="profile-trigger-label">后端管理</span>',
     "width:100%",
     "max-width:100%",
     "profile-option-title",
@@ -695,13 +746,85 @@ if not (root / "GoWebUI-RELEASE-LOCK.json").is_file():
 icon_dir = root / "MihomoCoreManager/Resources/Assets.xcassets/AppIcon.appiconset"
 for size in [16, 32, 64, 128, 256, 512, 1024]:
     if not (icon_dir / f"AppIcon-{size}.png").is_file():
-        errors.append(f"v1.3.0 modern shared AppIcon missing size: {size}")
+        errors.append(f"v1.3.1 shared AppIcon missing size: {size}")
 if not (root / "branding/AppIcon-master-1024.png").is_file():
-    errors.append("v1.3.0 branding master icon missing")
-if 'Image(nsImage: NSApplication.shared.applicationIconImage)' not in content:
-    errors.append("SwiftUI sidebar must use the shared application icon")
-if 'GoWebUI · Remote' not in portable_ui:
+    errors.append("v1.3.1 branding master icon missing")
+for marker in ["isLANHost", "backendProxy", "darwinSystemHostAddresses", "adaptivePollDelay", "CloseIdleConnections"]:
+    if marker not in portable_main:
+        errors.append(f"v1.3.1 GoWebUI LAN/tunnel resilience gate missing: {marker}")
+for marker in ["pageTopPadding", "pageBottomPadding", 'case .settings: "服务设置"']:
+    layout_text = (root / "MihomoCoreManager/Views/ContentView.swift").read_text(encoding="utf-8") + "\n" + models_auth
+    if marker not in layout_text:
+        errors.append(f"v1.3.1 layout/service-settings gate missing: {marker}")
+if 'padding:38px 28px 30px' not in portable_ui or '.main{padding-top:38px}' not in portable_ui or '>服务设置</button>' not in portable_ui:
+    errors.append("v1.3.1 GoWebUI aligned layout/service-settings gate missing")
+if '.main{padding-top:26px}' in portable_ui:
+    errors.append("v1.3.1 GoWebUI macOS shell override still raises the right pane above the sidebar")
+for marker in ["statusFailureCount", "failureDelay", "Cloudflare Tunnel"]:
+    if marker not in (root / "MihomoCoreManager/AppModel.swift").read_text(encoding="utf-8") + "\n" + client:
+        errors.append(f"v1.3.1 SwiftUI tunnel backoff gate missing: {marker}")
+for marker in ["normalizedControllerURL", "Controller URL 建议填写 API 根地址", "端口不会自动补", "扩展管理（可选）"]:
+    if marker not in settings + "\n" + (root / "MihomoCoreManager/Models.swift").read_text(encoding="utf-8"):
+        errors.append(f"v1.3.1 networking hotfix gate missing: {marker}")
+for marker in ["normalizeControllerBase", "normalizedControllerString", "Controller URL 可填 API 根地址", "端口不会自动补"]:
+    if marker not in portable_main + "\n" + portable_ui:
+        errors.append(f"v1.3.1 GoWebUI networking hotfix gate missing: {marker}")
+if 'Image("BrandLogo")' not in content or not (root / 'MihomoCoreManager/Resources/Assets.xcassets/BrandLogo.imageset/Contents.json').exists():
+    errors.append("SwiftUI sidebar must use the dedicated transparent BrandLogo asset")
+if 'GoWebUI · Core' not in portable_ui:
     errors.append("GoWebUI preview must identify its implementation in the sidebar")
+
+# v1.3.1 in-place hotfix gates. Keep the public version/build unchanged, only
+# rename the backend selector requested by the user, preserve navigation labels,
+# restore v1.3.0 App/status settings, and prefer Mihomo's native restart API.
+for marker in [
+    'case .overview: "概览"',
+    'case .core: "Core 控制"',
+    'case .proxies: "代理切换"',
+    'case .subscriptions: "订阅管理"',
+    'case .logs: "运行日志"',
+    'case .updates: "项目升级"',
+    'case .settings: "服务设置"',
+]:
+    if marker not in models:
+        errors.append(f"v1.3.1 hotfix navigation-label stability gate missing: {marker}")
+for marker in [
+    'data-nav="overview"',
+    'data-nav="core"',
+    'data-nav="proxies"',
+    'data-nav="subscriptions"',
+    'data-nav="logs"',
+    'data-nav="settings"',
+    '<span class="profile-trigger-label">后端管理</span>',
+    '<strong>后端管理</strong><small>',
+    'id="pRefreshInterval"',
+    'id="pDefaultLogLines"',
+    '/local/management-secret/clear',
+    'refreshIntervalMS',
+    'logLines',
+]:
+    if marker not in portable_ui + "\n" + portable_main:
+        errors.append(f"v1.3.1 hotfix GoWebUI gate missing: {marker}")
+for marker in [
+    'func restartCore(',
+    'path: "/restart"',
+    '已通过 Mihomo Core API 重启 Core',
+    '任一未单独设置时自动复用另一个',
+    'DashboardPanelHeader(title: "App 与状态栏"',
+    'appControlCell("状态刷新间隔"',
+    'appControlCell("默认日志行数"',
+    'coreRestartAvailable',
+]:
+    if marker not in client + "\n" + settings + "\n" + content + "\n" + app_model + "\n" + core_view:
+        errors.append(f"v1.3.1 hotfix SwiftUI gate missing: {marker}")
+for marker in [
+    '"/restart"',
+    '"via": "controller"',
+    'TestDirectRestartPrefersMihomoCoreAPI',
+    'TestRestartFallsBackToManagementWhenControllerRestartFails',
+]:
+    if marker not in portable_main + "\n" + portable_tests:
+        errors.append(f"v1.3.1 hotfix Core API restart/test gate missing: {marker}")
 
 with (root / "MihomoCoreManager/Info.plist").open("rb") as f:
     plist = plistlib.load(f)
@@ -770,8 +893,8 @@ for marker in [
 for marker in [
     'scripts/build-gowebui-release.sh',
     'scripts/build-swiftui-release.sh',
-    'MihomoCoreManager-v${VERSION}-GoWebUI-arm64.pkg',
-    'MihomoCoreManager-v${VERSION}-SwiftUI-arm64.pkg',
+    'MihomoManager-v${VERSION}-GoWebUI-arm64.pkg',
+    'MihomoManager-v${VERSION}-SwiftUI-arm64.pkg',
 ]:
     if marker not in build_release:
         errors.append(f"v1.3.0 dual-release orchestration gate missing: {marker}")
@@ -804,8 +927,8 @@ for marker in [
     "cache: false",
     "bash scripts/simulate-release.sh",
     'gh release upload "$TAG" dist/* --clobber',
-    'MihomoCoreManager-v${VERSION}-GoWebUI-arm64.pkg',
-    'MihomoCoreManager-v${VERSION}-SwiftUI-arm64.pkg',
+    'MihomoManager-v${VERSION}-GoWebUI-arm64.pkg',
+    'MihomoManager-v${VERSION}-SwiftUI-arm64.pkg',
     "GoWebUI-RELEASE-PROVENANCE.txt",
     "SwiftUI-RELEASE-PROVENANCE.txt",
     "Verify GoWebUI release lock",
@@ -818,11 +941,53 @@ for marker in [
     "go-version: '1.23.2'",
     "cache: false",
     "bash scripts/simulate-release.sh",
-    "Apple Silicon arm64 dual implementation release simulation",
+    "arm64 dual implementation release simulation (macOS Intel cross-build)",
     "dist-portable/",
 ]:
     if marker not in ci_workflow:
         errors.append(f"v1.3.0 macOS CI dual-release gate missing: {marker}")
+for marker in [
+    "runs-on: macos-15-intel",
+    'test "$(uname -m)" = "x86_64"',
+]:
+    if marker not in ci_workflow:
+        errors.append(f"v1.3.1 queued-runner mitigation missing from CI: {marker}")
+for marker in [
+    "runs-on: macos-15-intel",
+    'Release runner 必须为 macos-15-intel/x86_64',
+]:
+    if marker not in workflow:
+        errors.append(f"v1.3.1 queued-runner mitigation missing from Release: {marker}")
+for marker in [
+    "generic/platform=macOS",
+    "ARCHS=arm64 ONLY_ACTIVE_ARCH=NO",
+    '[[ "$ARCHS" == "arm64" ]]',
+]:
+    if marker not in swiftui_release:
+        errors.append(f"v1.3.1 SwiftUI arm64 cross-build guard missing: {marker}")
+if 'requires Apple Silicon arm64' in goweb_release + "\n" + swiftui_release:
+    errors.append("release packaging must not require a scarce Apple Silicon host runner")
+release_preflight = (root / "scripts/release-preflight.py").read_text(encoding="utf-8")
+release_host_policy = (root / "scripts/release_host_policy.py").read_text(encoding="utf-8")
+for marker in [
+    'validate_release_host(platform.system(), host_arch)',
+    'strict macOS release host: {host_arch}; release target: {release_target_arch}',
+    '"ARCHS=arm64"',
+    '"ONLY_ACTIVE_ARCH=NO"',
+]:
+    if marker not in release_preflight:
+        errors.append(f"v1.3.1 Intel-host/arm64-target strict preflight guard missing: {marker}")
+for marker in [
+    'SUPPORTED_MACOS_HOST_ARCHS = frozenset({"x86_64", "arm64"})',
+    'validate_release_host("Darwin", "x86_64") == "arm64"',
+    'validate_release_host("Darwin", "arm64") == "arm64"',
+]:
+    if marker not in release_host_policy:
+        errors.append(f"v1.3.1 release-host policy regression guard missing: {marker}")
+if "python3 scripts/release_host_policy.py --self-test" not in simulate_release:
+    errors.append("release simulation must exercise Intel-host/arm64-target policy")
+if "requires an arm64 Apple Silicon runner" in release_preflight + "\n" + release_host_policy:
+    errors.append("strict release preflight must not reject the macos-15-intel cross-build host")
 for forbidden in ["secrets.APPLE_", "校验签名与公证 Secrets", "导入 Developer ID 证书"]:
     if forbidden in workflow:
         errors.append(f"unsigned release workflow must not require Apple signing secrets: {forbidden}")

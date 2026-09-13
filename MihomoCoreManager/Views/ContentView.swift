@@ -31,7 +31,11 @@ enum DashboardPalette {
 
 enum DashboardLayout {
     static let pageHorizontalPadding: CGFloat = 28
-    static let pageVerticalPadding: CGFloat = 26
+    // Align the right-side page content with the top edge of the sidebar brand.
+    // The full-size hidden title bar otherwise makes a 26pt detail inset appear
+    // visibly higher than the 38pt sidebar content start.
+    static let pageTopPadding: CGFloat = 38
+    static let pageBottomPadding: CGFloat = 30
     static let pageSpacing: CGFloat = 22
     static let sectionSpacing: CGFloat = 14
     static let panelSpacing: CGFloat = 12
@@ -217,12 +221,11 @@ private struct DashboardSidebarBrand: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 14) {
-                Image(nsImage: NSApplication.shared.applicationIconImage)
+                Image("BrandLogo")
                     .resizable()
                     .interpolation(.high)
+                    .scaledToFit()
                     .frame(width: 54, height: 54)
-                    .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-                    .shadow(color: DashboardPalette.accent.opacity(0.24), radius: 18, y: 8)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Mihomo Core")
@@ -283,15 +286,11 @@ private struct DashboardSidebarStatus: View {
     }
 
     private var panelLabel: String {
-        if let raw = live.status?.management?.publicUrl,
-           let url = URL(string: raw), let port = url.port {
+        if let raw = model.selectedProfile?.coreControllerURL,
+           let url = URL(string: normalizedControllerURL(raw)), let port = url.port {
             return "SwiftUI :\(port)"
         }
-        if let raw = model.selectedProfile?.managementURL,
-           let url = URL(string: raw), let port = url.port {
-            return "SwiftUI :\(port)"
-        }
-        return "SwiftUI · Remote"
+        return "SwiftUI · Core"
     }
 }
 
@@ -331,7 +330,7 @@ private struct DashboardBackendSelector: View {
                 }
                 .frame(width: 27, height: 27)
 
-                Text("管理后端")
+                Text("后端管理")
                     .font(.system(size: 14, weight: .semibold))
 
                 Spacer(minLength: 0)
@@ -366,7 +365,7 @@ private struct BackendPickerPopover: View {
         VStack(spacing: 0) {
             HStack(alignment: .center, spacing: 10) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("管理后端")
+                    Text("后端管理")
                         .font(.system(size: 14, weight: .semibold))
                     Text("选择要管理的 Mihomo Core 服务器")
                         .font(.system(size: 10.5))
@@ -399,11 +398,11 @@ private struct BackendPickerPopover: View {
                                             .font(.system(size: 12.5, weight: .semibold))
                                             .foregroundStyle(.white)
                                             .lineLimit(1)
-                                        if !model.hasSecret(for: profile.id) {
+                                        if !profile.hasControllerEndpoint {
                                             Image(systemName: "exclamationmark.circle")
                                                 .font(.system(size: 9.5, weight: .semibold))
                                                 .foregroundStyle(Color.orange.opacity(0.9))
-                                                .help("该服务器尚未保存 Core Secret")
+                                                .help("该服务器尚未配置 Mihomo Core Controller URL")
                                         }
                                     }
                                     Text(backendEndpointText(profile))
@@ -466,10 +465,10 @@ private struct BackendPickerPopover: View {
 }
 
 private func backendEndpointText(_ profile: ServerProfile?) -> String {
-    guard let profile,
-          let url = URL(string: profile.managementURL),
-          let host = url.host else {
-        return "Mihomo Core 后端"
+    guard let profile else { return "Mihomo Core" }
+    let candidate = profile.hasControllerEndpoint ? normalizedControllerURL(profile.coreControllerURL) : profile.managementURL
+    guard let url = URL(string: candidate), let host = url.host else {
+        return "Mihomo Core"
     }
     if let port = url.port { return "\(host):\(port)" }
     return host
@@ -811,7 +810,8 @@ struct ProxiesView: View {
                 proxyWorkspace
             }
             .padding(.horizontal, DashboardLayout.pageHorizontalPadding)
-            .padding(.vertical, DashboardLayout.pageVerticalPadding)
+            .padding(.top, DashboardLayout.pageTopPadding)
+            .padding(.bottom, DashboardLayout.pageBottomPadding)
         }
         .task(id: loadTaskID) {
             guard model.selectedSection == .proxies else { return }
@@ -1189,7 +1189,7 @@ struct ProxiesView: View {
 
     private var controllerText: String {
         let value = model.selectedProfile?.coreControllerURL.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return value.isEmpty ? "请先在设置中配置 Direct Core Controller URL" : value
+        return value.isEmpty ? "请先在“服务设置”中配置 Mihomo Core Controller URL" : value
     }
 
     private var controllerConfigured: Bool {

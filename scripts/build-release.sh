@@ -30,16 +30,16 @@ DIST="$DIST" bash "$ROOT/scripts/build-swiftui-release.sh" "$MODE"
 cp "$ROOT/docs/releases/v${VERSION}/RELEASE-NOTES.md" "$NOTES"
 cp "$ROOT/GoWebUI-RELEASE-LOCK.json" "$LOCK_ASSET"
 cat > "$VARIANTS" <<EOF
-Mihomo Core Manager v${VERSION} (build ${BUILD_NUMBER})
+MihomoManager v${VERSION} (build ${BUILD_NUMBER})
 
 Official GitHub Release variants:
 - GoWebUI: Go + AppKit/JXA + WKWebView/Web UI
-  Package: MihomoCoreManager-v${VERSION}-GoWebUI-arm64.pkg
-  Quick preview: MihomoCoreManager-v${VERSION}-GoWebUI-arm64-portable-installer.zip
+  Package: MihomoManager-v${VERSION}-GoWebUI-arm64.pkg
+  Quick preview: MihomoManager-v${VERSION}-GoWebUI-arm64-portable-installer.zip
   Canonical builder shared by preview and .pkg: scripts/build-gowebui-app.sh
 
 - SwiftUI: SwiftUI + AppKit native implementation
-  Package: MihomoCoreManager-v${VERSION}-SwiftUI-arm64.pkg
+  Package: MihomoManager-v${VERSION}-SwiftUI-arm64.pkg
 
 Both variants share VERSION, BUILD_NUMBER, release notes and AppIcon assets.
 They are separate UI implementations and are named accordingly.
@@ -48,8 +48,8 @@ EOF
 (
   cd "$DIST"
   shasum -a 256 \
-    "MihomoCoreManager-v${VERSION}-GoWebUI-arm64.pkg" \
-    "MihomoCoreManager-v${VERSION}-SwiftUI-arm64.pkg" \
+    "MihomoManager-v${VERSION}-GoWebUI-arm64.pkg" \
+    "MihomoManager-v${VERSION}-SwiftUI-arm64.pkg" \
     "GoWebUI-APP-MANIFEST.json" \
     "SwiftUI-APP-MANIFEST.json" \
     "GoWebUI-RELEASE-PROVENANCE.txt" \

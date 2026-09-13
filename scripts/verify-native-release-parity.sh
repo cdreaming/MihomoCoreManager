@@ -5,9 +5,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
 BUILD_NUMBER="${VERSION//./}"
 DIST="${1:-$ROOT/dist}"
-APP_ZIP="$DIST/MihomoCoreManager-v${VERSION}-arm64.zip"
-PKG="$DIST/MihomoCoreManager-v${VERSION}-arm64.pkg"
-INSTALLER="$DIST/MihomoCoreManager-v${VERSION}-arm64-native-installer.zip"
+APP_ZIP="$DIST/MihomoManager-v${VERSION}-arm64.zip"
+PKG="$DIST/MihomoManager-v${VERSION}-arm64.pkg"
+INSTALLER="$DIST/MihomoManager-v${VERSION}-arm64-native-installer.zip"
 EXPECTED_MANIFEST="$DIST/NATIVE-APP-MANIFEST.json"
 
 [[ "$(uname -s)" == "Darwin" ]] || { echo "native release parity verification requires macOS" >&2; exit 1; }
@@ -29,8 +29,8 @@ mkdir -p "$TMP/appzip" "$TMP/installer"
 find_app() {
   local root="$1"
   local found
-  found="$(find "$root" -type d -name 'MihomoCoreManager.app' -print | head -n 1)"
-  [[ -n "$found" ]] || { echo "MihomoCoreManager.app not found under $root" >&2; exit 1; }
+  found="$(find "$root" -type d -name 'MihomoManager.app' -print | head -n 1)"
+  [[ -n "$found" ]] || { echo "MihomoManager.app not found under $root" >&2; exit 1; }
   printf '%s\n' "$found"
 }
 
@@ -73,7 +73,7 @@ print(f"bundle version: PASS (v{version} / build {build})")
 PY
 
 for app in "$ZIP_APP" "$INSTALLER_APP" "$PKG_APP"; do
-  archs="$(/usr/bin/lipo -archs "$app/Contents/MacOS/MihomoCoreManager" | xargs)"
+  archs="$(/usr/bin/lipo -archs "$app/Contents/MacOS/MihomoManager" | xargs)"
   [[ "$archs" == "arm64" ]] || { echo "expected arm64-only app, got: $archs ($app)" >&2; exit 1; }
   /usr/bin/codesign --verify --strict --verbose=1 "$app" >/dev/null 2>&1 || {
     echo "codesign verification failed for extracted app: $app" >&2

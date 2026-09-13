@@ -32,7 +32,8 @@ struct LogsView: View {
             }.frame(maxHeight: .infinity)
         }
         .padding(.horizontal, DashboardLayout.pageHorizontalPadding)
-        .padding(.vertical, DashboardLayout.pageVerticalPadding)
+        .padding(.top, DashboardLayout.pageTopPadding)
+            .padding(.bottom, DashboardLayout.pageBottomPadding)
         .task(id: loadTaskID) { guard model.selectedSection == .logs else { return }; await model.ensureLogsLoaded() }
         .disabled(model.isBusy)
     }

@@ -10,6 +10,8 @@ import shutil
 import subprocess
 import sys
 
+from release_host_policy import RELEASE_TARGET_ARCH, validate_release_host
+
 root = Path(__file__).resolve().parents[1]
 version = (root / "VERSION").read_text(encoding="utf-8").strip()
 build_number = (root / "BUILD_NUMBER").read_text(encoding="utf-8").strip()
@@ -44,7 +46,7 @@ parser = argparse.ArgumentParser(
 parser.add_argument(
     "--strict-macos",
     action="store_true",
-    help="require an Apple Silicon macOS runner with Xcode and validate Xcode build settings",
+    help="require a supported macOS release host with Xcode and validate the arm64 cross-build settings",
 )
 args = parser.parse_args()
 
@@ -70,14 +72,18 @@ else:
 run([sys.executable, "scripts/validate-source.py"])
 run([sys.executable, "scripts/build-source-manifest.py", "--check"])
 
-# Fail fast on a non-macOS host after the manifest/source gates.  This ordering
-# lets the exact --strict-macos command exercise the same manifest logic in
-# portable release simulations without pretending Linux is macOS.
+# Fail fast on an unsupported host after the manifest/source gates.  The
+# official workflows intentionally run on macos-15-intel to avoid scarce M1
+# runner queues, then cross-build arm64-only release artifacts.  Strict mode
+# therefore validates the *release target* and toolchain; it must not confuse
+# the x86_64 build host with the arm64 deployment target.
 if args.strict_macos:
-    if platform.system() != "Darwin":
-        fail("--strict-macos requires macOS")
-    if platform.machine() != "arm64":
-        fail("--strict-macos requires an arm64 Apple Silicon runner")
+    host_arch = platform.machine()
+    try:
+        release_target_arch = validate_release_host(platform.system(), host_arch)
+    except ValueError as exc:
+        fail(str(exc))
+    print(f"strict macOS release host: {host_arch}; release target: {release_target_arch}")
 
 for script in [
     "scripts/build-release.sh",
@@ -90,6 +96,7 @@ for script in [
     run(["bash", "-n", script])
 run([sys.executable, "-m", "py_compile", "scripts/app-bundle-manifest.py"])
 run([sys.executable, "-m", "py_compile", "scripts/build-gowebui-release-lock.py"])
+run([sys.executable, "-m", "py_compile", "scripts/release_host_policy.py"])
 run([sys.executable, "scripts/build-gowebui-release-lock.py", "--check"])
 
 # 2. Project membership: every Swift source on disk must be represented in the Xcode project.
@@ -192,8 +199,8 @@ for marker in [
 for marker in [
     'scripts/build-gowebui-release.sh',
     'scripts/build-swiftui-release.sh',
-    'MihomoCoreManager-v${VERSION}-GoWebUI-arm64.pkg',
-    'MihomoCoreManager-v${VERSION}-SwiftUI-arm64.pkg',
+    'MihomoManager-v${VERSION}-GoWebUI-arm64.pkg',
+    'MihomoManager-v${VERSION}-SwiftUI-arm64.pkg',
 ]:
     if marker not in build_script:
         fail(f"v1.3.0 dual-release orchestration guard missing: {marker}")
@@ -225,7 +232,9 @@ run([go, "test", "-count=1", "./..."], cwd=portable_root, env=go_env)
 run([go, "vet", "./..."], cwd=portable_root, env=go_env)
 
 
-# 6. Strict runner checks used by GitHub macos-15 CI/Release.
+# 6. Strict macOS/Xcode checks used by GitHub macos-15-intel CI/Release.
+#    Every architecture assertion below is about the arm64 target/output, not
+#    the Intel host CPU.
 if args.strict_macos:
     for tool in ["xcodebuild", "xcrun", "lipo", "codesign", "ditto", "pkgbuild", "productbuild", "pkgutil", "shasum"]:
         if not shutil.which(tool):
@@ -245,10 +254,10 @@ if args.strict_macos:
             "-project", "MihomoCoreManager.xcodeproj",
             "-scheme", "MihomoCoreManager",
             "-configuration", "Release",
-            "-destination", "platform=macOS",
+            "-destination", "generic/platform=macOS",
             "-showBuildSettings",
             "ARCHS=arm64",
-            "ONLY_ACTIVE_ARCH=YES",
+            "ONLY_ACTIVE_ARCH=NO",
             f"MARKETING_VERSION={version}",
             f"CURRENT_PROJECT_VERSION={build_number}",
             "CODE_SIGNING_ALLOWED=NO",
@@ -262,7 +271,7 @@ if args.strict_macos:
         "MARKETING_VERSION": version,
         "CURRENT_PROJECT_VERSION": build_number,
         "SWIFT_VERSION": "5.0",
-        "ONLY_ACTIVE_ARCH": "YES",
+        "ONLY_ACTIVE_ARCH": "NO",
         "SWIFT_ENABLE_BATCH_MODE": "NO",
     }
     for key, expected in expected_settings.items():
