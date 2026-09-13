@@ -65,7 +65,8 @@ struct SubscriptionsView: View {
                 }
             }
             .padding(.horizontal, DashboardLayout.pageHorizontalPadding)
-            .padding(.vertical, DashboardLayout.pageVerticalPadding)
+            .padding(.top, DashboardLayout.pageTopPadding)
+            .padding(.bottom, DashboardLayout.pageBottomPadding)
         }
         .task(id: loadTaskID) {
             guard model.selectedSection == .subscriptions else { return }

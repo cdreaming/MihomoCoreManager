@@ -31,6 +31,73 @@ func TestHTTPGate(t *testing.T) {
 	}
 }
 
+func TestLANHostClassification(t *testing.T) {
+	for _, host := range []string{
+		"localhost", "nas", "server.local", "router.lan", "host.home.arpa",
+		"127.0.0.1", "10.0.0.8", "172.16.1.9", "192.168.50.4", "169.254.10.2", "::1", "fd00::10",
+	} {
+		if !isLANHost(host) {
+			t.Errorf("expected LAN host classification for %q", host)
+		}
+	}
+	for _, host := range []string{"example.com", "cloudflare.com", "8.8.8.8", "1.1.1.1"} {
+		if isLANHost(host) {
+			t.Errorf("public host must not be classified as LAN: %q", host)
+		}
+	}
+}
+
+func TestBackendProxyAlwaysBypassesExplicitLANHost(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "http://192.168.20.15:8080/api/status", nil)
+	proxyURL, err := backendProxy(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if proxyURL != nil {
+		t.Fatalf("LAN backend must be connected directly, got proxy %s", proxyURL)
+	}
+}
+
+func TestAdaptivePollDelayBacksOffAndCaps(t *testing.T) {
+	base := 1200 * time.Millisecond
+	if got := adaptivePollDelay(base, 30*time.Second, 0); got != base {
+		t.Fatalf("healthy delay changed: %v", got)
+	}
+	if got := adaptivePollDelay(base, 30*time.Second, 1); got != 2400*time.Millisecond {
+		t.Fatalf("first failure should back off to 2x, got %v", got)
+	}
+	if got := adaptivePollDelay(base, 30*time.Second, 9); got != 30*time.Second {
+		t.Fatalf("backoff must cap at 30s, got %v", got)
+	}
+}
+
+func TestControllerURLStripsUIPrefixAndPreservesExplicitPort(t *testing.T) {
+	normalized, err := normalizedControllerString("http://192.168.9.202:9090/ui/", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normalized != "http://192.168.9.202:9090" {
+		t.Fatalf("unexpected normalized controller URL: %s", normalized)
+	}
+	target, err := joinURL(normalized, "/version", true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target != "http://192.168.9.202:9090/version" {
+		t.Fatalf("unexpected controller target: %s", target)
+	}
+}
+
+func TestControllerURLDoesNotInventPort(t *testing.T) {
+	normalized, err := normalizedControllerString("http://mihomo.lan/ui/", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normalized != "http://mihomo.lan" {
+		t.Fatalf("controller URL must not auto-add a port: %s", normalized)
+	}
+}
+
 func TestJoinProxyURLEscapesGroupAsSinglePathSegment(t *testing.T) {
 	got, err := joinProxyURL("https://example.com/controller", "HK / Auto", false)
 	if err != nil {
@@ -745,7 +812,7 @@ func TestMenuPreferences(t *testing.T) {
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/local/menu-preferences", strings.NewReader(`{"showIcon":true,"showStatus":false,"showSpeed":true}`))
+	req := httptest.NewRequest(http.MethodPost, "/local/menu-preferences", strings.NewReader(`{"showIcon":true,"showStatus":false,"showSpeed":true,"refreshIntervalMS":5000,"logLines":300}`))
 	rec := httptest.NewRecorder()
 	state.handleMenuPreferences(rec, req)
 	if rec.Code != http.StatusOK {
@@ -756,8 +823,20 @@ func TestMenuPreferences(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got["showIcon"] != true || got["showStatus"] != false || got["showSpeed"] != true {
+	if got["showIcon"] != true || got["showStatus"] != false || got["showSpeed"] != true || got["refreshIntervalMS"] != float64(5000) || got["logLines"] != float64(300) {
 		t.Fatalf("unexpected prefs: %#v", got)
+	}
+	if state.refreshInterval() != 5*time.Second {
+		t.Fatalf("refresh interval was not applied: %v", state.refreshInterval())
+	}
+
+	// The native menu process posts only its three booleans. That must not erase
+	// the v1.3.0-compatible refresh/log preferences restored in the Web UI.
+	req = httptest.NewRequest(http.MethodPost, "/local/menu-preferences", strings.NewReader(`{"showIcon":true,"showStatus":true,"showSpeed":false}`))
+	rec = httptest.NewRecorder()
+	state.handleMenuPreferences(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("tray-only preference update failed: %d (%s)", rec.Code, rec.Body.String())
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/local/menu-preferences", nil)
@@ -769,8 +848,115 @@ func TestMenuPreferences(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got["showIcon"] != true || got["showStatus"] != false || got["showSpeed"] != true {
+	if got["showIcon"] != true || got["showStatus"] != true || got["showSpeed"] != false || got["refreshIntervalMS"] != float64(5000) || got["logLines"] != float64(300) {
 		t.Fatalf("prefs did not persist in state: %#v", got)
+	}
+}
+
+func TestDirectRestartPrefersMihomoCoreAPI(t *testing.T) {
+	restartCalls, managementCalls := 0, 0
+	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/restart":
+			restartCalls++
+			if r.Method != http.MethodPost {
+				t.Errorf("restart method = %s", r.Method)
+			}
+			if got := r.Header.Get("Authorization"); got != "Bearer controller-secret" {
+				t.Errorf("restart Authorization = %q", got)
+			}
+			var body map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode restart body: %v", err)
+			}
+			if body["path"] != "/etc/mihomo/config.yaml" || body["payload"] != "" {
+				t.Errorf("unexpected restart body: %#v", body)
+			}
+			w.WriteHeader(http.StatusNoContent)
+		case "/api/action":
+			managementCalls++
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		case "/version":
+			_, _ = w.Write([]byte(`{"version":"test"}`))
+		case "/connections":
+			_, _ = w.Write([]byte(`{"connections":[],"uploadTotal":0,"downloadTotal":0,"memory":0}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer controller.Close()
+
+	state := &appState{
+		path: filepath.Join(t.TempDir(), "settings.json"),
+		settings: Settings{SelectedID: "test", Profiles: []Profile{{
+			ID: "test", Name: "test", ManagementURL: controller.URL, CoreControllerURL: controller.URL,
+			ConfigPath: "/etc/mihomo/config.yaml", AllowInsecureHTTP: true,
+		}}},
+		client:                controller.Client(),
+		secretCache:           map[string]string{"test": "management-secret"},
+		controllerSecretCache: map[string]string{"test": "controller-secret"},
+		proxyDelayCache:       map[string]map[string]int{},
+	}
+	t.Cleanup(state.waitBackground)
+
+	rec := httptest.NewRecorder()
+	state.handleAction(rec, httptest.NewRequest(http.MethodPost, "/local/action", strings.NewReader(`{"action":"restart"}`)))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"via":"controller"`) {
+		t.Fatalf("direct restart failed: %d %s", rec.Code, rec.Body.String())
+	}
+	if restartCalls != 1 || managementCalls != 0 {
+		t.Fatalf("restart=%d management=%d; expected Core API only", restartCalls, managementCalls)
+	}
+}
+
+func TestRestartFallsBackToManagementWhenControllerRestartFails(t *testing.T) {
+	restartCalls, managementCalls := 0, 0
+	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/restart":
+			restartCalls++
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"message":"unsupported"}`))
+		case "/api/action":
+			managementCalls++
+			var body map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if body["action"] != "restart" {
+				t.Errorf("fallback action = %q", body["action"])
+			}
+			_, _ = w.Write([]byte(`{"ok":true,"message":"fallback ok"}`))
+		case "/version":
+			_, _ = w.Write([]byte(`{"version":"test"}`))
+		case "/connections":
+			_, _ = w.Write([]byte(`{"connections":[],"uploadTotal":0,"downloadTotal":0,"memory":0}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer remote.Close()
+
+	state := &appState{
+		path: filepath.Join(t.TempDir(), "settings.json"),
+		settings: Settings{SelectedID: "test", Profiles: []Profile{{
+			ID: "test", Name: "test", ManagementURL: remote.URL, CoreControllerURL: remote.URL,
+			ConfigPath: "/etc/mihomo/config.yaml", AllowInsecureHTTP: true,
+		}}},
+		client:                remote.Client(),
+		secretCache:           map[string]string{"test": "management-secret"},
+		controllerSecretCache: map[string]string{"test": "controller-secret"},
+		proxyDelayCache:       map[string]map[string]int{},
+	}
+	t.Cleanup(state.waitBackground)
+
+	rec := httptest.NewRecorder()
+	state.handleAction(rec, httptest.NewRequest(http.MethodPost, "/local/action", strings.NewReader(`{"action":"restart"}`)))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "fallback ok") {
+		t.Fatalf("management fallback failed: %d %s", rec.Code, rec.Body.String())
+	}
+	if restartCalls != 1 || managementCalls != 1 {
+		t.Fatalf("restart=%d management=%d; expected one Core attempt then one management fallback", restartCalls, managementCalls)
 	}
 }
 
@@ -982,18 +1168,18 @@ func TestPortableInteractionRegressionV118(t *testing.T) {
 	}
 }
 
-func TestEmbeddedModernAppIconV130(t *testing.T) {
+func TestEmbeddedModernAppIconV131(t *testing.T) {
 	b, err := assets.ReadFile("ui/app-icon-128.png")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(b) < 1024 || len(b) < 8 || string(b[:8]) != "\x89PNG\r\n\x1a\n" {
-		t.Fatalf("embedded v1.3.0 app icon is missing or invalid PNG: %d bytes", len(b))
+		t.Fatalf("embedded v1.3.1 app icon is missing or invalid PNG: %d bytes", len(b))
 	}
 }
 
-func TestPortableVersionV130(t *testing.T) {
-	if appVersion != "1.3.0" || buildNumber != "1300" {
+func TestPortableVersionV131(t *testing.T) {
+	if appVersion != "1.3.1" || buildNumber != "1301" {
 		t.Fatalf("unexpected portable version/build: %s/%s", appVersion, buildNumber)
 	}
 }
@@ -1012,6 +1198,12 @@ func TestPerformanceHTTPClientKeepsTLSSafetyAndConnectionReuse(t *testing.T) {
 	}
 	if transport.TLSClientConfig != nil && transport.TLSClientConfig.InsecureSkipVerify {
 		t.Fatal("performance tuning must never disable TLS certificate verification")
+	}
+	if transport.Proxy == nil {
+		t.Fatal("backend transport must install LAN-aware proxy policy")
+	}
+	if transport.DialContext == nil {
+		t.Fatal("backend transport must install macOS LAN resolver dialer")
 	}
 }
 

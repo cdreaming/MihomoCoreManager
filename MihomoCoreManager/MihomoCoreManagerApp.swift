@@ -64,14 +64,14 @@ private struct MenuBarLabelView: View {
             showStatus: model.menuBarShowStatus,
             showSpeed: model.menuBarShowSpeed,
             status: statusText,
-            upload: model.menuBarRateParts(live.status?.speed?.up),
-            download: model.menuBarRateParts(live.status?.speed?.down)
+            upload: model.menuBarRateParts(live.effectiveSpeed?.up),
+            download: model.menuBarRateParts(live.effectiveSpeed?.down)
         )
     }
 
     private var renderIdentity: String {
-        let up = model.menuBarRateParts(live.status?.speed?.up)
-        let down = model.menuBarRateParts(live.status?.speed?.down)
+        let up = model.menuBarRateParts(live.effectiveSpeed?.up)
+        let down = model.menuBarRateParts(live.effectiveSpeed?.down)
         return [
             model.menuBarShowIcon ? "i1" : "i0",
             model.menuBarShowStatus ? "s1" : "s0",

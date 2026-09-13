@@ -19,7 +19,7 @@ enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
         case .subscriptions: "订阅管理"
         case .logs: "运行日志"
         case .updates: "项目升级"
-        case .settings: "设置"
+        case .settings: "服务设置"
         }
     }
 
@@ -63,7 +63,7 @@ struct ServerProfile: Codable, Identifiable, Hashable {
         ServerProfile(
             id: UUID(),
             name: "新服务器",
-            managementURL: "https://",
+            managementURL: "",
             coreControllerURL: "",
             configPath: "/etc/mihomo/config.yaml",
             metaCubeXDURL: "",
@@ -71,6 +71,34 @@ struct ServerProfile: Codable, Identifiable, Hashable {
             preserveSettingsOnUpdate: true
         )
     }
+
+    var hasControllerEndpoint: Bool {
+        !coreControllerURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var hasManagementEndpoint: Bool {
+        !managementURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
+/// Accept a pasted MetaCubeXD/UI URL such as `http://host:9090/ui/`, but store
+/// the Mihomo Controller API root. The port is intentionally preserved and is
+/// never guessed or auto-added: non-default ports must be entered explicitly.
+func normalizedControllerURL(_ raw: String) -> String {
+    var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !value.isEmpty else { return "" }
+    if !value.contains("://") { value = "http://" + value }
+    guard var components = URLComponents(string: value), components.host != nil else { return value }
+
+    let path = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    if path == "ui" || path.hasPrefix("ui/") {
+        components.path = ""
+    }
+    components.query = nil
+    components.fragment = nil
+    guard var result = components.url?.absoluteString else { return value }
+    if components.path.isEmpty, result.hasSuffix("/") { result.removeLast() }
+    return result
 }
 
 struct APIMessage: Decodable {
@@ -349,6 +377,7 @@ struct AppNotice: Identifiable, Equatable {
 enum MihomoClientError: LocalizedError {
     case invalidURL(String)
     case insecureHTTPDisabled
+    case missingManagement
     case missingSecret
     case missingController
     case controllerUnauthorized
@@ -359,10 +388,11 @@ enum MihomoClientError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidURL(let value): "无效 URL：\(value)"
-        case .insecureHTTPDisabled: "该服务器未允许明文 HTTP。请在设置中启用“允许不安全 HTTP”，或改用 HTTPS。"
-        case .missingSecret: "尚未为当前服务器配置 Mihomo Core Secret。"
-        case .missingController: "尚未配置 Direct Core Controller URL，无法连接 Mihomo Core API。"
-        case .controllerUnauthorized: "Mihomo Controller HTTP 401：认证失败。请在设置 > Core 配置中填写 config.yaml 的 secret（Controller Secret）；它可以与管理面板的 Core Secret 不同。"
+        case .insecureHTTPDisabled: "该服务器未允许明文 HTTP。请在“服务设置”中启用“允许不安全 HTTP”，或改用 HTTPS。"
+        case .missingManagement: "此功能需要可选的管理面板 URL；Mihomo Core 基础连接本身不需要它。"
+        case .missingSecret: "此功能需要管理面板 Secret；Controller Secret 仅用于 Mihomo Core API。"
+        case .missingController: "尚未配置 Mihomo Core Controller URL。请填写 API 根地址，例如 http://192.168.1.2:9090，不要带 /ui/。"
+        case .controllerUnauthorized: "Mihomo Controller HTTP 401：认证失败。请在“服务设置” > Mihomo Core 连接中填写 config.yaml 的 secret（Controller Secret）。"
         case .invalidResponse: "服务器返回了无法识别的响应。"
         case .server(let status, let message): "服务器错误 HTTP \(status)：\(message)"
         case .operationFailed(let message): message

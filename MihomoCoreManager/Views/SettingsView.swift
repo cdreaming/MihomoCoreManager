@@ -12,7 +12,7 @@ struct DashboardSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DashboardLayout.pageSpacing) {
-                DashboardPageHeader(title: "设置", subtitle: "服务器、Core 配置、状态栏显示与刷新策略。")
+                DashboardPageHeader(title: "服务设置", subtitle: "Mihomo Core 为主连接；管理面板与 MetaCubeXD 是可选扩展。")
                 serverPanel
                 if let draftBinding = Binding($draft) {
                     connectionPanel(profile: draftBinding)
@@ -22,7 +22,8 @@ struct DashboardSettingsView: View {
                 }
             }
             .padding(.horizontal, DashboardLayout.pageHorizontalPadding)
-            .padding(.vertical, DashboardLayout.pageVerticalPadding)
+            .padding(.top, DashboardLayout.pageTopPadding)
+            .padding(.bottom, DashboardLayout.pageBottomPadding)
         }
         .task(id: loadTaskID) {
             guard model.selectedSection == .settings else { return }
@@ -33,7 +34,7 @@ struct DashboardSettingsView: View {
     private var serverPanel: some View {
         DashboardPanel {
             VStack(alignment: .leading, spacing: DashboardLayout.panelSpacing) {
-                DashboardPanelHeader(title: "服务器", trailing: "Profile")
+                DashboardPanelHeader(title: "服务器配置", trailing: "Profile")
                 HStack(spacing: 10) {
                     Text("当前服务器")
                         .font(.system(size: 12, weight: .semibold))
@@ -69,10 +70,37 @@ struct DashboardSettingsView: View {
     private func connectionPanel(profile: Binding<ServerProfile>) -> some View {
         DashboardPanel {
             VStack(alignment: .leading, spacing: DashboardLayout.panelSpacing) {
-                DashboardPanelHeader(title: "服务器连接", trailing: "Cross-machine")
+                DashboardPanelHeader(title: "Mihomo Core 连接", trailing: "Primary · Controller API")
                 settingRow("名称") { TextField("服务器名称", text: profile.name).textFieldStyle(DashboardTextFieldStyle()) }
-                settingRow("Management URL") { TextField("https://…", text: profile.managementURL).textContentType(.URL).textFieldStyle(DashboardTextFieldStyle()) }
-                settingRow("Core Secret") {
+                settingRow("Controller URL") { TextField("http://192.168.1.2:9090", text: profile.coreControllerURL).textContentType(.URL).textFieldStyle(DashboardTextFieldStyle()) }
+                settingRow("Controller Secret") {
+                    HStack(spacing: 8) {
+                        SecureField("config.yaml 的 secret；留空兼容复用 Management Secret", text: $controllerSecret).textFieldStyle(DashboardTextFieldStyle())
+                        Button("粘贴") { pasteControllerSecret() }.buttonStyle(DashboardActionButtonStyle()).frame(width: 76)
+                        Button("清除") {
+                            controllerSecret = ""
+                            if let id = model.selectedProfileID { model.saveControllerSecret("", for: id) }
+                        }
+                        .buttonStyle(DashboardActionButtonStyle(destructive: true)).frame(width: 76)
+                    }
+                }
+                settingRow("config.yaml path") { TextField("/etc/mihomo/config.yaml", text: profile.configPath).textFieldStyle(DashboardTextFieldStyle()) }
+                toggleRow("允许不安全 HTTP", isOn: profile.allowInsecureHTTP, detail: "LAN 的 Mihomo Controller 常用 HTTP；只在可信网络启用。")
+                Text("Controller URL 必须是 API 根地址，例如 http://192.168.9.202:9090。不要填写 /ui/。代码不会自动补 9090；如果不是 80/443，请显式写端口。")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(DashboardPalette.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func corePanel(profile: Binding<ServerProfile>) -> some View {
+        DashboardPanel {
+            VStack(alignment: .leading, spacing: DashboardLayout.panelSpacing) {
+                DashboardPanelHeader(title: "扩展管理（可选）", trailing: "Lifecycle / Logs / Update")
+                settingRow("Management URL") { TextField("可选；例如 http://192.168.1.2:29090", text: profile.managementURL).textContentType(.URL).textFieldStyle(DashboardTextFieldStyle()) }
+                settingRow("Management Secret") {
                     HStack(spacing: 8) {
                         SecureField("留空表示不修改 Keychain", text: $secret).textFieldStyle(DashboardTextFieldStyle())
                         Button("粘贴") { pasteSecret() }.buttonStyle(DashboardActionButtonStyle()).frame(width: 76)
@@ -83,31 +111,12 @@ struct DashboardSettingsView: View {
                         .buttonStyle(DashboardActionButtonStyle(destructive: true)).frame(width: 76)
                     }
                 }
-                toggleRow("允许不安全 HTTP", isOn: profile.allowInsecureHTTP, detail: "仅在明确需要时启用。")
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func corePanel(profile: Binding<ServerProfile>) -> some View {
-        DashboardPanel {
-            VStack(alignment: .leading, spacing: DashboardLayout.panelSpacing) {
-                DashboardPanelHeader(title: "Core 配置", trailing: "v4.0.0 API baseline")
-                settingRow("Direct Core Controller URL") { TextField("可选", text: profile.coreControllerURL).textContentType(.URL).textFieldStyle(DashboardTextFieldStyle()) }
-                settingRow("Controller Secret") {
-                    HStack(spacing: 8) {
-                        SecureField("留空时复用 Core Secret", text: $controllerSecret).textFieldStyle(DashboardTextFieldStyle())
-                        Button("粘贴") { pasteControllerSecret() }.buttonStyle(DashboardActionButtonStyle()).frame(width: 76)
-                        Button("清除") {
-                            controllerSecret = ""
-                            if let id = model.selectedProfileID { model.saveControllerSecret("", for: id) }
-                        }
-                        .buttonStyle(DashboardActionButtonStyle(destructive: true)).frame(width: 76)
-                    }
-                }
-                settingRow("config.yaml path") { TextField("/etc/mihomo/config.yaml", text: profile.configPath).textFieldStyle(DashboardTextFieldStyle()) }
                 settingRow("MetaCubeXD URL") { TextField("可选", text: profile.metaCubeXDURL).textContentType(.URL).textFieldStyle(DashboardTextFieldStyle()) }
-                toggleRow("项目升级时保留现有设置", isOn: profile.preserveSettingsOnUpdate, detail: "升级参数与当前服务器配置保持一致。")
+                toggleRow("项目升级时保留现有设置", isOn: profile.preserveSettingsOnUpdate, detail: "仅影响可选管理面板发起的项目升级。")
+                Text("Management URL 不是 Mihomo Controller；它只用于启动/停止、订阅写入、系统日志和项目升级。仅做 Core 连接与代理切换时可以留空。")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(DashboardPalette.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -154,7 +163,7 @@ struct DashboardSettingsView: View {
 
     private var footerActions: some View {
         HStack(spacing: 10) {
-            Text("Core Secret 与 Controller Secret 均仅保存到 macOS Keychain；Controller Secret 留空时兼容复用 Core Secret。")
+            Text("Controller Secret 与可选 Management Secret 均只保存到 macOS Keychain；Management Secret 对应 v1.3.0 的 Core Secret，Controller Secret 留空时自动复用它。")
                 .font(.system(size: 11)).foregroundStyle(DashboardPalette.tertiary)
             Spacer()
             Button("测试连接") { saveDraft(); Task { await model.refreshStatus() } }
@@ -317,63 +326,27 @@ private struct ProfileEditorView: View {
 
     var body: some View {
         Form {
-            Section("连接") {
+            Section("Mihomo Core 连接") {
                 LabeledContent("名称") {
                     TextField("服务器名称", text: $profile.name)
                         .frame(minWidth: 300)
                 }
-                LabeledContent("Management URL") {
-                    TextField("https://…", text: $profile.managementURL)
-                        .textContentType(.URL)
-                        .frame(minWidth: 300)
-                }
-                LabeledContent("Core Secret") {
-                    HStack(spacing: 6) {
-                        SecureField("Core Secret", text: $secret)
-                            .frame(minWidth: 230)
-                        Button {
-                            pasteSecret()
-                        } label: {
-                            Image(systemName: "doc.on.clipboard")
-                        }
-                        .help("从剪贴板粘贴 Core Secret")
-                        Button("保存") { model.saveSecret(secret, for: profile.id) }
-                    }
-                }
-                HStack {
-                    Text("支持 ⌘V；Secret 仅保存到 macOS Keychain。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("清除 Secret", role: .destructive) {
-                        secret = ""
-                        model.saveSecret("", for: profile.id)
-                    }
-                }
-                Toggle("允许不安全 HTTP", isOn: $profile.allowInsecureHTTP)
-            }
-
-            Section("Core 配置") {
-                LabeledContent("Direct Core Controller URL") {
-                    TextField("可选", text: $profile.coreControllerURL)
+                LabeledContent("Controller URL") {
+                    TextField("http://192.168.1.2:9090", text: $profile.coreControllerURL)
                         .textContentType(.URL)
                         .frame(minWidth: 300)
                 }
                 LabeledContent("Controller Secret") {
                     HStack(spacing: 6) {
-                        SecureField("留空时复用 Core Secret", text: $controllerSecret)
+                        SecureField("config.yaml 的 secret；留空兼容复用 Management Secret", text: $controllerSecret)
                             .frame(minWidth: 230)
-                        Button {
-                            pasteControllerSecret()
-                        } label: {
-                            Image(systemName: "doc.on.clipboard")
-                        }
-                        .help("从剪贴板粘贴 config.yaml 的 secret")
+                        Button { pasteControllerSecret() } label: { Image(systemName: "doc.on.clipboard") }
+                            .help("从剪贴板粘贴 config.yaml 的 secret")
                         Button("保存") { model.saveControllerSecret(controllerSecret, for: profile.id) }
                     }
                 }
                 HStack {
-                    Text("填写 Mihomo config.yaml 的 secret；留空时兼容复用 Core Secret。")
+                    Text("API 根地址不要带 /ui/；端口不会自动补，非 80/443 时请显式填写（Mihomo 常见为 9090）。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
@@ -386,12 +359,34 @@ private struct ProfileEditorView: View {
                     TextField("/etc/mihomo/config.yaml", text: $profile.configPath)
                         .frame(minWidth: 300)
                 }
-                Text("Controller URL 非空时直接调用 Mihomo `/configs?force=true`；为空时回退到 v4.0.0 管理面板 reload。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Toggle("允许不安全 HTTP", isOn: $profile.allowInsecureHTTP)
             }
 
-            Section("面板与升级") {
+            Section("扩展管理（可选）") {
+                LabeledContent("Management URL") {
+                    TextField("可选；仅高级功能", text: $profile.managementURL)
+                        .textContentType(.URL)
+                        .frame(minWidth: 300)
+                }
+                LabeledContent("Management Secret") {
+                    HStack(spacing: 6) {
+                        SecureField("Management Secret", text: $secret)
+                            .frame(minWidth: 230)
+                        Button { pasteSecret() } label: { Image(systemName: "doc.on.clipboard") }
+                            .help("从剪贴板粘贴 Management Secret")
+                        Button("保存") { model.saveSecret(secret, for: profile.id) }
+                    }
+                }
+                HStack {
+                    Text("只用于 Core 启停、订阅写入、系统日志与项目升级；基础 Core 连接不依赖它。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("清除 Management Secret", role: .destructive) {
+                        secret = ""
+                        model.saveSecret("", for: profile.id)
+                    }
+                }
                 LabeledContent("MetaCubeXD URL") {
                     TextField("可选", text: $profile.metaCubeXDURL)
                         .textContentType(.URL)
@@ -458,7 +453,7 @@ private struct GeneralSettingsView: View {
             }
 
             Section("安全") {
-                Text("Core Secret 与 Controller Secret 均使用 macOS Keychain 保存。Controller Secret 对应 Mihomo config.yaml 的 secret，留空时回退复用 Core Secret。原生 URLSession 不受浏览器 CORS 限制，同时保留系统 TLS 证书验证。")
+                Text("Controller Secret 对应 Mihomo config.yaml 的 secret；可选 Management Secret 仅用于扩展管理功能。两者均使用 macOS Keychain；Controller Secret 留空时保留 v1.3.0 的兼容复用行为。Controller URL 的端口不会自动补。原生 URLSession 不受浏览器 CORS 限制，同时保留系统 TLS 证书验证。")
                     .foregroundStyle(.secondary)
             }
 

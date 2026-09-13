@@ -25,10 +25,12 @@ import (
 )
 
 const (
-	appVersion                = "1.3.0"
-	buildNumber               = "1300"
+	appVersion                = "1.3.1"
+	buildNumber               = "1301"
 	keychainService           = "cc.kkr.MihomoCoreManager"
 	controllerKeychainService = "cc.kkr.MihomoCoreManager.controller-secret"
+	defaultRefreshIntervalMS  = 1200
+	defaultLogLines           = 100
 )
 
 //go:embed ui/*
@@ -46,15 +48,34 @@ type Profile struct {
 }
 
 type MenuPreferences struct {
-	ShowIcon   bool `json:"showIcon"`
-	ShowStatus bool `json:"showStatus"`
-	ShowSpeed  bool `json:"showSpeed"`
+	ShowIcon          bool `json:"showIcon"`
+	ShowStatus        bool `json:"showStatus"`
+	ShowSpeed         bool `json:"showSpeed"`
+	RefreshIntervalMS int  `json:"refreshIntervalMS"`
+	LogLines          int  `json:"logLines"`
 }
 
 type Settings struct {
 	SelectedID      string           `json:"selectedID"`
 	Profiles        []Profile        `json:"profiles"`
 	MenuPreferences *MenuPreferences `json:"menuPreferences,omitempty"`
+}
+
+func defaultMenuPreferences() *MenuPreferences {
+	return &MenuPreferences{
+		ShowIcon: true, ShowStatus: true, ShowSpeed: true,
+		RefreshIntervalMS: defaultRefreshIntervalMS, LogLines: defaultLogLines,
+	}
+}
+
+func normalizeMenuPreferences(p *MenuPreferences) {
+	if p.RefreshIntervalMS != 1000 && p.RefreshIntervalMS != 1200 && p.RefreshIntervalMS != 2000 &&
+		p.RefreshIntervalMS != 5000 && p.RefreshIntervalMS != 10000 {
+		p.RefreshIntervalMS = defaultRefreshIntervalMS
+	}
+	if p.LogLines != 50 && p.LogLines != 100 && p.LogLines != 200 && p.LogLines != 300 {
+		p.LogLines = defaultLogLines
+	}
 }
 
 type appState struct {
@@ -135,15 +156,118 @@ func configPath() string {
 	return filepath.Join(d, "MihomoCoreManager", "settings.json")
 }
 
+func isLANHost(host string) bool {
+	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	if host == "" {
+		return false
+	}
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") ||
+		strings.HasSuffix(host, ".local") || strings.HasSuffix(host, ".lan") ||
+		strings.HasSuffix(host, ".home.arpa") || !strings.Contains(host, ".") {
+		return true
+	}
+	if ip := net.ParseIP(strings.Trim(host, "[]")); ip != nil {
+		return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
+	}
+	return false
+}
+
+func backendProxy(req *http.Request) (*url.URL, error) {
+	// A user-entered LAN backend is an explicit destination. Do not send RFC1918,
+	// Bonjour or single-label hosts through HTTP(S)_PROXY inherited by the App.
+	// This is the main behavioral difference that made GoWebUI fail on LAN URLs
+	// while URLSession in the SwiftUI build connected successfully.
+	if req != nil && req.URL != nil && isLANHost(req.URL.Hostname()) {
+		return nil, nil
+	}
+	return http.ProxyFromEnvironment(req)
+}
+
+func systemResolverCandidate(host string) bool {
+	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	if host == "" || net.ParseIP(host) != nil {
+		return false
+	}
+	return !strings.Contains(host, ".") || strings.HasSuffix(host, ".local") ||
+		strings.HasSuffix(host, ".lan") || strings.HasSuffix(host, ".home.arpa")
+}
+
+func darwinSystemHostAddresses(ctx context.Context, host string) []string {
+	if runtime.GOOS != "darwin" || !systemResolverCandidate(host) {
+		return nil
+	}
+	resolveCtx, cancel := context.WithTimeout(ctx, 1800*time.Millisecond)
+	defer cancel()
+	out, err := exec.CommandContext(resolveCtx, "/usr/bin/dscacheutil", "-q", "host", "-a", "name", host).Output()
+	if err != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var ipv4, ipv6 []string
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "ip_address:") {
+			continue
+		}
+		value := strings.TrimSpace(strings.TrimPrefix(line, "ip_address:"))
+		ip := net.ParseIP(value)
+		if ip == nil || seen[value] {
+			continue
+		}
+		// A link-local IPv6 address needs an interface zone, which dscacheutil does
+		// not provide. Prefer the IPv4 Bonjour answer and skip unusable v6 entries.
+		if ip.To4() == nil && ip.IsLinkLocalUnicast() {
+			continue
+		}
+		seen[value] = true
+		if ip.To4() != nil {
+			ipv4 = append(ipv4, value)
+		} else {
+			ipv6 = append(ipv6, value)
+		}
+	}
+	return append(ipv4, ipv6...)
+}
+
+func backendDialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	dialer := &net.Dialer{Timeout: 12 * time.Second, KeepAlive: 30 * time.Second, FallbackDelay: 200 * time.Millisecond}
+	host, port, err := net.SplitHostPort(address)
+	if err != nil || runtime.GOOS != "darwin" || !systemResolverCandidate(host) {
+		return dialer.DialContext(ctx, network, address)
+	}
+
+	// CGO is intentionally disabled for the portable/release Go build so it can
+	// be produced reproducibly from Linux too. On macOS that means Go's pure DNS
+	// resolver cannot always discover Bonjour/mDNS .local hosts. Ask macOS's
+	// system resolver first, then fall back to the normal Go dial path.
+	var lastErr error
+	for _, ip := range darwinSystemHostAddresses(ctx, host) {
+		conn, dialErr := dialer.DialContext(ctx, network, net.JoinHostPort(ip, port))
+		if dialErr == nil {
+			return conn, nil
+		}
+		lastErr = dialErr
+	}
+	conn, dialErr := dialer.DialContext(ctx, network, address)
+	if dialErr == nil {
+		return conn, nil
+	}
+	if lastErr != nil {
+		return nil, fmt.Errorf("局域网主机 %s 连接失败：%v；DNS 回退：%w", host, lastErr, dialErr)
+	}
+	return nil, dialErr
+}
+
 func newHTTPClient() *http.Client {
-	// Clone the standard transport so TLS verification and proxy behavior stay
-	// identical to Go defaults, while allowing the status poller, proxy cache and
-	// foreground UI to reuse more keep-alive connections instead of repeatedly
-	// paying connection/TLS setup cost.
+	// Keep TLS defaults and public proxy behavior, but always connect explicit LAN
+	// destinations directly and use a macOS resolver fallback for Bonjour hosts.
 	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = backendProxy
+	transport.DialContext = backendDialContext
+	transport.ForceAttemptHTTP2 = true
 	transport.MaxIdleConns = 32
 	transport.MaxIdleConnsPerHost = 8
-	transport.IdleConnTimeout = 90 * time.Second
+	transport.IdleConnTimeout = 75 * time.Second
 	transport.TLSHandshakeTimeout = 10 * time.Second
 	return &http.Client{Transport: transport, Timeout: 45 * time.Second}
 }
@@ -173,13 +297,19 @@ func loadState() *appState {
 		s.settings.SelectedID = s.settings.Profiles[0].ID
 	}
 	if s.settings.MenuPreferences == nil {
-		s.settings.MenuPreferences = &MenuPreferences{ShowIcon: true, ShowStatus: true, ShowSpeed: true}
+		s.settings.MenuPreferences = defaultMenuPreferences()
 		_ = s.saveLocked()
-	} else if !hadShowIconPreference {
-		// v1.0.8 and earlier did not persist an icon preference. Preserve the
-		// historical visible icon when upgrading instead of silently hiding it.
-		s.settings.MenuPreferences.ShowIcon = true
-		_ = s.saveLocked()
+	} else {
+		if !hadShowIconPreference {
+			// v1.0.8 and earlier did not persist an icon preference. Preserve the
+			// historical visible icon when upgrading instead of silently hiding it.
+			s.settings.MenuPreferences.ShowIcon = true
+		}
+		before := *s.settings.MenuPreferences
+		normalizeMenuPreferences(s.settings.MenuPreferences)
+		if before != *s.settings.MenuPreferences || !hadShowIconPreference {
+			_ = s.saveLocked()
+		}
 	}
 	return s
 }
@@ -759,12 +889,16 @@ func (s *appState) clearProxyMenuFile() {
 }
 
 func (s *appState) refreshProxyMenuCache() {
+	_ = s.refreshProxyMenuCacheResult()
+}
+
+func (s *appState) refreshProxyMenuCacheResult() bool {
 	s.proxyMenuFetchMu.Lock()
 	defer s.proxyMenuFetchMu.Unlock()
 
 	profile, err := s.current()
 	if err != nil {
-		return
+		return false
 	}
 	decorated, _, err := s.fetchMergedProxyPayloadFresh(true)
 	if err != nil {
@@ -772,7 +906,7 @@ func (s *appState) refreshProxyMenuCache() {
 		s.proxyMenuErr = err.Error()
 		s.proxyMenuUpdatedAt = time.Now()
 		s.proxyMenuMu.Unlock()
-		return
+		return false
 	}
 
 	s.proxyMenuMu.Lock()
@@ -799,17 +933,42 @@ func (s *appState) refreshProxyMenuCache() {
 	}
 	s.proxyMenuMu.Unlock()
 	s.writeProxyMenuFile(responseCopy)
+	return true
+}
+
+func adaptivePollDelay(base, maximum time.Duration, failures int) time.Duration {
+	if failures <= 0 {
+		return base
+	}
+	shift := failures
+	if shift > 5 {
+		shift = 5
+	}
+	delay := base * time.Duration(1<<shift)
+	if delay > maximum {
+		return maximum
+	}
+	return delay
 }
 
 func (s *appState) startProxyMenuPoller() {
 	s.goBackground(func() {
-		s.refreshProxyMenuCache()
-		ticker := time.NewTicker(4 * time.Second)
-		defer ticker.Stop()
+		// Avoid a startup burst against the same Cloudflare Tunnel while the status
+		// poller is performing its first management request.
+		timer := time.NewTimer(1800 * time.Millisecond)
+		defer timer.Stop()
+		failures := 0
 		for {
 			select {
-			case <-ticker.C:
-				s.refreshProxyMenuCache()
+			case <-timer.C:
+				if s.refreshProxyMenuCacheResult() {
+					failures = 0
+				} else {
+					failures++
+				}
+				// Proxy snapshots can be large. Ten seconds is still responsive for the
+				// status menu and substantially reduces persistent tunnel pressure.
+				timer.Reset(adaptivePollDelay(10*time.Second, 90*time.Second, failures))
 			case <-s.done:
 				return
 			}
@@ -885,12 +1044,84 @@ func (s *appState) clearStatusFile() {
 }
 
 func (s *appState) refreshStatusCache() {
-	s.statusFetchMu.Lock()
-	defer s.statusFetchMu.Unlock()
-	s.refreshStatusCacheLocked()
+	_ = s.refreshStatusCacheResult()
 }
 
-func (s *appState) refreshStatusCacheLocked() {
+func (s *appState) refreshStatusCacheResult() bool {
+	s.statusFetchMu.Lock()
+	defer s.statusFetchMu.Unlock()
+	return s.refreshStatusCacheLocked()
+}
+
+func (s *appState) controllerStatusSnapshot(p Profile) ([]byte, error) {
+	versionData, _, err := s.remoteWithPolicy(http.MethodGet, "/version", nil, nil, true, 3*time.Second, 1)
+	if err != nil {
+		return nil, err
+	}
+	version := ""
+	var versionPayload map[string]any
+	if json.Unmarshal(versionData, &versionPayload) == nil {
+		version, _ = versionPayload["version"].(string)
+	}
+
+	var uploadTotal, downloadTotal int64
+	connectionCount := 0
+	memoryBytes := int64(0)
+	if connectionData, _, connectionErr := s.remoteWithPolicy(http.MethodGet, "/connections", nil, nil, true, 3*time.Second, 1); connectionErr == nil {
+		var payload map[string]any
+		if json.Unmarshal(connectionData, &payload) == nil {
+			if n, ok := intFromJSONValue(payload["uploadTotal"]); ok {
+				uploadTotal = int64(n)
+			}
+			if n, ok := intFromJSONValue(payload["downloadTotal"]); ok {
+				downloadTotal = int64(n)
+			}
+			if n, ok := intFromJSONValue(payload["memory"]); ok {
+				memoryBytes = int64(n)
+			}
+			if items, ok := payload["connections"].([]any); ok {
+				connectionCount = len(items)
+			}
+		}
+	}
+	controllerURL, _ := normalizedControllerString(p.CoreControllerURL, p.AllowInsecureHTTP)
+	status := map[string]any{
+		"ok": true,
+		"service": map[string]any{
+			"manager": "Mihomo Controller", "active": true,
+			"active_state": "active", "sub_state": "running",
+		},
+		"totals":      map[string]any{"up": uploadTotal, "down": downloadTotal},
+		"connections": connectionCount,
+		"versions":    map[string]any{"core": version},
+		"version":     version,
+		"controller":  controllerURL,
+	}
+	if memoryBytes > 0 {
+		status["memory_bytes"] = memoryBytes
+	}
+	return json.Marshal(status)
+}
+
+func (s *appState) fetchStatusSnapshot(p Profile) ([]byte, error) {
+	if strings.TrimSpace(p.CoreControllerURL) != "" {
+		data, err := s.controllerStatusSnapshot(p)
+		if err == nil {
+			return data, nil
+		}
+		// Compatibility fallback: legacy v1.3.1 profiles can still use the
+		// optional management panel when the direct Controller is unavailable.
+		if strings.TrimSpace(p.ManagementURL) == "" || s.secretFor(p.ID) == "" {
+			return nil, err
+		}
+	} else if strings.TrimSpace(p.ManagementURL) == "" || s.secretFor(p.ID) == "" {
+		return nil, errors.New("未配置 Mihomo Core Controller URL")
+	}
+	data, _, err := s.remoteWithPolicy(http.MethodGet, "/api/status", nil, nil, false, 4*time.Second, 1)
+	return data, err
+}
+
+func (s *appState) refreshStatusCacheLocked() bool {
 	p, err := s.current()
 	if err != nil {
 		s.statusMu.Lock()
@@ -900,12 +1131,12 @@ func (s *appState) refreshStatusCacheLocked() {
 		s.statusReachable = false
 		s.statusMu.Unlock()
 		s.clearStatusFile()
-		return
+		return false
 	}
 
-	// Status is sampled every 1.2 s. A dead route should be detected quickly and
+	// Status is sampled at the configured interval. A dead route should be detected quickly and
 	// must not occupy the cache worker for the 45 s foreground-operation timeout.
-	data, _, remoteErr := s.remoteWithPolicy(http.MethodGet, "/api/status", nil, nil, false, 4*time.Second, 1)
+	data, remoteErr := s.fetchStatusSnapshot(p)
 	now := time.Now()
 	if remoteErr != nil {
 		s.statusMu.Lock()
@@ -918,7 +1149,7 @@ func (s *appState) refreshStatusCacheLocked() {
 		if hasRecentGood {
 			s.statusErr = remoteErr.Error()
 			s.statusMu.Unlock()
-			return
+			return false
 		}
 		s.statusData = nil
 		s.statusProfileID = p.ID
@@ -927,7 +1158,7 @@ func (s *appState) refreshStatusCacheLocked() {
 		s.statusReachable = false
 		s.statusMu.Unlock()
 		s.clearStatusFile()
-		return
+		return false
 	}
 
 	s.statusMu.Lock()
@@ -941,6 +1172,7 @@ func (s *appState) refreshStatusCacheLocked() {
 	// File I/O is intentionally outside statusMu so local /status reads and the
 	// menu process never wait on an atomic snapshot write.
 	s.writeStatusFile(data)
+	return true
 }
 
 func (s *appState) kickStatusRefresh() {
@@ -991,15 +1223,36 @@ func (s *appState) handleStatus(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
+func (s *appState) refreshInterval() time.Duration {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	ms := defaultRefreshIntervalMS
+	if s.settings.MenuPreferences != nil {
+		ms = s.settings.MenuPreferences.RefreshIntervalMS
+	}
+	if ms <= 0 {
+		ms = defaultRefreshIntervalMS
+	}
+	return time.Duration(ms) * time.Millisecond
+}
+
 func (s *appState) startStatusPoller() {
 	s.goBackground(func() {
-		s.refreshStatusCache()
-		ticker := time.NewTicker(1200 * time.Millisecond)
-		defer ticker.Stop()
+		failures := 0
+		timer := time.NewTimer(0)
+		defer timer.Stop()
 		for {
 			select {
-			case <-ticker.C:
-				s.refreshStatusCache()
+			case <-timer.C:
+				if s.refreshStatusCacheResult() {
+					failures = 0
+				} else {
+					failures++
+				}
+				// Successful telemetry uses the v1.3.0 user-selected refresh interval.
+				// Repeated gateway/tunnel failures back off instead of continuously
+				// hammering a recovering connector.
+				timer.Reset(adaptivePollDelay(s.refreshInterval(), 30*time.Second, failures))
 			case <-s.done:
 				return
 			}
@@ -1023,6 +1276,35 @@ func normalizeBase(raw string, allowHTTP bool) (*url.URL, error) {
 		return nil, errors.New("该服务器未允许不安全 HTTP")
 	}
 	return u, nil
+}
+
+func normalizeControllerBase(raw string, allowHTTP bool) (*url.URL, error) {
+	raw = strings.TrimSpace(raw)
+	if !strings.Contains(raw, "://") {
+		// Mihomo's direct Controller is commonly plain HTTP on a LAN. Do not
+		// silently invent a port; a non-default port (often 9090) must be explicit.
+		raw = "http://" + raw
+	}
+	u, err := normalizeBase(raw, allowHTTP)
+	if err != nil {
+		return nil, err
+	}
+	path := strings.Trim(u.Path, "/")
+	if path == "ui" || strings.HasPrefix(path, "ui/") {
+		u.Path = ""
+		u.RawPath = ""
+	}
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u, nil
+}
+
+func normalizedControllerString(raw string, allowHTTP bool) (string, error) {
+	u, err := normalizeControllerBase(raw, allowHTTP)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(u.String(), "/"), nil
 }
 
 func joinURL(baseRaw, path string, allowHTTP bool, query url.Values) (string, error) {
@@ -1067,13 +1349,22 @@ func (s *appState) remoteWithPolicy(
 	if direct {
 		base = p.CoreControllerURL
 		if strings.TrimSpace(base) == "" {
-			return nil, 0, errors.New("未配置 Direct Core Controller URL")
+			return nil, 0, errors.New("未配置 Mihomo Core Controller URL")
+		}
+		base, err = normalizedControllerString(base, p.AllowInsecureHTTP)
+		if err != nil {
+			return nil, 0, err
 		}
 		if controllerSecret := s.controllerSecretFor(p.ID); controllerSecret != "" {
 			secret = controllerSecret
 		}
-	} else if secret == "" {
-		return nil, 0, errors.New("当前服务器尚未配置 Core Secret")
+	} else {
+		if strings.TrimSpace(base) == "" {
+			return nil, 0, errors.New("此功能需要可选的 Management URL")
+		}
+		if secret == "" {
+			return nil, 0, errors.New("此功能需要 Management Secret")
+		}
 	}
 	target, err := joinURL(base, path, p.AllowInsecureHTTP, query)
 	if err != nil {
@@ -1081,7 +1372,7 @@ func (s *appState) remoteWithPolicy(
 	}
 	data, code, requestErr := s.remoteRequestWithPolicy(method, target, body, secret, attemptTimeout, maxAttempts)
 	if direct && code == http.StatusUnauthorized {
-		return data, code, errors.New("Mihomo Controller HTTP 401：认证失败。请在设置的 Controller Secret 中填写 config.yaml 的 secret；它可以与管理面板的 Core Secret 不同")
+		return data, code, errors.New("Mihomo Controller HTTP 401：认证失败。请在“服务设置”的 Controller Secret 中填写 config.yaml 的 secret")
 	}
 	return data, code, requestErr
 }
@@ -1117,6 +1408,7 @@ func (s *appState) remoteRequestWithPolicy(
 			req.Header.Set("Authorization", "Bearer "+secret)
 		}
 		req.Header.Set("Accept", "application/json")
+		req.Header.Set("User-Agent", "MihomoCoreManager/"+appVersion+" (macOS; GoWebUI)")
 		if len(body) > 0 {
 			req.Header.Set("Content-Type", "application/json")
 		}
@@ -1133,10 +1425,14 @@ func (s *appState) remoteRequestWithPolicy(
 			if cancel != nil {
 				cancel()
 			}
+			// A tunnel edge can leave an idle HTTP/2 or keep-alive connection in a
+			// half-closed state. Drop pooled connections before a safe read retry so
+			// the next attempt performs fresh DNS/TLS selection.
+			s.client.CloseIdleConnections()
 			lastErr = err
 			lastCode = 0
 			if attempt < maxAttempts {
-				time.Sleep(time.Duration(attempt) * 180 * time.Millisecond)
+				time.Sleep(time.Duration(attempt) * 450 * time.Millisecond)
 				continue
 			}
 			return nil, 0, err
@@ -1153,7 +1449,7 @@ func (s *appState) remoteRequestWithPolicy(
 		if readErr != nil {
 			lastErr = readErr
 			if attempt < maxAttempts {
-				time.Sleep(time.Duration(attempt) * 180 * time.Millisecond)
+				time.Sleep(time.Duration(attempt) * 450 * time.Millisecond)
 				continue
 			}
 			return data, resp.StatusCode, readErr
@@ -1165,9 +1461,12 @@ func (s *appState) remoteRequestWithPolicy(
 
 		msg := remoteMessage(data, nil)
 		rawLower := strings.ToLower(string(data))
+		cloudflareEdge := resp.Header.Get("CF-Ray") != "" || strings.Contains(strings.ToLower(resp.Header.Get("Server")), "cloudflare")
 		if resp.StatusCode == 530 &&
 			(strings.Contains(rawLower, "1033") || strings.Contains(rawLower, "cloudflare")) {
 			msg = "Cloudflare Tunnel 暂时断开（Error 1033）。Controller 主机当前不可达，请稍后重试。"
+		} else if cloudflareEdge && isTransientGatewayStatus(resp.StatusCode) && msg == "未知错误" {
+			msg = "Cloudflare 网关暂时不可达，请稍后重试。"
 		}
 		if msg == "未知错误" {
 			msg = strings.TrimSpace(string(data))
@@ -1177,8 +1476,11 @@ func (s *appState) remoteRequestWithPolicy(
 		}
 		lastErr = fmt.Errorf("远端 HTTP %d：%s", resp.StatusCode, msg)
 
+		if isTransientGatewayStatus(resp.StatusCode) {
+			s.client.CloseIdleConnections()
+		}
 		if attempt < maxAttempts && isTransientGatewayStatus(resp.StatusCode) {
-			time.Sleep(time.Duration(attempt) * 180 * time.Millisecond)
+			time.Sleep(time.Duration(attempt) * 450 * time.Millisecond)
 			continue
 		}
 		return data, resp.StatusCode, lastErr
@@ -1188,7 +1490,7 @@ func (s *appState) remoteRequestWithPolicy(
 }
 
 func joinProxyURL(baseRaw, group string, allowHTTP bool) (string, error) {
-	u, err := normalizeBase(baseRaw, allowHTTP)
+	u, err := normalizeControllerBase(baseRaw, allowHTTP)
 	if err != nil {
 		return "", err
 	}
@@ -1215,7 +1517,7 @@ func joinProxyURL(baseRaw, group string, allowHTTP bool) (string, error) {
 }
 
 func joinGroupDelayURL(baseRaw, group string, allowHTTP bool, query url.Values) (string, error) {
-	u, err := normalizeBase(baseRaw, allowHTTP)
+	u, err := normalizeControllerBase(baseRaw, allowHTTP)
 	if err != nil {
 		return "", err
 	}
@@ -1322,9 +1624,25 @@ func (s *appState) handleProfileSave(w http.ResponseWriter, r *http.Request) {
 	if p.ConfigPath == "" {
 		p.ConfigPath = "/etc/mihomo/config.yaml"
 	}
-	if _, err := normalizeBase(p.ManagementURL, p.AllowInsecureHTTP); err != nil {
-		errReply(w, err)
+	p.ManagementURL = strings.TrimSpace(p.ManagementURL)
+	p.CoreControllerURL = strings.TrimSpace(p.CoreControllerURL)
+	if p.ManagementURL == "" && p.CoreControllerURL == "" {
+		errReply(w, errors.New("至少配置 Mihomo Core Controller URL；Management URL 只是可选扩展"))
 		return
+	}
+	if p.ManagementURL != "" {
+		if _, err := normalizeBase(p.ManagementURL, p.AllowInsecureHTTP); err != nil {
+			errReply(w, err)
+			return
+		}
+	}
+	if p.CoreControllerURL != "" {
+		normalized, err := normalizedControllerString(p.CoreControllerURL, p.AllowInsecureHTTP)
+		if err != nil {
+			errReply(w, err)
+			return
+		}
+		p.CoreControllerURL = normalized
 	}
 	s.mu.Lock()
 	found := false
@@ -1363,6 +1681,21 @@ func (s *appState) handleProfileSave(w http.ResponseWriter, r *http.Request) {
 	jsonReply(w, 200, map[string]any{"ok": true, "message": "设置已保存", "id": p.ID})
 }
 
+func (s *appState) handleManagementSecretClear(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonReply(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "message": "method not allowed"})
+		return
+	}
+	p, err := s.current()
+	if err != nil {
+		errReply(w, err)
+		return
+	}
+	keychainDelete(p.ID)
+	s.cacheSecret(p.ID, "")
+	jsonReply(w, http.StatusOK, map[string]any{"ok": true, "message": "Management Secret 已清除"})
+}
+
 func (s *appState) handleControllerSecretClear(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		jsonReply(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "message": "method not allowed"})
@@ -1375,7 +1708,7 @@ func (s *appState) handleControllerSecretClear(w http.ResponseWriter, r *http.Re
 	}
 	controllerKeychainDelete(p.ID)
 	s.cacheControllerSecret(p.ID, "")
-	jsonReply(w, http.StatusOK, map[string]any{"ok": true, "message": "Controller Secret 已清除，将回退使用 Core Secret"})
+	jsonReply(w, http.StatusOK, map[string]any{"ok": true, "message": "Controller Secret 已清除；未单独设置时将兼容复用 Management Secret"})
 }
 
 func (s *appState) handleProfileSelect(w http.ResponseWriter, r *http.Request) {
@@ -1604,7 +1937,7 @@ func (s *appState) runProxyDelay(in proxyDelayRequest) (map[string]int, error) {
 		return nil, err
 	}
 	if strings.TrimSpace(profile.CoreControllerURL) == "" {
-		return nil, errors.New("未配置 Direct Core Controller URL")
+		return nil, errors.New("未配置 Mihomo Core Controller URL")
 	}
 
 	testURL := strings.TrimSpace(in.URL)
@@ -1785,7 +2118,7 @@ func (s *appState) runProxySelect(in proxySelectRequest) error {
 		return err
 	}
 	if strings.TrimSpace(profile.CoreControllerURL) == "" {
-		return errors.New("未配置 Direct Core Controller URL")
+		return errors.New("未配置 Mihomo Core Controller URL")
 	}
 	target, err := joinProxyURL(profile.CoreControllerURL, in.Group, profile.AllowInsecureHTTP)
 	if err != nil {
@@ -1794,7 +2127,7 @@ func (s *appState) runProxySelect(in proxySelectRequest) error {
 	body, _ := json.Marshal(map[string]string{"name": in.Name})
 	if _, code, err := s.remoteRequest(http.MethodPut, target, body, s.controllerSecret(profile)); err != nil {
 		if code == http.StatusUnauthorized {
-			return errors.New("Mihomo Controller HTTP 401：认证失败。请在设置的 Controller Secret 中填写 config.yaml 的 secret；它可以与管理面板的 Core Secret 不同")
+			return errors.New("Mihomo Controller HTTP 401：认证失败。请在“服务设置”的 Controller Secret 中填写 config.yaml 的 secret")
 		}
 		return err
 	}
@@ -1913,8 +2246,28 @@ func (s *appState) handleAction(w http.ResponseWriter, r *http.Request) {
 		errReply(w, errors.New("不支持的 Core action"))
 		return
 	}
+
+	// Mihomo itself exposes POST /restart. Prefer the Core API when possible;
+	// start/stop and subscription rendering still require the optional external
+	// service manager because a stopped Core cannot serve its own Controller API.
+	if a == "restart" {
+		p, currentErr := s.current()
+		if currentErr == nil && strings.TrimSpace(p.CoreControllerURL) != "" {
+			body, _ := json.Marshal(map[string]string{"path": p.ConfigPath, "payload": ""})
+			if _, _, directErr := s.remote(http.MethodPost, "/restart", body, nil, true); directErr == nil {
+				s.invalidateStatusCache()
+				s.goBackground(s.refreshStatusCache)
+				jsonReply(w, http.StatusOK, map[string]any{"ok": true, "message": "已通过 Mihomo Core API 重启 Core", "via": "controller"})
+				return
+			} else if strings.TrimSpace(p.ManagementURL) == "" || s.secretFor(p.ID) == "" {
+				errReply(w, directErr)
+				return
+			}
+		}
+	}
+
 	body, _ := json.Marshal(map[string]string{"action": a})
-	data, code, err := s.remote("POST", "/api/action", body, nil, false)
+	data, code, err := s.remote(http.MethodPost, "/api/action", body, nil, false)
 	if err != nil {
 		errReply(w, err)
 		return
@@ -1982,20 +2335,44 @@ func (s *appState) handleMenuPreferences(w http.ResponseWriter, r *http.Request)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.settings.MenuPreferences == nil {
-		s.settings.MenuPreferences = &MenuPreferences{ShowIcon: true, ShowStatus: true, ShowSpeed: true}
+		s.settings.MenuPreferences = defaultMenuPreferences()
 	}
+	normalizeMenuPreferences(s.settings.MenuPreferences)
 	if r.Method == http.MethodPost {
-		var in MenuPreferences
+		var in struct {
+			ShowIcon          *bool `json:"showIcon"`
+			ShowStatus        *bool `json:"showStatus"`
+			ShowSpeed         *bool `json:"showSpeed"`
+			RefreshIntervalMS *int  `json:"refreshIntervalMS"`
+			LogLines          *int  `json:"logLines"`
+		}
 		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
 			errReply(w, err)
 			return
 		}
+		prefs := *s.settings.MenuPreferences
+		if in.ShowIcon != nil {
+			prefs.ShowIcon = *in.ShowIcon
+		}
+		if in.ShowStatus != nil {
+			prefs.ShowStatus = *in.ShowStatus
+		}
+		if in.ShowSpeed != nil {
+			prefs.ShowSpeed = *in.ShowSpeed
+		}
+		if in.RefreshIntervalMS != nil {
+			prefs.RefreshIntervalMS = *in.RefreshIntervalMS
+		}
+		if in.LogLines != nil {
+			prefs.LogLines = *in.LogLines
+		}
 		// Never persist an entirely invisible menu-bar item. If the user turns
 		// off all three elements, fall back to the icon so the menu remains reachable.
-		if !in.ShowIcon && !in.ShowStatus && !in.ShowSpeed {
-			in.ShowIcon = true
+		if !prefs.ShowIcon && !prefs.ShowStatus && !prefs.ShowSpeed {
+			prefs.ShowIcon = true
 		}
-		s.settings.MenuPreferences = &in
+		normalizeMenuPreferences(&prefs)
+		s.settings.MenuPreferences = &prefs
 		if err := s.saveLocked(); err != nil {
 			errReply(w, err)
 			return
@@ -2003,10 +2380,12 @@ func (s *appState) handleMenuPreferences(w http.ResponseWriter, r *http.Request)
 	}
 	prefs := *s.settings.MenuPreferences
 	jsonReply(w, 200, map[string]any{
-		"ok":         true,
-		"showIcon":   prefs.ShowIcon,
-		"showStatus": prefs.ShowStatus,
-		"showSpeed":  prefs.ShowSpeed,
+		"ok":                true,
+		"showIcon":          prefs.ShowIcon,
+		"showStatus":        prefs.ShowStatus,
+		"showSpeed":         prefs.ShowSpeed,
+		"refreshIntervalMS": prefs.RefreshIntervalMS,
+		"logLines":          prefs.LogLines,
 	})
 }
 
@@ -2069,6 +2448,7 @@ func (s *appState) routes() http.Handler {
 	mux.HandleFunc("/local/proxy-delay-async", s.auth(s.handleProxyDelayAsync))
 	mux.HandleFunc("/local/proxy-select", s.auth(s.handleProxySelect))
 	mux.HandleFunc("/local/proxy-select-async", s.auth(s.handleProxySelectAsync))
+	mux.HandleFunc("/local/management-secret/clear", s.auth(s.handleManagementSecretClear))
 	mux.HandleFunc("/local/controller-secret/clear", s.auth(s.handleControllerSecretClear))
 	mux.HandleFunc("/local/subscriptions", s.auth(s.handleSubscriptions))
 	mux.HandleFunc("/local/logs", s.auth(s.proxy("/api/logs")))
