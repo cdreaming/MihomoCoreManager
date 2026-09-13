@@ -1,4 +1,4 @@
-# macOS v1.3.1 双实现发布流程
+# macOS v1.3.0 双实现发布流程
 
 v1.3.0 起固定维护两套实现，并明确区分用途和资产名称。
 
@@ -14,7 +14,7 @@ bash scripts/build-portable-installer.sh
 交付：
 
 - 完整项目源码
-- `MihomoManager-v1.3.1-GoWebUI-arm64-portable-installer.zip`
+- `MihomoCoreManager-v1.3.0-GoWebUI-arm64-portable-installer.zip`
 
 portable 用于快速安装查看 UI/功能；用户自行验收，问题进入下一版本修复，不设置额外“确认发布”门槛。
 
@@ -38,11 +38,11 @@ bash scripts/build-release.sh --unsigned
    - `scripts/build-gowebui-release.sh`
    - App bundle 必须由 `scripts/build-gowebui-app.sh` 生成。
    - portable preview 也必须调用同一个 App builder。
-   - 正式文件：`MihomoManager-v1.3.1-GoWebUI-arm64.pkg`
+   - 正式文件：`MihomoCoreManager-v1.3.0-GoWebUI-arm64.pkg`
 2. SwiftUI
    - `scripts/build-swiftui-release.sh`
    - Xcode Release / arm64 / macOS 14+。
-   - 正式文件：`MihomoManager-v1.3.1-SwiftUI-arm64.pkg`
+   - 正式文件：`MihomoCoreManager-v1.3.0-SwiftUI-arm64.pkg`
 
 ## GoWebUI 防漂移规则
 
@@ -60,4 +60,4 @@ python3 scripts/build-gowebui-release-lock.py --check
 
 - **严格 UI 对照：** ChatGPT `GoWebUI portable` ↔ GitHub `GoWebUI.pkg`。
 - **SwiftUI.pkg：** 独立原生实现，要求功能和设计目标一致，但不承诺与 GoWebUI 像素级相同。
-- 两个 PKG 都安装为 `/Applications/MihomoManager.app`，属于二选一安装；后安装版本覆盖先安装版本。
+- 两个 PKG 都安装为 `/Applications/MihomoCoreManager.app`，属于二选一安装；后安装版本覆盖先安装版本。

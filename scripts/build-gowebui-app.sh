@@ -4,8 +4,8 @@ set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
 BUILD_NUMBER="$(tr -d '[:space:]' < "$ROOT/BUILD_NUMBER")"
-APP="${1:-$ROOT/build/GoWebUI/MihomoManager.app}"
-BIN="$APP/Contents/MacOS/MihomoManager"
+APP="${1:-$ROOT/build/GoWebUI/MihomoCoreManager.app}"
+BIN="$APP/Contents/MacOS/MihomoCoreManager"
 
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid VERSION: $VERSION" >&2; exit 1; }
 [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]] || { echo "Invalid BUILD_NUMBER: $BUILD_NUMBER" >&2; exit 1; }
@@ -36,11 +36,11 @@ build = os.environ['BUILD_NUMBER']
 
 plist = {
     'CFBundleDevelopmentRegion': 'zh_CN',
-    'CFBundleDisplayName': 'MihomoManager',
-    'CFBundleExecutable': 'MihomoManager',
+    'CFBundleDisplayName': 'Mihomo Core Manager',
+    'CFBundleExecutable': 'MihomoCoreManager',
     'CFBundleIdentifier': 'cc.kkr.MihomoCoreManager.GoWebUI',
     'CFBundleInfoDictionaryVersion': '6.0',
-    'CFBundleName': 'MihomoManager',
+    'CFBundleName': 'MihomoCoreManager',
     'CFBundlePackageType': 'APPL',
     'CFBundleShortVersionString': version,
     'CFBundleVersion': build,

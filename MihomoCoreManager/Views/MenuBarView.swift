@@ -318,7 +318,7 @@ struct MenuBarView: View {
                 Image(systemName: "power")
                     .frame(width: 20, height: 20)
             }
-            .help("退出 MihomoManager")
+            .help("退出 Mihomo Core Manager")
             .buttonStyle(MenuPanelPressStyle(compact: true, destructive: true))
         }
     }
@@ -617,7 +617,7 @@ private struct MenuBarLiveSummary: View {
                 speedMetric(
                     title: "上传",
                     symbol: "arrow.up",
-                    value: model.menuRate(live.effectiveSpeed?.up)
+                    value: model.menuRate(live.status?.speed?.up)
                 )
 
                 Spacer(minLength: 6)
@@ -629,7 +629,7 @@ private struct MenuBarLiveSummary: View {
                 speedMetric(
                     title: "下载",
                     symbol: "arrow.down",
-                    value: model.menuRate(live.effectiveSpeed?.down)
+                    value: model.menuRate(live.status?.speed?.down)
                 )
             }
             .padding(.horizontal, 12)
@@ -693,7 +693,7 @@ private struct MenuBarCoreActions: View {
                     busyTitle: "启动中",
                     icon: "play.fill",
                     busy: model.activeOperation == .core(.start),
-                    disabled: model.isBusy || live.status?.service.active == true || !model.coreLifecycleAvailable
+                    disabled: model.isBusy || live.status?.service.active == true
                 ) { Task { await model.perform(.start) } }
 
                 MenuActionButton(
@@ -701,7 +701,7 @@ private struct MenuBarCoreActions: View {
                     busyTitle: "停止中",
                     icon: "stop.fill",
                     busy: model.activeOperation == .core(.stop),
-                    disabled: model.isBusy || live.status?.service.active != true || !model.coreLifecycleAvailable,
+                    disabled: model.isBusy || live.status?.service.active != true,
                     role: .destructive,
                     destructive: true
                 ) { Task { await model.perform(.stop) } }
@@ -711,7 +711,7 @@ private struct MenuBarCoreActions: View {
                     busyTitle: "重启中",
                     icon: "arrow.clockwise",
                     busy: model.activeOperation == .core(.restart),
-                    disabled: model.isBusy || !model.coreRestartAvailable
+                    disabled: model.isBusy
                 ) { Task { await model.perform(.restart) } }
 
                 MenuActionButton(
@@ -719,7 +719,7 @@ private struct MenuBarCoreActions: View {
                     busyTitle: "重载中",
                     icon: "doc.badge.arrow.up",
                     busy: model.activeOperation == .core(.reload),
-                    disabled: model.isBusy || !model.coreRestartAvailable
+                    disabled: model.isBusy
                 ) { Task { await model.perform(.reload) } }
             }
 
@@ -728,7 +728,7 @@ private struct MenuBarCoreActions: View {
                 busyTitle: "正在应用订阅",
                 icon: "arrow.triangle.2.circlepath",
                 busy: model.activeOperation == .core(.applySubscriptions),
-                disabled: model.isBusy || !model.managementFeaturesAvailable,
+                disabled: model.isBusy,
                 fillsWidth: true
             ) { Task { await model.perform(.applySubscriptions) } }
         }

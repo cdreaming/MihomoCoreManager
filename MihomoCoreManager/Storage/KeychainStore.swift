@@ -2,13 +2,11 @@ import Foundation
 import Security
 
 enum KeychainStore {
-    private static let service = "cc.kkr.MihomoManager.profile-secret"
-    private static let controllerService = "cc.kkr.MihomoManager.controller-secret"
-    private static let legacyService = "cc.kkr.MihomoCoreManager.profile-secret"
-    private static let legacyControllerService = "cc.kkr.MihomoCoreManager.controller-secret"
+    private static let service = "cc.kkr.MihomoCoreManager.profile-secret"
+    private static let controllerService = "cc.kkr.MihomoCoreManager.controller-secret"
 
     static func readSecret(profileID: UUID) -> String {
-        readSecretWithMigration(profileID: profileID, service: service, legacyService: legacyService)
+        readSecret(profileID: profileID, service: service)
     }
 
     static func writeSecret(_ secret: String, profileID: UUID) throws {
@@ -17,11 +15,10 @@ enum KeychainStore {
 
     static func deleteSecret(profileID: UUID) {
         deleteSecret(profileID: profileID, service: service)
-        deleteSecret(profileID: profileID, service: legacyService)
     }
 
     static func readControllerSecret(profileID: UUID) -> String {
-        readSecretWithMigration(profileID: profileID, service: controllerService, legacyService: legacyControllerService)
+        readSecret(profileID: profileID, service: controllerService)
     }
 
     static func writeControllerSecret(_ secret: String, profileID: UUID) throws {
@@ -30,17 +27,6 @@ enum KeychainStore {
 
     static func deleteControllerSecret(profileID: UUID) {
         deleteSecret(profileID: profileID, service: controllerService)
-        deleteSecret(profileID: profileID, service: legacyControllerService)
-    }
-
-    private static func readSecretWithMigration(profileID: UUID, service: String, legacyService: String) -> String {
-        let current = readSecret(profileID: profileID, service: service)
-        if !current.isEmpty { return current }
-        let legacy = readSecret(profileID: profileID, service: legacyService)
-        if !legacy.isEmpty {
-            try? writeSecret(legacy, profileID: profileID, service: service)
-        }
-        return legacy
     }
 
     private static func readSecret(profileID: UUID, service: String) -> String {

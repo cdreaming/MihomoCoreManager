@@ -56,7 +56,7 @@ struct SubscriptionsView: View {
                         }
                         .padding(.top, 2)
 
-                        Text("留空会由服务端生成本地 inline 占位；非空使用 Mihomo 原生 type:http。若 v4.0.1 远端热重载明确超时并回滚，App 会自动停止 Core → 保存配置 → 重新启动，以保证新订阅真正生效。")
+                        Text("留空会由服务端生成本地 inline 占位；非空使用 Mihomo 原生 type:http。若 v4.0.0 远端热重载明确超时并回滚，App 会自动停止 Core → 保存配置 → 重新启动，以保证新订阅真正生效。")
                             .font(.system(size: 11))
                             .foregroundStyle(DashboardPalette.tertiary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -65,8 +65,7 @@ struct SubscriptionsView: View {
                 }
             }
             .padding(.horizontal, DashboardLayout.pageHorizontalPadding)
-            .padding(.top, DashboardLayout.pageTopPadding)
-            .padding(.bottom, DashboardLayout.pageBottomPadding)
+            .padding(.vertical, DashboardLayout.pageVerticalPadding)
         }
         .task(id: loadTaskID) {
             guard model.selectedSection == .subscriptions else { return }
