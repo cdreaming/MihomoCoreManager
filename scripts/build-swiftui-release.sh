@@ -16,6 +16,7 @@ PROVENANCE="$DIST/SwiftUI-RELEASE-PROVENANCE.txt"
 XCODE_LOG="$ROOT/build/xcodebuild-release.log"
 
 [[ "$(uname -s)" == "Darwin" ]] || { echo "SwiftUI .pkg release requires macOS" >&2; exit 1; }
+[[ "$(uname -m)" == "arm64" ]] || { echo "SwiftUI .pkg release requires Apple Silicon arm64" >&2; exit 1; }
 [[ "$MODE" == "--unsigned" || "$MODE" == "--signed" ]] || { echo "usage: $0 [--unsigned|--signed]" >&2; exit 2; }
 mkdir -p "$DIST" "$ROOT/build"
 rm -rf "$DERIVED" "$APP" "$PKG"
@@ -34,9 +35,9 @@ xcodebuild \
   -project "$ROOT/MihomoCoreManager.xcodeproj" \
   -scheme MihomoCoreManager \
   -configuration Release \
-  -destination 'generic/platform=macOS' \
+  -destination 'platform=macOS' \
   -derivedDataPath "$DERIVED" \
-  ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \
+  ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
   MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
   CODE_SIGNING_ALLOWED=NO \
   SWIFT_ENABLE_BATCH_MODE=NO \

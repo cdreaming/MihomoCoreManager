@@ -13,6 +13,7 @@ MANIFEST="$DIST/GoWebUI-APP-MANIFEST.json"
 PROVENANCE="$DIST/GoWebUI-RELEASE-PROVENANCE.txt"
 
 [[ "$(uname -s)" == "Darwin" ]] || { echo "GoWebUI .pkg release requires macOS" >&2; exit 1; }
+[[ "$(uname -m)" == "arm64" ]] || { echo "GoWebUI .pkg release requires Apple Silicon arm64" >&2; exit 1; }
 [[ "$MODE" == "--unsigned" || "$MODE" == "--signed" ]] || { echo "usage: $0 [--unsigned|--signed]" >&2; exit 2; }
 mkdir -p "$DIST" "$ROOT/build"
 rm -rf "$APP" "$PKG"
