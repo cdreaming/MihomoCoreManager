@@ -12,7 +12,7 @@ struct DashboardSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DashboardLayout.pageSpacing) {
-                DashboardPageHeader(title: "服务设置", subtitle: "Mihomo Core API 为主；mihomo.service 负责服务生命周期，Core 服务面板作为备选。")
+                DashboardPageHeader(title: "服务设置", subtitle: "Mihomo Core API + Core 服务面板 API 为主；SSH 仅作为显式配置的高级末级回退。")
                 serverPanel
                 if let draftBinding = Binding($draft) {
                     connectionPanel(profile: draftBinding)
@@ -99,9 +99,9 @@ struct DashboardSettingsView: View {
     private func systemdPanel(profile: Binding<ServerProfile>) -> some View {
         DashboardPanel {
             VStack(alignment: .leading, spacing: DashboardLayout.panelSpacing) {
-                DashboardPanelHeader(title: "mihomo.service（推荐）", trailing: "systemd · SSH")
+                DashboardPanelHeader(title: "mihomo.service（高级回退）", trailing: "systemd · SSH（可选）")
                 settingRow("SSH 目标") {
-                    TextField("root@192.168.1.2；留空从 LAN Management/Controller 自动推断", text: optionalText(profile, \.systemdSSHTarget))
+                    TextField("仅显式填写后启用，例如 root@192.168.1.2", text: optionalText(profile, \.systemdSSHTarget))
                         .textFieldStyle(DashboardTextFieldStyle())
                 }
                 settingRow("SSH 端口") {
@@ -118,7 +118,7 @@ struct DashboardSettingsView: View {
                         .font(.system(size: 11.5, design: .monospaced))
                         .foregroundStyle(DashboardPalette.secondary)
                 }
-                Text("启用后：启动/停止优先 systemctl；重启在 Core API 失败后使用 systemctl；热重载仅在 unit 明确 CanReload=yes 时尝试 systemd，否则直接回退 Core 服务面板；运行日志优先 journalctl。SSH 使用 BatchMode，不弹密码框；目标留空时优先从 LAN Management URL、其次 Controller URL 推断主机；非 root 用户需预先配置 sudo -n 权限。")
+                Text("默认不启用 SSH。服务状态、启动/停止/重启与日志优先使用 Mihomo Controller / Core 服务面板 API；只有显式填写 SSH 目标后，systemctl / journalctl 才作为高级末级回退。SSH 使用 BatchMode，不保存密码；非 root 用户若启用回退需预先配置 sudo -n 权限。")
                     .font(.system(size: 10.5))
                     .foregroundStyle(DashboardPalette.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -130,7 +130,7 @@ struct DashboardSettingsView: View {
     private func corePanel(profile: Binding<ServerProfile>) -> some View {
         DashboardPanel {
             VStack(alignment: .leading, spacing: DashboardLayout.panelSpacing) {
-                DashboardPanelHeader(title: "扩展管理（可选）", trailing: "Core 服务面板 · Fallback")
+                DashboardPanelHeader(title: "Core 服务面板（推荐）", trailing: "Management API")
                 settingRow("Management URL") { TextField("可选；例如 http://192.168.1.2:29090", text: profile.managementURL).textContentType(.URL).textFieldStyle(DashboardTextFieldStyle()) }
                 settingRow("Management Secret") {
                     HStack(spacing: 8) {
@@ -145,7 +145,7 @@ struct DashboardSettingsView: View {
                 }
                 settingRow("MetaCubeXD URL") { TextField("可选", text: profile.metaCubeXDURL).textContentType(.URL).textFieldStyle(DashboardTextFieldStyle()) }
                 toggleRow("项目升级时保留现有设置", isOn: profile.preserveSettingsOnUpdate, detail: "仅影响可选管理面板发起的项目升级。")
-                Text("Management URL 不是 Mihomo Controller。它位于最后兜底：Core API / mihomo.service 不可用时处理生命周期与日志，并继续承担版本元数据、订阅写入、配置生成和整套项目升级。可直接粘贴 /api/status、/api/login 等部署地址，保存时会回退到面板根路径并保留反代前置路径；不会自动补 29090。MetaCubeXD 在 LAN Management + 面板返回端口时优先同服务器 LAN 地址，公网 URL 作为备用，且不会猜 29091。")
+                Text("Management URL 不是 Mihomo Controller。它是服务生命周期、日志、版本元数据、订阅写入、配置生成和整套项目升级的首选管理 API；Core 已停止时仍可管理 mihomo.service。可直接粘贴 /api/status、/api/login 等部署地址，保存时会回退到面板根路径并保留反代前置路径；不会自动补 29090。MetaCubeXD 在 LAN Management + 面板返回端口时优先同服务器 LAN 地址，公网 URL 作为备用，且不会猜 29091。")
                     .font(.system(size: 10.5))
                     .foregroundStyle(DashboardPalette.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -411,9 +411,9 @@ private struct ProfileEditorView: View {
                 Toggle("允许不安全 HTTP", isOn: $profile.allowInsecureHTTP)
             }
 
-            Section("mihomo.service（推荐）") {
+            Section("mihomo.service（高级回退）") {
                 LabeledContent("SSH 目标") {
-                    TextField("root@192.168.1.2；留空从 LAN URL 自动推断", text: optionalProfileText(\.systemdSSHTarget))
+                    TextField("仅显式填写后启用，例如 root@192.168.1.2", text: optionalProfileText(\.systemdSSHTarget))
                         .frame(minWidth: 300)
                 }
                 LabeledContent("SSH 端口") {
@@ -428,12 +428,12 @@ private struct ProfileEditorView: View {
                     Text("mihomo.service")
                         .font(.system(.body, design: .monospaced))
                 }
-                Text("启动/停止优先 systemctl；重启在 Core API 失败后使用 systemctl；热重载仅当 CanReload=yes 才尝试 systemd，否则回退 Core 服务面板；日志优先 journalctl。SSH 为非交互 BatchMode，目标留空时从 LAN Management/Controller 推断，非 root 用户需要免密 sudo -n。")
+                Text("默认不启用 SSH。服务状态、启动/停止/重启与日志优先使用 Mihomo Controller / Core 服务面板 API；仅显式填写 SSH 目标后，systemctl / journalctl 才作为高级末级回退。SSH 为非交互 BatchMode，非 root 用户若启用回退需要免密 sudo -n。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            Section("扩展管理（可选）") {
+            Section("Core 服务面板（推荐）") {
                 LabeledContent("Management URL") {
                     TextField("可选；仅高级功能", text: $profile.managementURL)
                         .textContentType(.URL)
@@ -449,7 +449,7 @@ private struct ProfileEditorView: View {
                     }
                 }
                 HStack {
-                    Text("作为 Core API / mihomo.service 的最后兜底，并继续负责订阅写入、配置生成和整套项目升级。")
+                    Text("作为服务生命周期、日志、订阅写入、配置生成和整套项目升级的首选管理 API；SSH 仅显式配置后回退。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()

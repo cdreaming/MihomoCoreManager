@@ -50,12 +50,19 @@ if [[ -e "$LEGACY_TARGET" ]]; then
 fi
 
 echo "Installing to /Applications…"
+# Downloads extracted by Finder/Archive Utility inherit quarantine. Remove it
+# from the payload and the installed bundle before the first launch.
+/usr/bin/xattr -dr com.apple.quarantine "$SOURCE" 2>/dev/null || true
 sudo /usr/bin/ditto "$SOURCE" "$TARGET"
-sudo /usr/bin/codesign --force --deep --sign - "$TARGET" >/dev/null 2>&1 || true
+sudo /usr/bin/xattr -dr com.apple.quarantine "$TARGET" 2>/dev/null || true
+
+echo "Applying local ad-hoc signature…"
+sudo /usr/bin/codesign --force --deep --sign - "$TARGET"
+/usr/bin/codesign --verify --deep --strict --verbose=2 "$TARGET"
 
 echo "Installation complete."
-echo "This preview is ad-hoc/unsigned and not notarized; macOS may require right-click > Open on first launch."
-/usr/bin/open "$TARGET" || true
+echo "This preview is not Developer ID notarized. If Finder blocks the .command itself, run it from Terminal as documented in README-安装.txt."
+/usr/bin/open "$TARGET"
 printf "\nPress any key to close…"
 read -k 1
 printf "\n"
@@ -93,8 +100,9 @@ GoWebUI portable 与 GitHub GoWebUI.pkg 都调用 scripts/build-gowebui-app.sh�
 SwiftUI.pkg 是另一套原生 SwiftUI/AppKit 实现，文件名明确区分，不要求像素级一致。
 
 1. 需要 Apple Silicon Mac 和 macOS 14.0+。
-2. 双击 Install-MihomoManager.command 安装到 /Applications。
-3. 此 preview 未做 Developer ID 签名/公证；首次启动若被 Gatekeeper 拦截，请右键 App -> 打开。
+2. 先尝试双击 Install-MihomoManager.command 安装到 /Applications。
+3. 如果 Finder 提示“无法打开/无法验证开发者”，不要直接双击 App；打开“终端”，将 Install-MihomoManager.command 拖入终端窗口后回车。脚本会清理下载 quarantine、复制到 /Applications、重新 ad-hoc 签名并严格校验后再启动。
+4. portable preview 未做 Developer ID 公证，因此 Finder 对下载脚本的首次拦截属于 Gatekeeper 行为，不代表 App 架构或后端连接失败。
 EOF
 
 PACKAGE_DIR="$PACKAGE_DIR" OUT="$OUT" python3 - <<'PY'

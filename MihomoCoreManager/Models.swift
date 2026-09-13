@@ -225,18 +225,12 @@ private func isLANHost(_ rawHost: String) -> Bool {
     return host == "::1" || host.hasPrefix("fc") || host.hasPrefix("fd") || host.hasPrefix("fe80:")
 }
 
-/// Explicit SSH target wins. Otherwise infer only from a LAN Management/Controller
-/// host; public hosts are never automatically probed over SSH.
+/// SSH is an explicit opt-in advanced fallback. v1.3.1 inferred a LAN host
+/// from Management/Controller URLs, which turned an ordinary TCP failure into
+/// misleading SSH authentication errors using the current macOS username.
 func effectiveSystemdSSHTarget(for profile: ServerProfile) -> String? {
     let explicit = (profile.systemdSSHTarget ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-    if !explicit.isEmpty { return explicit }
-    for raw in [profile.managementURL, profile.coreControllerURL] {
-        guard let host = configuredURLHost(raw), isLANHost(host) else { continue }
-        let lower = host.trimmingCharacters(in: CharacterSet(charactersIn: "[]")).lowercased()
-        if lower == "localhost" || lower == "127.0.0.1" || lower == "::1" { continue }
-        return host
-    }
-    return nil
+    return explicit.isEmpty ? nil : explicit
 }
 
 struct APIMessage: Decodable {

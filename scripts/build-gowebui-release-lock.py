@@ -22,6 +22,7 @@ INPUTS = [
     "scripts/generate-app-icon.py",
     "scripts/build-gowebui-release-lock.py",
     "scripts/build-gowebui-app.sh",
+    "scripts/verify-macho-uuid.py",
     "scripts/build-portable-installer.sh",
     "scripts/build-gowebui-release.sh",
 ] + [
@@ -58,7 +59,7 @@ def expected() -> dict:
         "variant": "GoWebUI",
         "version": version,
         "build": build,
-        "required_go": "go1.23.2",
+        "required_go": "go1.26.8",
         "contract": "ChatGPT portable preview and GitHub GoWebUI.pkg share scripts/build-gowebui-app.sh and these exact release inputs",
         "input_tree_sha256": tree_h.hexdigest(),
         "files": files,

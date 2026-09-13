@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: '已有发布 tag，例如 v1.3.1（不会移动或重建 tag）'
+        description: '已有发布 tag，例如 v1.3.2（不会移动或重建 tag）'
         required: true
-        default: 'v1.3.1'
+        default: 'v1.3.2'
         type: string
 
 permissions:
@@ -63,7 +63,7 @@ jobs:
       - name: 配置 Go 工具链
         uses: actions/setup-go@v6
         with:
-          go-version: '1.23.2'
+          go-version: '1.26.8'
           cache: false
 
       - name: 校验 tag 与源码版本

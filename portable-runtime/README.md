@@ -16,8 +16,15 @@
 - `GOOS=darwin GOARCH=arm64 CGO_ENABLED=0` 生成 Apple Silicon Mach-O 主进程。
 - 主进程仅监听随机 `127.0.0.1` 端口，并用每次启动随机 token 保护本地 API。
 - JXA + AppKit/WebKit 提供窗口与状态栏；远端 Mihomo 请求由 Go 进程发送，因此不受 WebKit CORS 限制。
-- Profile 非敏感字段写入 `~/Library/Application Support/MihomoCoreManager/settings.json`；Secret 使用 macOS Keychain。
+- Profile 非敏感字段写入 `~/Library/Application Support/MihomoManager/settings.json`，旧 `MihomoCoreManager/settings.json` 仅用于迁移；Secret 使用 macOS Keychain。
 - 状态栏、代理切换、线路延时、Controller `/group`/`/proxies` 合并、窗口生命周期等 v1.2.x 稳定性修复继续保留。
+
+## v1.3.2 networking / service policy
+
+- 正式 GoWebUI 构建使用 Go 1.26.8；打包后必须验证 Mach-O `LC_UUID`，并声明 `NSLocalNetworkUsageDescription`。
+- Management Secret 统一使用 `cc.kkr.MihomoManager.profile-secret`；兼容迁移 v1.3.1 错误 service，并在保存后回读校验。
+- SSH 不再从 LAN URL 自动推断。只有显式填写 `systemdSSHTarget` 才启用 SSH/HTTP-over-SSH/systemd/journalctl 回退。
+- 服务状态/动作/日志优先 Controller 与 Core 服务面板 API，显式 SSH 只作为最终高级回退。
 
 ## v1.3.1 networking
 
@@ -25,4 +32,4 @@
 - `CGO_ENABLED=0` 的 macOS runtime 对本地主机名增加系统解析器回退。
 - Cloudflare Tunnel/网关临时故障会清理空闲连接并对只读请求、状态轮询和代理菜单轮询退避，减少恢复期请求风暴。
 
-v1.3.1：`VERSION=1.3.1`，`BUILD_NUMBER=1301`。
+当前版本：v1.3.2，`VERSION=1.3.2`，`BUILD_NUMBER=1302`。
