@@ -25,8 +25,8 @@ import (
 )
 
 const (
-	appVersion                      = "1.3.4"
-	buildNumber                     = "1304"
+	appVersion                      = "1.3.5"
+	buildNumber                     = "1305"
 	keychainService                 = "cc.kkr.MihomoManager.profile-secret"
 	v131BrokenKeychainService       = "cc.kkr.MihomoManager"
 	legacyKeychainService           = "cc.kkr.MihomoCoreManager.profile-secret"
@@ -3487,7 +3487,7 @@ function ensureWindowUsable(){try{win.releasedWhenClosed=false;win.movable=true;
 function showURL(u){ try{ensureWindowUsable();var url=$.NSURL.URLWithString($(u));var req=$.NSURLRequest.requestWithURL(url);web.loadRequest(req);win.makeKeyAndOrderFront(null);cocoaApp.activateIgnoringOtherApps(true);}catch(e){std.displayNotification(String(e),{withTitle:'MihomoManager'});} }
 function openHash(h){ showURL(BASE+'/#'+h); }
 
-var statusItem=null, statusHeader=null, speedHeader=null, prefIconItem=null, prefStatusItem=null, prefSpeedItem=null, iconOnlyItem=null, startItem=null, stopItem=null, serverMenu=null, serverRoot=null, proxyHeader=null, proxyEndSeparator=null, proxyMenuRoots=[], proxyMenuRootByGroup={}, proxyMenuData={}, proxyMenuGeneration=-1, proxyMenuStructureKey='', proxyPendingReconcile={}, proxySubmenuBuilt={}, proxyMenuTick=0;
+var statusItem=null, statusHeader=null, headerLogoView=null, headerStatusLabel=null, headerSpeedLabel=null, prefIconItem=null, prefStatusItem=null, prefSpeedItem=null, iconOnlyItem=null, startItem=null, stopItem=null, serverMenu=null, serverRoot=null, proxyHeader=null, proxyEndSeparator=null, proxyMenuRoots=[], proxyMenuRootByGroup={}, proxyMenuData={}, proxyMenuGeneration=-1, proxyMenuStructureKey='', proxyPendingReconcile={}, proxySubmenuBuilt={}, proxyMenuTick=0;
 var showIcon=true, showStatus=true, showSpeed=true, lastRunning=false, lastReachable=false, lastUp=0, lastDown=0, lastCoreVersion='--';
 var appLogo=null, appSymbol=null, missingSnapshotTicks=0;
 var statusOverlay=null, statusIconView=null, statusDot=null, upValueLabel=null, upUnitLabel=null, downValueLabel=null, downUnitLabel=null;
@@ -3511,7 +3511,7 @@ function setStatusOverlayHidden(hidden){
 }
 function renderStatusSpeedOverlay(){
   var up=statusRateParts(lastUp), down=statusRateParts(lastDown);
-  // v1.3.4 parity with SwiftUI: shared logo at the far left, optional state dot
+  // v1.3.5 parity with SwiftUI: shared logo at the far left, optional state dot
   // in the middle, and the two speed rows pinned to the far right.
   var left=2, gap=6, iconWidth=showIcon?16:0, dotWidth=showStatus?7:0, x=left;
   if(showIcon) x+=iconWidth;
@@ -3596,8 +3596,8 @@ function updateStatusTitle(){
   if(!statusItem) return;
   renderStatusButton();
   var state=lastReachable?(lastRunning?'Running':'Stopped'):'Offline';
-  if(statusHeader) statusHeader.title='Mihomo Core  ·  '+lastCoreVersion+'  ·  '+state;
-  if(speedHeader) speedHeader.title='↑  上传  '+fmtRate(lastUp)+'      ↓  下载  '+fmtRate(lastDown);
+  if(headerStatusLabel) headerStatusLabel.stringValue=$('Mihomo Core  ·  '+lastCoreVersion+'  ·  '+state);
+  if(headerSpeedLabel) headerSpeedLabel.stringValue=$('↑  上传  '+fmtRate(lastUp)+'      ↓  下载  '+fmtRate(lastDown));
   if(startItem) startItem.enabled=lastReachable&&!lastRunning;
   if(stopItem) stopItem.enabled=lastReachable&&lastRunning;
 }
@@ -3874,7 +3874,7 @@ editItem('撤销','undo:','z'); editMenu.addItem($.NSMenuItem.separatorItem); ed
 editRoot.submenu=editMenu; mainMenu.addItem(editRoot); cocoaApp.mainMenu=mainMenu;
 
 statusItem=$.NSStatusBar.systemStatusBar.statusItemWithLength(25); statusItem.button.toolTip='MihomoManager v%s';
-try{appLogo=$.NSImage.alloc.initWithContentsOfFile($(LOGO_PATH));if(appLogo){appLogo.size=$.NSMakeSize(20,20);}}catch(e){appLogo=null;}
+try{appLogo=$.NSImage.alloc.initWithContentsOfFile($(LOGO_PATH));if(appLogo){appLogo.size=$.NSMakeSize(44,44);}}catch(e){appLogo=null;}
 try{appSymbol=$.NSImage.alloc.initWithContentsOfFile($(LOGO_PATH));if(appSymbol){appSymbol.size=$.NSMakeSize(16,16);appSymbol.template=true;}}catch(e){appSymbol=null;}
 if(!appSymbol){try{appSymbol=$.NSImage.imageWithSystemSymbolNameAccessibilityDescription('app.fill','MihomoManager');appSymbol.template=true;}catch(e){}}
 try{
@@ -3903,8 +3903,27 @@ function addItem(targetMenu,title,sel,key){var i=$.NSMenuItem.alloc.initWithTitl
 function addSymbol(item,name){try{var img=$.NSImage.imageWithSystemSymbolNameAccessibilityDescription(name,item.title);if(img){img.template=true;item.image=img;}}catch(e){} return item;}
 function addSep(targetMenu){targetMenu.addItem($.NSMenuItem.separatorItem);}
 
-statusHeader=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('Mihomo Core  ·  --  ·  Offline','', '');statusHeader.enabled=false;if(appLogo)statusHeader.image=appLogo;menu.addItem(statusHeader);
-speedHeader=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('↑  上传  0 B/s      ↓  下载  0 B/s','', '');speedHeader.enabled=false;menu.addItem(speedHeader);
+// v1.3.5 compact dropdown header: a large color BrandLogo spans both rows on
+// the left, while Core/version/state and traffic are two aligned rows at right.
+function makeHeaderLabel(frame,size,weight,color){
+  var label=$.NSTextField.alloc.initWithFrame(frame);
+  label.stringValue=''; label.bezeled=false; label.bordered=false; label.drawsBackground=false;
+  label.editable=false; label.selectable=false; label.alignment=0; label.textColor=color;
+  try{label.font=$.NSFont.systemFontOfSizeWeight(size,weight);}catch(e){label.font=$.NSFont.systemFontOfSize(size);}
+  return label;
+}
+var headerView=$.NSView.alloc.initWithFrame($.NSMakeRect(0,0,360,58));
+headerLogoView=$.NSImageView.alloc.initWithFrame($.NSMakeRect(12,7,44,44));
+headerLogoView.imageScaling=3;
+if(appLogo)headerLogoView.image=appLogo;
+headerView.addSubview(headerLogoView);
+headerStatusLabel=makeHeaderLabel($.NSMakeRect(68,31,278,18),13.5,0.62,$.NSColor.labelColor);
+headerStatusLabel.stringValue='Mihomo Core  ·  --  ·  Offline';
+headerSpeedLabel=makeHeaderLabel($.NSMakeRect(68,10,278,16),12.0,0.45,$.NSColor.secondaryLabelColor);
+headerSpeedLabel.stringValue='↑  上传  0 B/s      ↓  下载  0 B/s';
+headerView.addSubview(headerStatusLabel); headerView.addSubview(headerSpeedLabel);
+statusHeader=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('','','');
+statusHeader.enabled=false; statusHeader.view=headerView; menu.addItem(statusHeader);
 addSep(menu);
 
 addSymbol(addItem(menu,'打开主窗口','openManager:','o'),'macwindow');

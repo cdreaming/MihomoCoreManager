@@ -1493,7 +1493,9 @@ func TestMenuScriptUsesCachedSnapshotNativeDragAndV128WindowLifecycle(t *testing
 		"statusItem.button.addSubview(statusOverlay)",
 		"LOGO_PATH",
 		"appSymbol=$.NSImage.alloc.initWithContentsOfFile($(LOGO_PATH))",
-		"statusHeader.image=appLogo",
+		"headerLogoView.image=appLogo",
+		"statusHeader.view=headerView",
+		"NSMakeRect(12,7,44,44)",
 		"applicationShouldTerminateAfterLastWindowClosed:",
 		"cocoaApp.delegate=delegate",
 		"upValueLabel.frame=$.NSMakeRect(speedX,9.3,23,10.5)",
@@ -1502,7 +1504,7 @@ func TestMenuScriptUsesCachedSnapshotNativeDragAndV128WindowLifecycle(t *testing
 		"downValueLabel.stringValue=$(down.value)",
 		"button.image=null; button.imagePosition=0; button.title=''",
 		"Never allow a cosmetic status-bar failure to terminate the whole App",
-		"speedHeader.title='↑  上传  '+fmtRate(lastUp)+'      ↓  下载  '+fmtRate(lastDown)",
+		"headerSpeedLabel.stringValue=$('↑  上传  '+fmtRate(lastUp)+'      ↓  下载  '+fmtRate(lastDown))",
 		"proxyEndSeparator=$.NSMenuItem.separatorItem; menu.addItem(proxyEndSeparator)",
 		"var index=proxyEndSeparator?menu.indexOfItem(proxyEndSeparator):menu.indexOfItem(coreRoot)",
 		"var coreRoot=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('Core 控制'",
@@ -1581,8 +1583,8 @@ func TestEmbeddedModernAppIconV131(t *testing.T) {
 	}
 }
 
-func TestPortableVersionV134(t *testing.T) {
-	if appVersion != "1.3.4" || buildNumber != "1304" {
+func TestPortableVersionV135(t *testing.T) {
+	if appVersion != "1.3.5" || buildNumber != "1305" {
 		t.Fatalf("unexpected portable version/build: %s/%s", appVersion, buildNumber)
 	}
 }

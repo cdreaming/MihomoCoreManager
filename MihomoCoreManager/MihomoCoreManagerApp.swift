@@ -3,7 +3,7 @@ import SwiftUI
 
 final class MihomoApplicationDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        // v1.3.4: the status item is the long-lived app surface. Closing the
+        // v1.3.5: the status item is the long-lived app surface. Closing the
         // Dashboard must only close that window; the menu-bar controller stays
         // available until the explicit status-menu Quit action terminates AppKit.
         false

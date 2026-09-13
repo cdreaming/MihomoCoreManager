@@ -19,12 +19,12 @@
 - Profile 非敏感字段写入 `~/Library/Application Support/MihomoManager/settings.json`，旧 `MihomoCoreManager/settings.json` 仅用于迁移；Secret 使用 macOS Keychain。
 - 状态栏、代理切换、线路延时、Controller `/group`/`/proxies` 合并、窗口生命周期等 v1.2.x 稳定性修复继续保留。
 
-## v1.3.4 status-menu parity
+## v1.3.5 status-menu parity
 
-- GoWebUI 与 SwiftUI 的状态栏入口和下拉菜单头部统一使用同一份 `BrandLogo` / AppIcon 图形资源。
+- GoWebUI 与 SwiftUI 的状态栏入口和下拉菜单头部统一使用同一份 `BrandLogo` / AppIcon 图形资源；下拉头部改为“大 LOGO 左侧跨两行 + 右侧两行状态/网速”。
 - 状态栏统一采用“LOGO 靠左、运行状态点居中、实时网速块靠右”的布局，网速区域固定宽度以避免跳动。
 - 关闭主窗口只隐藏/关闭主界面，状态栏菜单继续运行；从状态栏执行“退出”才终止整个应用。
-- 版本统一为 v1.3.4 / build 1304。
+- 版本统一为 v1.3.5 / build 1305。
 
 ## v1.3.2 networking / service policy
 
@@ -39,4 +39,4 @@
 - `CGO_ENABLED=0` 的 macOS runtime 对本地主机名增加系统解析器回退。
 - Cloudflare Tunnel/网关临时故障会清理空闲连接并对只读请求、状态轮询和代理菜单轮询退避，减少恢复期请求风暴。
 
-当前版本：v1.3.4，`VERSION=1.3.4`，`BUILD_NUMBER=1304`。
+当前版本：v1.3.5，`VERSION=1.3.4`，`BUILD_NUMBER=1304`。

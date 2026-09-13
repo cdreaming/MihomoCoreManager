@@ -570,82 +570,65 @@ private struct MenuBarLiveSummary: View {
     @EnvironmentObject private var live: LiveStatusStore
 
     var body: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 11) {
-                Image("BrandLogo")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 40, height: 40)
-                    .accessibilityLabel("MihomoManager Logo")
-                    .shadow(color: DashboardPalette.accent.opacity(0.22), radius: 10, y: 4)
+        // v1.3.5 compact two-row header: the BrandLogo occupies the full height
+        // at the left; Core/version/state and traffic stay in two rows at right.
+        HStack(spacing: 12) {
+            Image("BrandLogo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 46, height: 46)
+                .accessibilityLabel("MihomoManager Logo")
+                .shadow(color: DashboardPalette.accent.opacity(0.24), radius: 9, y: 3)
 
-                VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
                     Text("Mihomo Core")
-                        .font(.system(size: 15, weight: .bold))
-                    Text(live.status?.versions?.core ?? "正在读取版本…")
-                        .font(.system(size: 11.5, weight: .medium))
+                        .font(.system(size: 13.5, weight: .bold))
+                    Text("·")
+                        .foregroundStyle(DashboardPalette.tertiary)
+                    Text(live.status?.versions?.core ?? "读取中…")
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
                         .foregroundStyle(DashboardPalette.secondary)
                         .monospacedDigit()
-                }
-
-                Spacer(minLength: 8)
-                HStack(spacing: 6) {
+                    Text("·")
+                        .foregroundStyle(DashboardPalette.tertiary)
                     Circle()
                         .fill(statusColor)
-                        .frame(width: 7, height: 7)
-                        .shadow(color: statusColor.opacity(0.45), radius: 4)
+                        .frame(width: 6, height: 6)
                     Text(statusText)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 11.5, weight: .semibold))
                 }
-                .padding(.horizontal, 10)
-                .frame(height: 29)
-                .background(DashboardPalette.menuSurfaceRaised)
-                .clipShape(Capsule())
-                .overlay { Capsule().stroke(DashboardPalette.menuSeparator, lineWidth: 1) }
-            }
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
 
-            HStack(spacing: 9) {
-                speedMetric(
-                    title: "上传",
-                    symbol: "arrow.up",
-                    value: model.menuRate(live.effectiveSpeed?.up)
-                )
-
-                Spacer(minLength: 6)
-                Rectangle()
-                    .fill(DashboardPalette.menuSeparator)
-                    .frame(width: 1, height: 18)
-                Spacer(minLength: 6)
-
-                speedMetric(
-                    title: "下载",
-                    symbol: "arrow.down",
-                    value: model.menuRate(live.effectiveSpeed?.down)
-                )
+                HStack(spacing: 16) {
+                    speedText(
+                        prefix: "↑  上传",
+                        value: model.menuRate(live.effectiveSpeed?.up)
+                    )
+                    speedText(
+                        prefix: "↓  下载",
+                        value: model.menuRate(live.effectiveSpeed?.down)
+                    )
+                }
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
             }
-            .padding(.horizontal, 12)
-            .frame(height: 42)
-            .background(DashboardPalette.menuSurface)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(DashboardPalette.menuSeparator, lineWidth: 1)
-            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .padding(.horizontal, 2)
+        .frame(minHeight: 52)
     }
 
-    private func speedMetric(title: String, symbol: String, value: String) -> some View {
+    private func speedText(prefix: String, value: String) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: symbol)
-                .font(.system(size: 11.5, weight: .bold))
-                .foregroundStyle(DashboardPalette.accent)
-            Text(title)
-                .font(.system(size: 10.5, weight: .medium))
+            Text(prefix)
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(DashboardPalette.tertiary)
             Text(value)
                 .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
                 .monospacedDigit()
-                .lineLimit(1)
+                .foregroundStyle(.primary)
         }
         .fixedSize(horizontal: true, vertical: false)
     }

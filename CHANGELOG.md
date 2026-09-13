@@ -1,6 +1,15 @@
 # Changelog
 
+## v1.3.5
+
+- 状态栏下拉菜单头部重新排版：BrandLogo 放大并固定在左侧跨两行，右侧第一行显示 Mihomo Core / Core 版本 / 运行状态，第二行显示上传与下载实时网速。
+- SwiftUI 使用 46pt BrandLogo；GoWebUI AppKit/JXA 使用 44pt 彩色 BrandLogo + 58pt 自定义菜单头部，保持两套实现的信息结构与视觉占位一致。
+- 保留 v1.3.4 的状态栏常驻逻辑：关闭主窗口不退出状态栏，只有从状态栏执行“退出 MihomoManager”才终止程序。
+- App / Xcode / GoWebUI runtime 统一升级为 v1.3.5 / build 1305。
+
 ## v1.3.4
+
+- 状态栏下拉菜单头部二次调整：LOGO 放大并固定在左侧跨两行；右侧第一行显示 Core/版本/运行状态，第二行显示上传/下载网速。GoWebUI 使用 44pt 彩色 LOGO，SwiftUI 使用 46pt BrandLogo，保持同一双行信息结构。
 
 - SwiftUI 与 GoWebUI 状态栏下拉菜单顶部图标统一改为 MihomoManager BrandLogo/AppIcon 128px 同源 LOGO。
 - 状态栏常驻图标由 `circle.grid.cross` 改为 LOGO；布局统一为 LOGO 靠左、运行状态点居中、双行实时网速靠右。
