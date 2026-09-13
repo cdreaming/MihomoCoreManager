@@ -32,6 +32,8 @@
     <string>NSApplication</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>MihomoManager 需要访问您配置的局域网 Mihomo Controller、Core 服务面板和 MetaCubeXD。</string>
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsArbitraryLoads</key>

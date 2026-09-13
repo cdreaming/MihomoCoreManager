@@ -1,6 +1,18 @@
 # MihomoManager for macOS
 
-对照 **mihomo-web-installer v4.0.1** 的部署与管理接口语义维护的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.3.1 (build 1301)**；本次为同版本接口兼容 hotfix，不改变 App 版本号。
+对照 **mihomo-web-installer v4.0.1** 的部署与管理接口语义维护的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.3.2 (build 1302)**；本版重点修复 GoWebUI 的 macOS 15+ 局域网访问、Keychain Secret 一致性和 SSH 回退优先级。
+
+## v1.3.2
+
+v1.3.2 以 v1.3.1 为基线，完成一次针对网络、Secret、服务控制与打包链的完整修复：
+
+- **修复 GoWebUI 局域网根因。** 正式构建切换到 Go 1.26.8，移除 `-buildid=`，并在打包后强制验证 Mach-O `LC_UUID`；缺失 UUID 直接阻止发布。两套 App 同时声明 `NSLocalNetworkUsageDescription`。
+- **修复 Management Secret 错位。** GoWebUI 与 SwiftUI 统一使用 `cc.kkr.MihomoManager.profile-secret`，并兼容迁移 v1.3.1 GoWebUI 误写的 `cc.kkr.MihomoManager`。Secret 保存后立即回读验证。
+- **SSH 改为显式高级回退。** 不再从 Controller/Management LAN URL 自动推断 SSH 主机。服务状态/启停/重启/重载/日志优先 Controller 或 Core 服务面板 API，只有明确填写 SSH target 时才允许 systemd/journalctl 回退。
+- **状态文案消除歧义。** `GoWebUI · Remote` 改为 `GoWebUI · 本机界面`；运行时显示“后端已连接 · …”或“后端未连接 · 检查设置”，它不再被误解为 App 本身端口占用。
+- GoWebUI 设置文件位于 `~/Library/Application Support/MihomoManager/settings.json`，运行快照位于 `Runtime/`；Secret 只保存在 macOS Keychain。
+
+完整说明见 `docs/releases/v1.3.2/RELEASE-NOTES.md` 与 `docs/releases/v1.3.2/QA-v1.3.2.md`。
 
 ## v1.3.1
 

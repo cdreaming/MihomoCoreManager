@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.3.2
+
+- 修复 GoWebUI 在 macOS 15+ App Bundle 中访问局域网 Controller / Core 服务面板 / MetaCubeXD 时可能出现 `No route to host` 的打包根因：正式工具链升级为 Go 1.26.8，移除 `-buildid=`，并将非零 Mach-O `LC_UUID` 设为发布硬门禁。
+- SwiftUI / GoWebUI `Info.plist` 均增加 `NSLocalNetworkUsageDescription`。
+- 修复 v1.3.1 GoWebUI Management Secret Keychain service 与 SwiftUI 不一致：统一到 `cc.kkr.MihomoManager.profile-secret`，兼容迁移错误/旧 service，保存后回读校验。
+- SSH 从自动推断主机改为显式 opt-in；不再因为局域网 TCP 失败自动用当前 macOS 用户名连接服务器。
+- 服务控制优先级统一为 Controller（适用操作）→ Core 服务面板 Management API → 显式 SSH/systemd 最终回退；运行日志优先面板 `/api/logs`，再到显式 SSH `journalctl`。
+- GoWebUI 右下角 `GoWebUI · Remote` 改为本机 UI/后端连接状态文案，避免误判为端口冲突。
+- App / Xcode / GoWebUI runtime 统一升级为 v1.3.2 / build 1302。
+
 ## v1.3.1
 
 - **修复侧栏三组件版本：** Controller 快速状态成功时不再丢失 Management 元数据；SwiftUI/GoWebUI 均从 v4.0.1 `/api/status` 补齐 `management_panel` / `metacubexd` 版本，Core 版本继续以 Controller `/version` 为权威，项目升级后主动失效版本缓存。

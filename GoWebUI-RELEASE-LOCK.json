@@ -1,15 +1,15 @@
 {
-  "build": "1301",
+  "build": "1302",
   "contract": "ChatGPT portable preview and GitHub GoWebUI.pkg share scripts/build-gowebui-app.sh and these exact release inputs",
   "files": [
     {
       "path": "VERSION",
-      "sha256": "10e2e117b01523891ca271a615ae36e9d5e52348fd7d642f66727602c1b8dcbe",
+      "sha256": "33158972a53877b421cfe2598b8d93cab169963a4964b45ee889e85349979018",
       "size": 6
     },
     {
       "path": "BUILD_NUMBER",
-      "sha256": "fe20f37014281955e2a6f365db6b0dd2d057b127717dc13c9accbe0cdf0e53a5",
+      "sha256": "11b77fcf3f494a0d151905eb4cd042ee5a87a33c93cc0dfc558b601cb55cf537",
       "size": 5
     },
     {
@@ -19,13 +19,13 @@
     },
     {
       "path": "portable-runtime/main.go",
-      "sha256": "025cb529c9f97cfcf26557f5326f0618647916ff381839ff45f75833d807cf00",
-      "size": 140134
+      "sha256": "583045669da7aa10b3cdf9dc67edd7927f766b663a8e610159cae26961197605",
+      "size": 141186
     },
     {
       "path": "portable-runtime/ui/index.html",
-      "sha256": "725f4a905e54845ccbee26faf38ccb91e39f27eb9b1998a352023eba7fd00769",
-      "size": 80160
+      "sha256": "2577f817c759f0d6310c30aec51c4f298737052424a25a61c7b664832fa6c22b",
+      "size": 79927
     },
     {
       "path": "portable-runtime/ui/app-icon-128.png",
@@ -49,13 +49,18 @@
     },
     {
       "path": "scripts/build-gowebui-release-lock.py",
-      "sha256": "01755a4bc4a3d8b5d5b7b69234dcc4a7c4b067545832e6e14adde942ed0f8bb3",
-      "size": 2928
+      "sha256": "b8d9e4b63536ccfa6cdad7012ca1563911635cad8f04fb3cf14d0576b8452ec7",
+      "size": 2964
     },
     {
       "path": "scripts/build-gowebui-app.sh",
-      "sha256": "be547e8e0813db511a293ecd521b3491af822a8776d60b1ae67899166a71cdab",
-      "size": 3123
+      "sha256": "b187d38e5fe82cd6704668b931134a9e460ed8711520ad29ba3f1ead89e1d5d4",
+      "size": 3733
+    },
+    {
+      "path": "scripts/verify-macho-uuid.py",
+      "sha256": "b58ed77d33d0abbe3b972d3b2fcf20abb18bb7d027f7c3f58a40fd29b92706eb",
+      "size": 4549
     },
     {
       "path": "scripts/build-portable-installer.sh",
@@ -103,9 +108,9 @@
       "size": 779389
     }
   ],
-  "input_tree_sha256": "282d88dfb9b89bd2a90c6ae8ac4c80ecd06e313e877e4530167035651fa212e7",
-  "required_go": "go1.23.2",
+  "input_tree_sha256": "ab7e781e8179bb498a28f20e803cbd21970ed37f0809cf47d500329172bd64fc",
+  "required_go": "go1.26.8",
   "schema": 1,
   "variant": "GoWebUI",
-  "version": "1.3.1"
+  "version": "1.3.2"
 }
