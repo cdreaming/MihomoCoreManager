@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.3.4
+
+- SwiftUI 与 GoWebUI 状态栏下拉菜单顶部图标统一改为 MihomoManager BrandLogo/AppIcon 128px 同源 LOGO。
+- 状态栏常驻图标由 `circle.grid.cross` 改为 LOGO；布局统一为 LOGO 靠左、运行状态点居中、双行实时网速靠右。
+- SwiftUI 增加 `applicationShouldTerminateAfterLastWindowClosed = false`；GoWebUI 主 JXA 壳与恢复壳同步保持最后窗口关闭后继续常驻。
+- 状态栏“退出 MihomoManager”继续作为完整退出入口，GoWebUI 会先通知本地 runtime 关闭再终止 AppKit。
+- GoWebUI App Bundle 新增 `Contents/Resources/BrandLogo.png`，由共享 AppIcon-128 直接写入，保证与 SwiftUI BrandLogo 视觉源一致。
+- App / Xcode / GoWebUI runtime 统一升级为 v1.3.4 / build 1304。
+
 ## v1.3.3
 
 - SwiftUI 主窗口左下角后端状态文案与 GoWebUI 统一为“后端已连接 · <manager>”/“后端未连接 · 检查设置”。

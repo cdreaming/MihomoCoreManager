@@ -1,8 +1,18 @@
 import AppKit
 import SwiftUI
 
+final class MihomoApplicationDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        // v1.3.4: the status item is the long-lived app surface. Closing the
+        // Dashboard must only close that window; the menu-bar controller stays
+        // available until the explicit status-menu Quit action terminates AppKit.
+        false
+    }
+}
+
 @main
 struct MihomoManagerApp: App {
+    @NSApplicationDelegateAdaptor(MihomoApplicationDelegate.self) private var appDelegate
     @StateObject private var model = AppModel()
     @AppStorage("showMenuBarExtra") private var showMenuBarExtra = true
 
@@ -93,8 +103,9 @@ private enum MenuBarStatusImageRenderer {
 
     private static let iconWidth: CGFloat = 16
     private static let statusWidth: CGFloat = 46
+    private static let statusDotWidth: CGFloat = 7
     private static let speedWidth: CGFloat = 53
-    private static let gap: CGFloat = 4
+    private static let gap: CGFloat = 6
 
     static func make(
         showIcon: Bool,
@@ -116,21 +127,18 @@ private enum MenuBarStatusImageRenderer {
             var x: CGFloat = 0
 
             if effectiveIcon {
+                // Keep the shared BrandLogo anchored to the far-left edge.
                 drawIcon(in: NSRect(x: x, y: 1.2, width: iconWidth, height: iconWidth))
                 x += iconWidth
             }
 
-            // When speed is visible, status is represented by a compact dot so
-            // both traffic rows fit into a normal-height macOS menu bar. Without
-            // speed, show the full Running/Stopped/Checking word.
+            // When speed is visible, use a separate state dot between the logo
+            // and the speed block. The logo is never over-painted, and the two
+            // traffic rows are pinned to the far-right edge of the status item.
             if showStatus, showSpeed {
-                if effectiveIcon {
-                    drawDot(in: NSRect(x: 12.2, y: 0.4, width: 4.2, height: 4.2))
-                } else {
-                    if x > 0 { x += gap }
-                    drawDot(in: NSRect(x: x, y: 6.9, width: 4.5, height: 4.5))
-                    x += 7
-                }
+                if x > 0 { x += gap }
+                drawDot(in: NSRect(x: x + 1.2, y: 6.9, width: 4.5, height: 4.5))
+                x += statusDotWidth
             } else if showStatus {
                 if x > 0 { x += gap }
                 drawStatus(status, x: x)
@@ -138,9 +146,9 @@ private enum MenuBarStatusImageRenderer {
             }
 
             if showSpeed {
-                if x > 0 { x += gap }
-                drawSpeedLine(upload, x: x, y: 8.6)
-                drawSpeedLine(download, x: x, y: -0.4)
+                let speedX = size.width - speedWidth
+                drawSpeedLine(upload, x: speedX, y: 8.6)
+                drawSpeedLine(download, x: speedX, y: -0.4)
             }
             return true
         }
@@ -156,9 +164,9 @@ private enum MenuBarStatusImageRenderer {
         if showStatus, !showSpeed {
             if width > 0 { width += gap }
             width += statusWidth
-        } else if showStatus, showSpeed, !showIcon {
+        } else if showStatus, showSpeed {
             if width > 0 { width += gap }
-            width += 7
+            width += statusDotWidth
         }
         if showSpeed {
             if width > 0 { width += gap }
@@ -168,14 +176,19 @@ private enum MenuBarStatusImageRenderer {
     }
 
     private static func drawIcon(in rect: NSRect) {
-        guard let base = NSImage(
-            systemSymbolName: "circle.grid.cross",
-            accessibilityDescription: "Mihomo Core"
-        ) else { return }
-        let configured = base.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: 13.2, weight: .semibold)
-        ) ?? base
-        configured.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
+        // BrandLogo.png is byte-identical to the shared 128px AppIcon asset, so
+        // SwiftUI and GoWebUI render the same source artwork in the menu bar.
+        guard let base = NSImage(named: NSImage.Name("BrandLogo")),
+              base.size.width > 0, base.size.height > 0 else { return }
+        let scale = min(rect.width / base.size.width, rect.height / base.size.height)
+        let fitted = NSSize(width: base.size.width * scale, height: base.size.height * scale)
+        let drawRect = NSRect(
+            x: rect.midX - fitted.width / 2,
+            y: rect.midY - fitted.height / 2,
+            width: fitted.width,
+            height: fitted.height
+        )
+        base.draw(in: drawRect, from: .zero, operation: .sourceOver, fraction: 1)
     }
 
     private static func drawDot(in rect: NSRect) {

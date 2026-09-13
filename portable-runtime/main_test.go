@@ -241,7 +241,7 @@ func TestDecorateProxyPayloadUsesExtraLatencyAndExplicitTestWins(t *testing.T) {
 }
 
 func TestStatusMenuProxyHotfixUsesCacheLazySubmenusAndAsyncActions(t *testing.T) {
-	script := menuScript("http://127.0.0.1:12345", "token", "/tmp/status.json")
+	script := menuScript("http://127.0.0.1:12345", "token", "/tmp/status.json", "/tmp/BrandLogo.png")
 	for _, marker := range []string{
 		"PROXY_FILE",
 		"replace(/status\\.json$/, 'proxies.json')",
@@ -1469,7 +1469,7 @@ func TestInvalidateStatusCacheRemovesSnapshot(t *testing.T) {
 }
 
 func TestMenuScriptUsesCachedSnapshotNativeDragAndV128WindowLifecycle(t *testing.T) {
-	script := menuScript("http://127.0.0.1:12345", "token", "/tmp/status.json")
+	script := menuScript("http://127.0.0.1:12345", "token", "/tmp/status.json", "/tmp/BrandLogo.png")
 	for _, marker := range []string{
 		"function statusFromFile()",
 		"_menu_updated_unix_ms",
@@ -1491,8 +1491,13 @@ func TestMenuScriptUsesCachedSnapshotNativeDragAndV128WindowLifecycle(t *testing
 		"var showIcon=true, showStatus=true, showSpeed=true",
 		"prefIconItem=addItem(displayMenu,'显示图标','toggleShowIcon:','')",
 		"statusItem.button.addSubview(statusOverlay)",
-		"upValueLabel.frame=$.NSMakeRect(speedX,9.3,22,10.5)",
-		"downValueLabel.frame=$.NSMakeRect(speedX,0.3,22,10.5)",
+		"LOGO_PATH",
+		"appSymbol=$.NSImage.alloc.initWithContentsOfFile($(LOGO_PATH))",
+		"statusHeader.image=appLogo",
+		"applicationShouldTerminateAfterLastWindowClosed:",
+		"cocoaApp.delegate=delegate",
+		"upValueLabel.frame=$.NSMakeRect(speedX,9.3,23,10.5)",
+		"downValueLabel.frame=$.NSMakeRect(speedX,0.3,23,10.5)",
 		"upValueLabel.stringValue=$(up.value)",
 		"downValueLabel.stringValue=$(down.value)",
 		"button.image=null; button.imagePosition=0; button.title=''",
@@ -1529,8 +1534,8 @@ func TestMenuScriptUsesCachedSnapshotNativeDragAndV128WindowLifecycle(t *testing
 }
 
 func TestFallbackMenuScriptIsMinimalAndUsable(t *testing.T) {
-	script := fallbackMenuScript("http://127.0.0.1:12345")
-	for _, marker := range []string{"WKWebView", "恢复模式：状态栏渲染已降级", "打开主窗口…", "MihomoRecoveryDragView", "performWindowDragWithEvent", "win.releasedWhenClosed=false", "win.movable=true", "show(); app.run"} {
+	script := fallbackMenuScript("http://127.0.0.1:12345", "/tmp/BrandLogo.png")
+	for _, marker := range []string{"WKWebView", "恢复模式：状态栏渲染已降级", "打开主窗口…", "MihomoRecoveryDragView", "performWindowDragWithEvent", "win.releasedWhenClosed=false", "win.movable=true", "LOGO_PATH", "initWithContentsOfFile($(LOGO_PATH))", "applicationShouldTerminateAfterLastWindowClosed:", "app.delegate=delegate", "show(); app.run"} {
 		if !strings.Contains(script, marker) {
 			t.Fatalf("fallback menu script missing marker %q", marker)
 		}
@@ -1576,8 +1581,8 @@ func TestEmbeddedModernAppIconV131(t *testing.T) {
 	}
 }
 
-func TestPortableVersionV132(t *testing.T) {
-	if appVersion != "1.3.3" || buildNumber != "1303" {
+func TestPortableVersionV134(t *testing.T) {
+	if appVersion != "1.3.4" || buildNumber != "1304" {
 		t.Fatalf("unexpected portable version/build: %s/%s", appVersion, buildNumber)
 	}
 }

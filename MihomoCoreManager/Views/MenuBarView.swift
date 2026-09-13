@@ -572,21 +572,12 @@ private struct MenuBarLiveSummary: View {
     var body: some View {
         VStack(spacing: 12) {
             HStack(spacing: 11) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [DashboardPalette.accent, Color(red: 0.39, green: 0.30, blue: 1.0)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                    Image(systemName: "circle.grid.cross")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(.white)
-                }
-                .frame(width: 40, height: 40)
-                .shadow(color: DashboardPalette.accent.opacity(0.22), radius: 10, y: 4)
+                Image("BrandLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 40, height: 40)
+                    .accessibilityLabel("MihomoManager Logo")
+                    .shadow(color: DashboardPalette.accent.opacity(0.22), radius: 10, y: 4)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Mihomo Core")

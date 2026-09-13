@@ -7,8 +7,8 @@ errors = []
 version = (root / "VERSION").read_text(encoding="utf-8").strip()
 if not re.fullmatch(r"\d+\.\d+\.\d+", version):
     errors.append(f"VERSION invalid: {version!r}")
-if version != "1.3.3":
-    errors.append(f"v1.3.3 release must use VERSION=1.3.3 (got {version})")
+if version != "1.3.4":
+    errors.append(f"v1.3.4 release must use VERSION=1.3.4 (got {version})")
 
 required = [
     "MihomoCoreManager.xcodeproj/project.pbxproj",
@@ -61,7 +61,7 @@ if "MACOSX_DEPLOYMENT_TARGET = 14.0;" not in pbx: errors.append("deployment targ
 if f"MARKETING_VERSION = {version};" not in pbx: errors.append(f"Xcode MARKETING_VERSION must match VERSION {version}")
 expected_build = (root / "BUILD_NUMBER").read_text(encoding="utf-8").strip()
 if not re.fullmatch(r"\d+", expected_build): errors.append(f"BUILD_NUMBER invalid: {expected_build!r}")
-if expected_build != "1303": errors.append(f"v1.3.3 release must use BUILD_NUMBER=1303 (got {expected_build})")
+if expected_build != "1304": errors.append(f"v1.3.4 release must use BUILD_NUMBER=1304 (got {expected_build})")
 if f"CURRENT_PROJECT_VERSION = {expected_build};" not in pbx: errors.append(f"Xcode build number must be {expected_build}")
 if not (root / f"docs/releases/v{version}/RELEASE-NOTES.md").is_file(): errors.append(f"release notes missing for v{version}")
 portable = root / "portable-runtime/main.go"
@@ -474,8 +474,9 @@ for marker in [
     "NSImage(size: size, flipped: false)",
     "image.isTemplate = true",
     "NSFont.monospacedDigitSystemFont(ofSize: 8.3, weight: .semibold)",
-    "drawSpeedLine(upload, x: x, y: 8.6)",
-    "drawSpeedLine(download, x: x, y: -0.4)",
+    "let speedX = size.width - speedWidth",
+    "drawSpeedLine(upload, x: speedX, y: 8.6)",
+    "drawSpeedLine(download, x: speedX, y: -0.4)",
     ".renderingMode(.template)",
     ".id(renderIdentity)",
     "let effectiveIcon = showIcon || (!showStatus && !showSpeed)",
@@ -587,8 +588,8 @@ for marker in [
     "MihomoStatusIconView",
     "statusItem.button.performClick(null)",
     "function renderStatusSpeedOverlay()",
-    "upValueLabel.frame=$.NSMakeRect(speedX,9.3,22,10.5)",
-    "downValueLabel.frame=$.NSMakeRect(speedX,0.3,22,10.5)",
+    "upValueLabel.frame=$.NSMakeRect(speedX,9.3,23,10.5)",
+    "downValueLabel.frame=$.NSMakeRect(speedX,0.3,23,10.5)",
     "upValueLabel.stringValue=$(up.value)",
     "downValueLabel.stringValue=$(down.value)",
     "statusItem.button.addSubview(statusOverlay)",
@@ -881,6 +882,29 @@ readme_text = (root / "README.md").read_text(encoding="utf-8")
 for marker in ["![MihomoManager 概览](HomePage.png)", "![MihomoManager Core 控制](CorePage.png)"]:
     if marker not in readme_text:
         errors.append(f"v1.3.3 README screenshot gate missing: {marker}")
+
+# v1.3.4 status-menu logo/layout/lifecycle parity gates.
+for marker in [
+    'Image("BrandLogo")',
+    'NSImage(named: NSImage.Name("BrandLogo"))',
+    'let speedX = size.width - speedWidth',
+    'applicationShouldTerminateAfterLastWindowClosed',
+    '@NSApplicationDelegateAdaptor(MihomoApplicationDelegate.self)',
+]:
+    if marker not in app_swift + "\n" + menu:
+        errors.append(f"v1.3.4 SwiftUI status-menu parity gate missing: {marker}")
+for marker in [
+    'BrandLogo.png',
+    'LOGO_PATH',
+    'appSymbol=$.NSImage.alloc.initWithContentsOfFile($(LOGO_PATH))',
+    'statusHeader.image=appLogo',
+    'var left=2, gap=6, iconWidth=showIcon?16:0',
+    'speedWidth=53',
+    'applicationShouldTerminateAfterLastWindowClosed:',
+    'cocoaApp.delegate=delegate',
+]:
+    if marker not in portable_main + "\n" + goweb_app_installer:
+        errors.append(f"v1.3.4 GoWebUI status-menu parity gate missing: {marker}")
 
 with (root / "MihomoCoreManager/Info.plist").open("rb") as f:
     plist = plistlib.load(f)

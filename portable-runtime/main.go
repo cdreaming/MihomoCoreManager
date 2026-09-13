@@ -25,8 +25,8 @@ import (
 )
 
 const (
-	appVersion                      = "1.3.3"
-	buildNumber                     = "1303"
+	appVersion                      = "1.3.4"
+	buildNumber                     = "1304"
 	keychainService                 = "cc.kkr.MihomoManager.profile-secret"
 	v131BrokenKeychainService       = "cc.kkr.MihomoManager"
 	legacyKeychainService           = "cc.kkr.MihomoCoreManager.profile-secret"
@@ -3395,11 +3395,11 @@ func (s *appState) routes() http.Handler {
 
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
 
-func menuScript(base, token, statusFile string) string {
+func menuScript(base, token, statusFile, logoPath string) string {
 	// JXA status item. All commands talk only to the token-protected loopback API.
 	return fmt.Sprintf(`ObjC.import('Cocoa'); ObjC.import('WebKit');
 var std = Application.currentApplication(); std.includeStandardAdditions = true;
-var BASE = %q, TOKEN = %q, STATUS_FILE = %q; var PROXY_FILE = String(STATUS_FILE).replace(/status\.json$/, 'proxies.json');
+var BASE = %q, TOKEN = %q, STATUS_FILE = %q, LOGO_PATH = %q; var PROXY_FILE = String(STATUS_FILE).replace(/status\.json$/, 'proxies.json');
 function sh(s){ return "'" + String(s).replace(/'/g, "'\\''") + "'"; }
 function request(path, method, obj, quiet){
   try {
@@ -3489,7 +3489,7 @@ function openHash(h){ showURL(BASE+'/#'+h); }
 
 var statusItem=null, statusHeader=null, speedHeader=null, prefIconItem=null, prefStatusItem=null, prefSpeedItem=null, iconOnlyItem=null, startItem=null, stopItem=null, serverMenu=null, serverRoot=null, proxyHeader=null, proxyEndSeparator=null, proxyMenuRoots=[], proxyMenuRootByGroup={}, proxyMenuData={}, proxyMenuGeneration=-1, proxyMenuStructureKey='', proxyPendingReconcile={}, proxySubmenuBuilt={}, proxyMenuTick=0;
 var showIcon=true, showStatus=true, showSpeed=true, lastRunning=false, lastReachable=false, lastUp=0, lastDown=0, lastCoreVersion='--';
-var appSymbol=null, missingSnapshotTicks=0;
+var appLogo=null, appSymbol=null, missingSnapshotTicks=0;
 var statusOverlay=null, statusIconView=null, statusDot=null, upValueLabel=null, upUnitLabel=null, downValueLabel=null, downUnitLabel=null;
 function savePrefs(){ post('/local/menu-preferences',{showIcon:showIcon,showStatus:showStatus,showSpeed:showSpeed},true); }
 function syncPrefItems(){
@@ -3511,34 +3511,35 @@ function setStatusOverlayHidden(hidden){
 }
 function renderStatusSpeedOverlay(){
   var up=statusRateParts(lastUp), down=statusRateParts(lastDown);
-  var iconWidth=showIcon?20:0, dotWidth=(!showIcon&&showStatus)?9:0;
-  var speedX=3+iconWidth+dotWidth;
-  var width=speedX+49+3;
-  statusItem.length=width;
-  statusOverlay.frame=$.NSMakeRect(0,0,width,22);
+  // v1.3.4 parity with SwiftUI: shared logo at the far left, optional state dot
+  // in the middle, and the two speed rows pinned to the far right.
+  var left=2, gap=6, iconWidth=showIcon?16:0, dotWidth=showStatus?7:0, x=left;
+  if(showIcon) x+=iconWidth;
+  if(showStatus){if(x>left)x+=gap;var dotX=x;x+=dotWidth;statusDot.frame=$.NSMakeRect(dotX+1,6.2,6,8);}
+  if(showSpeed&&x>left)x+=gap;
+  var speedX=x, speedWidth=53;
+  var width=(showSpeed?speedX+speedWidth:x)+2;
+  statusItem.length=Math.max(25,width);
+  statusOverlay.frame=$.NSMakeRect(0,0,Math.max(25,width),22);
   statusOverlay.hidden=false;
 
   statusIconView.hidden=!showIcon;
   if(showIcon){
-    statusIconView.frame=$.NSMakeRect(3,4,14,14);
+    statusIconView.frame=$.NSMakeRect(left,3,16,16);
     statusIconView.image=appSymbol;
   }
 
   statusDot.hidden=!showStatus;
   if(showStatus){
-    statusDot.frame=showIcon?$.NSMakeRect(14,0.5,7,8):$.NSMakeRect(2,6.2,7,8);
     statusDot.textColor=lastReachable?(lastRunning?$.NSColor.systemGreenColor:$.NSColor.systemOrangeColor):$.NSColor.secondaryLabelColor;
   }
 
-  // v1.2.0: never rely on NSStatusBarButton multiline title rendering.
-  // Two independent native labels are pinned near the bottom of the 22pt menu
-  // bar. Numeric labels are left aligned in four monospaced cells; units sit in
-  // their own adjacent field. This keeps both rows visible on normal macOS menu
-  // bars without the crash-prone NSButtonCell/attributedTitle overrides.
-  upValueLabel.frame=$.NSMakeRect(speedX,9.3,22,10.5);
-  upUnitLabel.frame=$.NSMakeRect(speedX+22,9.3,27,10.5);
-  downValueLabel.frame=$.NSMakeRect(speedX,0.3,22,10.5);
-  downUnitLabel.frame=$.NSMakeRect(speedX+22,0.3,27,10.5);
+  // Keep numeric and unit fields separate, matching the SwiftUI renderer's
+  // 23pt + 30pt speed block while avoiding NSButtonCell multiline rendering.
+  upValueLabel.frame=$.NSMakeRect(speedX,9.3,23,10.5);
+  upUnitLabel.frame=$.NSMakeRect(speedX+23,9.3,30,10.5);
+  downValueLabel.frame=$.NSMakeRect(speedX,0.3,23,10.5);
+  downUnitLabel.frame=$.NSMakeRect(speedX+23,0.3,30,10.5);
   upValueLabel.stringValue=$(up.value); upUnitLabel.stringValue=$(up.unit);
   downValueLabel.stringValue=$(down.value); downUnitLabel.stringValue=$(down.unit);
 }
@@ -3854,9 +3855,11 @@ ObjC.registerSubclass({name:'MihomoMenuDelegate', methods:{
 'applyUpdate:':{types:['void',['id']],implementation:function(){post('/local/update/apply',{},false);openHash('updates');}},
 'openMeta:':{types:['void',['id']],implementation:function(){var o=get('/local/metacubexd',false);if(o&&o.url)post('/local/open-url',{url:o.url},false);}},
 'settings:':{types:['void',['id']],implementation:function(){openHash('settings');}},
-'quitApp:':{types:['void',['id']],implementation:function(){post('/local/quit',{},true);$.NSApplication.sharedApplication.terminate(null);}}
+'quitApp:':{types:['void',['id']],implementation:function(){post('/local/quit',{},true);$.NSApplication.sharedApplication.terminate(null);}},
+'applicationShouldTerminateAfterLastWindowClosed:':{types:['bool',['id']],implementation:function(){return false;}}
 }});
 var delegate=$.MihomoMenuDelegate.alloc.init;
+cocoaApp.delegate=delegate;
 
 // Standard Edit menu keeps Command-C / Command-V / Command-A on the WebKit responder chain.
 var mainMenu=$.NSMenu.alloc.init;
@@ -3871,7 +3874,9 @@ editItem('撤销','undo:','z'); editMenu.addItem($.NSMenuItem.separatorItem); ed
 editRoot.submenu=editMenu; mainMenu.addItem(editRoot); cocoaApp.mainMenu=mainMenu;
 
 statusItem=$.NSStatusBar.systemStatusBar.statusItemWithLength(25); statusItem.button.toolTip='MihomoManager v%s';
-try{appSymbol=$.NSImage.imageWithSystemSymbolNameAccessibilityDescription('circle.grid.cross','Mihomo Core');appSymbol.template=true;}catch(e){}
+try{appLogo=$.NSImage.alloc.initWithContentsOfFile($(LOGO_PATH));if(appLogo){appLogo.size=$.NSMakeSize(20,20);}}catch(e){appLogo=null;}
+try{appSymbol=$.NSImage.alloc.initWithContentsOfFile($(LOGO_PATH));if(appSymbol){appSymbol.size=$.NSMakeSize(16,16);appSymbol.template=true;}}catch(e){appSymbol=null;}
+if(!appSymbol){try{appSymbol=$.NSImage.imageWithSystemSymbolNameAccessibilityDescription('app.fill','MihomoManager');appSymbol.template=true;}catch(e){}}
 try{
   statusOverlay=$.MihomoStatusOverlayView.alloc.initWithFrame($.NSMakeRect(0,0,25,22));
   statusIconView=$.MihomoStatusIconView.alloc.initWithFrame($.NSMakeRect(3,4,14,14));
@@ -3898,7 +3903,7 @@ function addItem(targetMenu,title,sel,key){var i=$.NSMenuItem.alloc.initWithTitl
 function addSymbol(item,name){try{var img=$.NSImage.imageWithSystemSymbolNameAccessibilityDescription(name,item.title);if(img){img.template=true;item.image=img;}}catch(e){} return item;}
 function addSep(targetMenu){targetMenu.addItem($.NSMenuItem.separatorItem);}
 
-statusHeader=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('Mihomo Core  ·  --  ·  Offline','', '');statusHeader.enabled=false;menu.addItem(statusHeader);
+statusHeader=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('Mihomo Core  ·  --  ·  Offline','', '');statusHeader.enabled=false;if(appLogo)statusHeader.image=appLogo;menu.addItem(statusHeader);
 speedHeader=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('↑  上传  0 B/s      ↓  下载  0 B/s','', '');speedHeader.enabled=false;menu.addItem(speedHeader);
 addSep(menu);
 
@@ -3936,17 +3941,17 @@ statusItem.menu=menu;
 try{updateStatus(true);}catch(e){}
 $.NSTimer.scheduledTimerWithTimeIntervalTargetSelectorUserInfoRepeats(1.2,delegate,'tick:',null,true);
 showURL(BASE+'/'); cocoaApp.run;
-`, base, token, statusFile, appVersion)
+`, base, token, statusFile, logoPath, appVersion)
 }
 
-func fallbackMenuScript(base string) string {
+func fallbackMenuScript(base, logoPath string) string {
 	// Minimal recovery shell. It intentionally avoids custom status-bar text
 	// rendering so a JXA/AppKit compatibility issue cannot make the App flash-quit.
 	// v1.2.8 still gives this last-resort window the same retained lifetime and
 	// native drag strip as the primary shell, so recovery never leaves an
 	// immovable main window behind.
 	return fmt.Sprintf(`ObjC.import('Cocoa'); ObjC.import('WebKit');
-var BASE=%q;
+var BASE=%q, LOGO_PATH=%q;
 var app=$.NSApplication.sharedApplication; app.setActivationPolicy(1);
 ObjC.registerSubclass({name:'MihomoRecoveryDragView', superclass:'NSView', methods:{
 'mouseDown:':{types:['void',['id']],implementation:function(event){try{this.window.performWindowDragWithEvent(event);}catch(e){}}}
@@ -3961,18 +3966,19 @@ var dragStrip=$.MihomoRecoveryDragView.alloc.initWithFrame($.NSMakeRect(0,rect.s
 function show(){try{win.releasedWhenClosed=false;win.movable=true;win.movableByWindowBackground=true;}catch(e){}var u=$.NSURL.URLWithString($(BASE+'/'));web.loadRequest($.NSURLRequest.requestWithURL(u));win.center;win.makeKeyAndOrderFront(null);app.activateIgnoringOtherApps(true);}
 ObjC.registerSubclass({name:'MihomoRecoveryDelegate',methods:{
 'open:':{types:['void',['id']],implementation:function(){show();}},
-'quit:':{types:['void',['id']],implementation:function(){$.NSApplication.sharedApplication.terminate(null);}}
+'quit:':{types:['void',['id']],implementation:function(){$.NSApplication.sharedApplication.terminate(null);}},
+'applicationShouldTerminateAfterLastWindowClosed:':{types:['bool',['id']],implementation:function(){return false;}}
 }});
-var delegate=$.MihomoRecoveryDelegate.alloc.init;
+var delegate=$.MihomoRecoveryDelegate.alloc.init; app.delegate=delegate;
 var item=$.NSStatusBar.systemStatusBar.statusItemWithLength(25);
-try{var img=$.NSImage.imageWithSystemSymbolNameAccessibilityDescription('circle.grid.cross','Mihomo Core');img.template=true;item.button.image=img;}catch(e){item.button.title='M';}
+try{var img=$.NSImage.alloc.initWithContentsOfFile($(LOGO_PATH));if(img){img.size=$.NSMakeSize(16,16);img.template=true;item.button.image=img;}else item.button.title='M';}catch(e){item.button.title='M';}
 item.button.toolTip='MihomoManager recovery mode';
 var menu=$.NSMenu.alloc.init;
 var note=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('恢复模式：状态栏渲染已降级','','');note.enabled=false;menu.addItem(note);menu.addItem($.NSMenuItem.separatorItem);
 var open=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('打开主窗口…','open:','');open.target=delegate;menu.addItem(open);
 var quit=$.NSMenuItem.alloc.initWithTitleActionKeyEquivalent('退出','quit:','q');quit.target=delegate;menu.addItem(quit);item.menu=menu;
 show(); app.run;
-`, base)
+`, base, logoPath)
 }
 
 func appDone(s *appState) bool {
@@ -4000,6 +4006,17 @@ func startJXA(scriptPath, logPath string) (*exec.Cmd, error) {
 	return cmd, nil
 }
 
+func bundledBrandLogoPath() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	if resolved, resolveErr := filepath.EvalSymlinks(exe); resolveErr == nil {
+		exe = resolved
+	}
+	return filepath.Clean(filepath.Join(filepath.Dir(exe), "..", "Resources", "BrandLogo.png"))
+}
+
 func launchMenu(base string, s *appState) error {
 	dir := filepath.Join(filepath.Dir(s.path), "Runtime")
 	if err := os.MkdirAll(dir, 0700); err != nil {
@@ -4008,10 +4025,11 @@ func launchMenu(base string, s *appState) error {
 	script := filepath.Join(dir, "menubar.js")
 	fallback := filepath.Join(dir, "menubar-recovery.js")
 	logPath := filepath.Join(dir, "menubar.log")
-	if err := os.WriteFile(script, []byte(menuScript(base, s.token, s.statusFilePath())), 0600); err != nil {
+	logoPath := bundledBrandLogoPath()
+	if err := os.WriteFile(script, []byte(menuScript(base, s.token, s.statusFilePath(), logoPath)), 0600); err != nil {
 		return err
 	}
-	if err := os.WriteFile(fallback, []byte(fallbackMenuScript(base)), 0600); err != nil {
+	if err := os.WriteFile(fallback, []byte(fallbackMenuScript(base, logoPath)), 0600); err != nil {
 		return err
 	}
 	cmd, err := startJXA(script, logPath)
