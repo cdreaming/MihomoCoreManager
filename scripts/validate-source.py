@@ -7,8 +7,8 @@ errors = []
 version = (root / "VERSION").read_text(encoding="utf-8").strip()
 if not re.fullmatch(r"\d+\.\d+\.\d+", version):
     errors.append(f"VERSION invalid: {version!r}")
-if version != "1.3.2":
-    errors.append(f"v1.3.2 release must use VERSION=1.3.2 (got {version})")
+if version != "1.3.1":
+    errors.append(f"v1.3.1 hotfix must not change VERSION (got {version})")
 
 required = [
     "MihomoCoreManager.xcodeproj/project.pbxproj",
@@ -59,7 +59,7 @@ if "MACOSX_DEPLOYMENT_TARGET = 14.0;" not in pbx: errors.append("deployment targ
 if f"MARKETING_VERSION = {version};" not in pbx: errors.append(f"Xcode MARKETING_VERSION must match VERSION {version}")
 expected_build = (root / "BUILD_NUMBER").read_text(encoding="utf-8").strip()
 if not re.fullmatch(r"\d+", expected_build): errors.append(f"BUILD_NUMBER invalid: {expected_build!r}")
-if expected_build != "1302": errors.append(f"v1.3.2 release must use BUILD_NUMBER=1302 (got {expected_build})")
+if expected_build != "1301": errors.append(f"v1.3.1 hotfix must keep BUILD_NUMBER=1301 (got {expected_build})")
 if f"CURRENT_PROJECT_VERSION = {expected_build};" not in pbx: errors.append(f"Xcode build number must be {expected_build}")
 if not (root / f"docs/releases/v{version}/RELEASE-NOTES.md").is_file(): errors.append(f"release notes missing for v{version}")
 portable = root / "portable-runtime/main.go"
@@ -148,7 +148,7 @@ for marker in ["Management URL", "Management Secret", "Controller Secret", "Cont
     if marker not in settings: errors.append(f"settings field missing: {marker}")
 if "NSPasteboard.general.string" not in settings or "doc.on.clipboard" not in settings:
     errors.append("Secret explicit paste support missing from native settings")
-for marker in ["mihomo.service（高级回退）", "Core 服务面板（推荐）", "Management API", "systemdSSHTarget", "systemdSSHPort", "systemdIdentityFile"]:
+for marker in ["mihomo.service（推荐）", "扩展管理（可选）", "Core 服务面板", "systemdSSHTarget", "systemdSSHPort", "systemdIdentityFile"]:
     if marker not in settings + "\n" + models_auth:
         errors.append(f"native v1.3.1 systemd settings gate missing: {marker}")
 
@@ -170,7 +170,7 @@ for marker in [
 ]:
     if marker not in portable_main:
         errors.append(f"portable v1.3.1 systemd/port gate missing: {marker}")
-for marker in ["mihomo.service（高级回退）", "Core 服务面板（推荐）", "Management API", "pSystemdTarget", "pSystemdPort", "pSystemdIdentity"]:
+for marker in ["mihomo.service（推荐）", "扩展管理（可选）", "Core 服务面板", "pSystemdTarget", "pSystemdPort", "pSystemdIdentity"]:
     if marker not in portable_ui:
         errors.append(f"portable v1.3.1 systemd settings UI gate missing: {marker}")
 for marker in ["'粘贴','paste:','v'", "'复制','copy:','c'", "'全选','selectAll:','a'"]:
@@ -766,7 +766,7 @@ if '.main{padding-top:26px}' in portable_ui:
 for marker in ["statusFailureCount", "failureDelay", "Cloudflare Tunnel"]:
     if marker not in (root / "MihomoCoreManager/AppModel.swift").read_text(encoding="utf-8") + "\n" + client:
         errors.append(f"v1.3.1 SwiftUI tunnel backoff gate missing: {marker}")
-for marker in ["normalizedControllerURL", "Controller URL 建议填写 API 根地址", "端口不会自动补", "Core 服务面板（推荐）"]:
+for marker in ["normalizedControllerURL", "Controller URL 建议填写 API 根地址", "端口不会自动补", "扩展管理（可选）"]:
     if marker not in settings + "\n" + (root / "MihomoCoreManager/Models.swift").read_text(encoding="utf-8"):
         errors.append(f"v1.3.1 networking hotfix gate missing: {marker}")
 for marker in ["normalizeControllerBase", "normalizedControllerString", "Controller URL 可填 API 根地址", "端口不会自动补"]:
@@ -774,8 +774,8 @@ for marker in ["normalizeControllerBase", "normalizedControllerString", "Control
         errors.append(f"v1.3.1 GoWebUI networking hotfix gate missing: {marker}")
 if 'Image("BrandLogo")' not in content or not (root / 'MihomoCoreManager/Resources/Assets.xcassets/BrandLogo.imageset/Contents.json').exists():
     errors.append("SwiftUI sidebar must use the dedicated transparent BrandLogo asset")
-if 'GoWebUI · 本机界面' not in portable_ui:
-    errors.append("GoWebUI must identify the local UI without implying backend connectivity")
+if 'GoWebUI · Core' not in portable_ui:
+    errors.append("GoWebUI preview must identify its implementation in the sidebar")
 
 # v1.3.1 in-place hotfix gates. Keep the public version/build unchanged, only
 # rename the backend selector requested by the user, preserve navigation labels,
@@ -828,34 +828,6 @@ for marker in [
 ]:
     if marker not in portable_main + "\n" + portable_tests:
         errors.append(f"v1.3.1 hotfix Core API restart/test gate missing: {marker}")
-
-# v1.3.2 local-network / Keychain / SSH policy gates.
-# Build-script checks are evaluated here without depending on declarations below.
-goweb_build_text = (root / "scripts/build-gowebui-app.sh").read_text(encoding="utf-8")
-for marker in ['REQUIRED_GO="go1.26.8"', 'verify-macho-uuid.py', "-ldflags='-s -w'", 'NSLocalNetworkUsageDescription']:
-    if marker not in goweb_build_text:
-        errors.append(f"v1.3.2 GoWebUI LC_UUID/local-network build gate missing: {marker}")
-if '-buildid=' in goweb_build_text:
-    errors.append("v1.3.2 GoWebUI build must not clear the Go build ID")
-for marker in [
-    'cc.kkr.MihomoManager.profile-secret',
-    'v131BrokenKeychainService',
-    'keychainSetVerifiedWithService',
-    'return strings.TrimSpace(p.SystemdSSHTarget)',
-    'Core 服务面板 API 失败',
-    'systemd-ssh',
-]:
-    if marker not in portable_main:
-        errors.append(f"v1.3.2 GoWebUI secret/SSH policy gate missing: {marker}")
-for marker in [
-    'v131BrokenGoWebUIService',
-    'writeSecretVerified',
-]:
-    if marker not in (root / "MihomoCoreManager/Storage/KeychainStore.swift").read_text(encoding="utf-8"):
-        errors.append(f"v1.3.2 SwiftUI Keychain migration gate missing: {marker}")
-for marker in ['GoWebUI · 本机界面', '后端未连接 · 检查设置', 'mihomo.service（高级回退）', 'Core 服务面板（推荐）']:
-    if marker not in portable_ui:
-        errors.append(f"v1.3.2 GoWebUI status/service-policy UI gate missing: {marker}")
 
 with (root / "MihomoCoreManager/Info.plist").open("rb") as f:
     plist = plistlib.load(f)
@@ -958,7 +930,7 @@ if "bash scripts/build-release.sh --unsigned" not in simulate_release:
     errors.append("canonical release simulation must use --unsigned native build by default")
 for marker in [
     "actions/setup-go@v6",
-    "go-version: '1.26.8'",
+    "go-version: '1.23.2'",
     "cache: false",
     "bash scripts/simulate-release.sh",
     "bash scripts/github-release.sh publish",
@@ -1008,7 +980,7 @@ for marker in [
 
 for marker in [
     "actions/setup-go@v6",
-    "go-version: '1.26.8'",
+    "go-version: '1.23.2'",
     "cache: false",
     "bash scripts/simulate-release.sh",
     "arm64 dual implementation release simulation (macOS Intel cross-build)",

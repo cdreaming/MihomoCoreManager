@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -971,17 +970,20 @@ func TestRestartFallsBackToManagementWhenControllerRestartFails(t *testing.T) {
 	}
 }
 
-func TestEffectiveSystemdSSHTargetRequiresExplicitConfiguration(t *testing.T) {
+func TestEffectiveSystemdSSHTargetInfersLANManagementHost(t *testing.T) {
 	p := Profile{
 		ManagementURL:     "http://192.168.8.202:29090",
 		CoreControllerURL: "http://192.168.9.202:9090",
 	}
-	if got := effectiveSystemdSSHTarget(p); got != "" {
-		t.Fatalf("LAN URLs must not be inferred as SSH targets, got %q", got)
+	if got := effectiveSystemdSSHTarget(p); got != "192.168.8.202" {
+		t.Fatalf("expected Management LAN host as inferred SSH target, got %q", got)
 	}
 	p.SystemdSSHTarget = "root@mihomo.lan"
 	if got := effectiveSystemdSSHTarget(p); got != "root@mihomo.lan" {
 		t.Fatalf("explicit SSH target must remain authoritative, got %q", got)
+	}
+	if got := effectiveSystemdSSHTarget(Profile{ManagementURL: "https://example.com"}); got != "" {
+		t.Fatalf("public hosts must not be auto-probed over SSH, got %q", got)
 	}
 }
 
@@ -1009,7 +1011,7 @@ func TestControllerHTTPFallsBackThroughSSHToServerLoopback(t *testing.T) {
 	state := &appState{
 		settings: Settings{SelectedID: "p1", Profiles: []Profile{{
 			ID: "p1", Name: "test", ManagementURL: "http://192.168.8.202:29090",
-			CoreControllerURL: "http://192.168.9.202:9090", SystemdSSHTarget: "root@192.168.8.202", AllowInsecureHTTP: true,
+			CoreControllerURL: "http://192.168.9.202:9090", AllowInsecureHTTP: true,
 		}}},
 		client: &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
 			return nil, errors.New("dial tcp 192.168.9.202:9090: connect: no route to host")
@@ -1027,7 +1029,7 @@ func TestControllerHTTPFallsBackThroughSSHToServerLoopback(t *testing.T) {
 	mu.Lock()
 	joined := strings.Join(commands, "\n")
 	mu.Unlock()
-	for _, want := range []string{"-- root@192.168.8.202", "192.168.9.202:9090/proxies", "127.0.0.1:9090/proxies"} {
+	for _, want := range []string{"-- 192.168.8.202", "192.168.9.202:9090/proxies", "127.0.0.1:9090/proxies"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("SSH fallback missing %q:\n%s", want, joined)
 		}
@@ -1056,7 +1058,7 @@ func TestManagementEndpointsFallBackThroughSSHToServerLoopback(t *testing.T) {
 	state := &appState{
 		settings: Settings{SelectedID: "p1", Profiles: []Profile{{
 			ID: "p1", Name: "test", ManagementURL: "http://192.168.8.202:29090",
-			CoreControllerURL: "http://192.168.9.202:9090", SystemdSSHTarget: "root@192.168.8.202", AllowInsecureHTTP: true,
+			CoreControllerURL: "http://192.168.9.202:9090", AllowInsecureHTTP: true,
 		}}},
 		client: &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
 			return nil, errors.New("dial tcp 192.168.8.202:29090: connect: no route to host")
@@ -1105,7 +1107,7 @@ func TestProxySelectFallsBackThroughSSHWhenControllerPortIsBlocked(t *testing.T)
 		path: filepath.Join(t.TempDir(), "settings.json"),
 		settings: Settings{SelectedID: "p1", Profiles: []Profile{{
 			ID: "p1", Name: "test", ManagementURL: "http://192.168.8.202:29090",
-			CoreControllerURL: "http://192.168.9.202:9090", SystemdSSHTarget: "root@192.168.8.202", AllowInsecureHTTP: true,
+			CoreControllerURL: "http://192.168.9.202:9090", AllowInsecureHTTP: true,
 		}}},
 		client: &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
 			return nil, errors.New("dial tcp 192.168.9.202:9090: connect: no route to host")
@@ -1126,38 +1128,29 @@ func TestProxySelectFallsBackThroughSSHWhenControllerPortIsBlocked(t *testing.T)
 	}
 }
 
-func TestLogsDoNotInferSSHHostAndPreferManagementAPI(t *testing.T) {
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/logs" {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		_, _ = w.Write([]byte(`{"ok":true,"logs":"panel log line\\n","via":"management"}`))
-	}))
-	defer backend.Close()
-
+func TestLogsInferSSHHostAndPreferJournal(t *testing.T) {
 	oldRunner := systemSSHRunner
 	defer func() { systemSSHRunner = oldRunner }()
-	sshCalled := false
+	var sshArgs string
 	systemSSHRunner = func(ctx context.Context, args ...string) ([]byte, error) {
-		sshCalled = true
-		return nil, errors.New("SSH must not be inferred")
+		sshArgs = strings.Join(args, " ")
+		return []byte("mihomo journal line\n"), nil
 	}
 	state := &appState{
 		settings: Settings{SelectedID: "p1", Profiles: []Profile{{
-			ID: "p1", Name: "test", ManagementURL: backend.URL,
+			ID: "p1", Name: "test", ManagementURL: "http://192.168.8.202:29090",
 			CoreControllerURL: "http://192.168.9.202:9090", AllowInsecureHTTP: true,
 		}}},
-		client:      backend.Client(),
+		client:      newHTTPClient(),
 		secretCache: map[string]string{"p1": "panel-secret"},
 	}
 	rec := httptest.NewRecorder()
 	state.handleLogs(rec, httptest.NewRequest(http.MethodGet, "/local/logs?lines=100", nil))
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "panel log line") || !strings.Contains(rec.Body.String(), `"via":"management"`) {
-		t.Fatalf("management logs failed: %d %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "mihomo journal line") || !strings.Contains(rec.Body.String(), `"via":"systemd"`) {
+		t.Fatalf("journal fallback failed: %d %s", rec.Code, rec.Body.String())
 	}
-	if sshCalled {
-		t.Fatal("SSH must remain disabled when no explicit SSH target is configured")
+	if !strings.Contains(sshArgs, "-- 192.168.8.202") || !strings.Contains(sshArgs, "journalctl -u mihomo.service") {
+		t.Fatalf("did not infer LAN SSH host for journalctl: %s", sshArgs)
 	}
 }
 
@@ -1223,7 +1216,7 @@ func TestStartPrefersSystemdBeforeManagementPanel(t *testing.T) {
 	}
 }
 
-func TestRestartFallsBackFromControllerToManagementBeforeExplicitSSH(t *testing.T) {
+func TestRestartFallsBackFromControllerToSystemdBeforeManagement(t *testing.T) {
 	var panelActionHits atomic.Int32
 	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -1231,9 +1224,7 @@ func TestRestartFallsBackFromControllerToManagementBeforeExplicitSSH(t *testing.
 			http.Error(w, "controller unavailable", http.StatusServiceUnavailable)
 		case "/api/action":
 			panelActionHits.Add(1)
-			_, _ = w.Write([]byte(`{"ok":true,"message":"panel restart","via":"management"}`))
-		case "/api/status":
-			_, _ = w.Write([]byte(`{"ok":true,"service":{"active":true},"manager":"Core service panel"}`))
+			http.Error(w, "management should not be used", http.StatusInternalServerError)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -1241,11 +1232,15 @@ func TestRestartFallsBackFromControllerToManagementBeforeExplicitSSH(t *testing.
 	defer controller.Close()
 
 	oldRunner := systemSSHRunner
-	defer func() { systemSSHRunner = oldRunner }()
-	sshCalled := false
 	systemSSHRunner = func(ctx context.Context, args ...string) ([]byte, error) {
-		sshCalled = true
-		return nil, errors.New("SSH must be final fallback")
+		command := args[len(args)-1]
+		if strings.Contains(command, "systemctl show mihomo.service") {
+			return []byte("LoadState=loaded\nActiveState=active\nSubState=running\nUnitFileState=enabled\nMainPID=456\nFragmentPath=/etc/systemd/system/mihomo.service\n"), nil
+		}
+		if !strings.Contains(command, "systemctl restart mihomo.service") {
+			t.Errorf("unexpected SSH command: %s", command)
+		}
+		return nil, nil
 	}
 	state := &appState{
 		path: filepath.Join(t.TempDir(), "settings.json"),
@@ -1257,23 +1252,23 @@ func TestRestartFallsBackFromControllerToManagementBeforeExplicitSSH(t *testing.
 		secretCache:           map[string]string{"test": "panel-secret"},
 		controllerSecretCache: map[string]string{"test": ""},
 	}
-	defer state.waitBackground()
+	defer func() {
+		state.waitBackground()
+		systemSSHRunner = oldRunner
+	}()
 
 	rec := httptest.NewRecorder()
 	state.handleAction(rec, httptest.NewRequest(http.MethodPost, "/local/action", strings.NewReader(`{"action":"restart"}`)))
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"via":"management"`) {
-		t.Fatalf("restart did not use management fallback: %d %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"via":"systemd"`) {
+		t.Fatalf("restart did not use systemd fallback: %d %s", rec.Code, rec.Body.String())
 	}
 	state.waitBackground()
-	if hits := panelActionHits.Load(); hits != 1 {
-		t.Fatalf("expected one management action, got %d", hits)
-	}
-	if sshCalled {
-		t.Fatal("SSH must not run when the Core service panel succeeds")
+	if hits := panelActionHits.Load(); hits != 0 {
+		t.Fatalf("management action must remain final fallback, got %d hits", hits)
 	}
 }
 
-func TestStatusFallsBackFromControllerToManagementBeforeExplicitSSH(t *testing.T) {
+func TestStatusFallsBackFromControllerToSystemdBeforeManagement(t *testing.T) {
 	var panelStatusHits atomic.Int32
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -1290,10 +1285,8 @@ func TestStatusFallsBackFromControllerToManagementBeforeExplicitSSH(t *testing.T
 
 	oldRunner := systemSSHRunner
 	defer func() { systemSSHRunner = oldRunner }()
-	sshCalled := false
 	systemSSHRunner = func(ctx context.Context, args ...string) ([]byte, error) {
-		sshCalled = true
-		return nil, errors.New("SSH must be final fallback")
+		return []byte("LoadState=loaded\nActiveState=inactive\nSubState=dead\nUnitFileState=enabled\nMainPID=0\nFragmentPath=/etc/systemd/system/mihomo.service\n"), nil
 	}
 	state := &appState{
 		settings: Settings{SelectedID: "test", Profiles: []Profile{{
@@ -1307,35 +1300,33 @@ func TestStatusFallsBackFromControllerToManagementBeforeExplicitSSH(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), `"active":true`) || !strings.Contains(string(data), `"management_panel":"v4.0.1"`) {
-		t.Fatalf("unexpected management status payload: %s", data)
+	if !strings.Contains(string(data), `"manager":"systemd · mihomo.service"`) || !strings.Contains(string(data), `"active":false`) {
+		t.Fatalf("unexpected systemd status payload: %s", data)
 	}
 	if panelStatusHits.Load() != 1 {
-		t.Fatalf("management status should be queried once, got %d", panelStatusHits.Load())
+		t.Fatalf("management status should be queried once for slow metadata enrichment, got %d", panelStatusHits.Load())
 	}
-	if sshCalled {
-		t.Fatal("SSH must not run when management status succeeds")
+	if !strings.Contains(string(data), `"management_panel":"v4.0.1"`) || !strings.Contains(string(data), `"metacubexd":"v1.273.1"`) {
+		t.Fatalf("systemd status did not retain management version metadata: %s", data)
 	}
 }
 
-func TestLogsPreferManagementBeforeExplicitSystemdJournal(t *testing.T) {
+func TestLogsPreferSystemdJournalBeforeManagement(t *testing.T) {
 	var panelHits atomic.Int32
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/logs" {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
 		panelHits.Add(1)
-		_, _ = w.Write([]byte(`{"ok":true,"logs":"panel line one\\npanel line two\\n","via":"management"}`))
+		http.Error(w, "management should not be used", http.StatusInternalServerError)
 	}))
 	defer backend.Close()
 
 	oldRunner := systemSSHRunner
 	defer func() { systemSSHRunner = oldRunner }()
-	sshCalled := false
 	systemSSHRunner = func(ctx context.Context, args ...string) ([]byte, error) {
-		sshCalled = true
-		return nil, errors.New("journalctl must be final fallback")
+		command := args[len(args)-1]
+		if !strings.Contains(command, "journalctl -u mihomo.service -n 100") {
+			t.Fatalf("unexpected journal command: %s", command)
+		}
+		return []byte("line one\nline two\n"), nil
 	}
 	state := &appState{
 		settings: Settings{SelectedID: "test", Profiles: []Profile{{
@@ -1347,14 +1338,11 @@ func TestLogsPreferManagementBeforeExplicitSystemdJournal(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 	state.handleLogs(rec, httptest.NewRequest(http.MethodGet, "/local/logs?lines=100", nil))
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"via":"management"`) || !strings.Contains(rec.Body.String(), "panel line one") {
-		t.Fatalf("management logs failed: %d %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"via":"systemd"`) || !strings.Contains(rec.Body.String(), "line one") {
+		t.Fatalf("systemd logs failed: %d %s", rec.Code, rec.Body.String())
 	}
-	if panelHits.Load() != 1 {
-		t.Fatalf("management logs should be queried once, got %d", panelHits.Load())
-	}
-	if sshCalled {
-		t.Fatal("journalctl must not run when management logs succeed")
+	if panelHits.Load() != 0 {
+		t.Fatal("management logs must not be queried when journalctl succeeds")
 	}
 }
 
@@ -1576,8 +1564,8 @@ func TestEmbeddedModernAppIconV131(t *testing.T) {
 	}
 }
 
-func TestPortableVersionV132(t *testing.T) {
-	if appVersion != "1.3.2" || buildNumber != "1302" {
+func TestPortableVersionV131(t *testing.T) {
+	if appVersion != "1.3.1" || buildNumber != "1301" {
 		t.Fatalf("unexpected portable version/build: %s/%s", appVersion, buildNumber)
 	}
 }
@@ -1874,7 +1862,7 @@ func TestEndpointNormalizationRejectsWildcardListenerAddresses(t *testing.T) {
 	}
 }
 
-func TestReloadFallsBackToManagementBeforeExplicitSystemd(t *testing.T) {
+func TestReloadSkipsUnsupportedSystemdAndFallsBackToManagement(t *testing.T) {
 	var panelActions atomic.Int32
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -1887,9 +1875,7 @@ func TestReloadFallsBackToManagementBeforeExplicitSystemd(t *testing.T) {
 			if in["action"] != "reload" {
 				t.Fatalf("unexpected panel action: %#v", in)
 			}
-			_, _ = w.Write([]byte(`{"ok":true,"message":"reloaded","via":"management"}`))
-		case "/api/status":
-			_, _ = w.Write([]byte(`{"ok":true,"service":{"active":true}}`))
+			_, _ = w.Write([]byte(`{"ok":true,"message":"reloaded"}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -1898,10 +1884,17 @@ func TestReloadFallsBackToManagementBeforeExplicitSystemd(t *testing.T) {
 
 	oldRunner := systemSSHRunner
 	defer func() { systemSSHRunner = oldRunner }()
-	sshCalled := false
+	var commands []string
 	systemSSHRunner = func(ctx context.Context, args ...string) ([]byte, error) {
-		sshCalled = true
-		return nil, errors.New("SSH reload must be final fallback")
+		command := args[len(args)-1]
+		commands = append(commands, command)
+		if strings.Contains(command, "property=CanReload") {
+			return []byte("no\n"), nil
+		}
+		if strings.Contains(command, "systemctl reload") {
+			t.Fatalf("systemctl reload must not run when CanReload=no: %s", command)
+		}
+		return nil, nil
 	}
 
 	state := &appState{
@@ -1923,21 +1916,8 @@ func TestReloadFallsBackToManagementBeforeExplicitSystemd(t *testing.T) {
 	if panelActions.Load() != 1 {
 		t.Fatalf("expected one Management reload fallback, got %d", panelActions.Load())
 	}
-	if sshCalled {
-		t.Fatal("systemd reload must not run when Management API succeeds")
-	}
-}
-
-func TestManagementKeychainServiceMigrationOrderV132(t *testing.T) {
-	got := managementKeychainServices()
-	want := []string{
-		"cc.kkr.MihomoManager.profile-secret",
-		"cc.kkr.MihomoManager",
-		"cc.kkr.MihomoCoreManager.profile-secret",
-		"cc.kkr.MihomoCoreManager",
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("unexpected management Keychain service migration order: %#v", got)
+	if len(commands) == 0 || !strings.Contains(strings.Join(commands, "\n"), "CanReload") {
+		t.Fatalf("systemd CanReload was not inspected: %#v", commands)
 	}
 }
 

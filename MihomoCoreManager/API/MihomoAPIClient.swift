@@ -130,7 +130,7 @@ struct MihomoAPIClient {
 
     private func systemdSSHArguments(profile: ServerProfile, command: String) throws -> [String] {
         guard let target = systemdSSHTarget(profile: profile) else {
-            throw MihomoClientError.operationFailed("未显式配置 mihomo.service SSH 目标；SSH 回退未启用")
+            throw MihomoClientError.operationFailed("未配置 mihomo.service SSH 目标，且无法从 LAN Management/Controller URL 自动推断")
         }
         guard !target.hasPrefix("-"), target.rangeOfCharacter(from: .whitespacesAndNewlines) == nil else {
             throw MihomoClientError.operationFailed("mihomo.service SSH 目标格式无效")
@@ -239,7 +239,7 @@ struct MihomoAPIClient {
             "--connect-timeout", "4", "--max-time", String(seconds),
             "-X", shellQuote(method),
             "-H", shellQuote("Accept: application/json"),
-            "-H", shellQuote("User-Agent: MihomoManager/1.3.2 (server-local SSH fallback)")
+            "-H", shellQuote("User-Agent: MihomoManager/1.3.1 (server-local SSH fallback)")
         ]
         if !secret.isEmpty {
             parts += ["-H", shellQuote("Authorization: Bearer \(secret)")]
@@ -422,10 +422,10 @@ struct MihomoAPIClient {
         managementSecret: String,
         controllerSecret: String
     ) async throws -> StatusPayload {
-        // v1.3.2 priority:
-        // 1) Mihomo Controller API (authoritative live Core telemetry)
-        // 2) Core management panel API (works even when Core itself is stopped)
-        // 3) explicit-only SSH/systemd advanced fallback.
+        // v1.3.1 in-place fix priority:
+        // 1) Mihomo Controller API (authoritative Core telemetry)
+        // 2) server-side mihomo.service through non-interactive SSH/systemd
+        // 3) optional Core management panel compatibility fallback.
         var failures: [String] = []
         if profile.hasControllerEndpoint {
             do {
@@ -434,18 +434,18 @@ struct MihomoAPIClient {
                 failures.append("Controller：\(shortErrorMessage(error))")
             }
         }
-        if profile.hasManagementEndpoint, !managementSecret.isEmpty {
-            do {
-                return try await managementStatus(profile: profile, secret: managementSecret)
-            } catch {
-                failures.append("Core 服务面板：\(shortErrorMessage(error))")
-            }
-        }
         if profile.hasSystemdServiceEndpoint {
             do {
                 return try await systemdStatus(profile: profile)
             } catch {
-                failures.append("显式 SSH/mihomo.service：\(shortErrorMessage(error))")
+                failures.append("mihomo.service：\(shortErrorMessage(error))")
+            }
+        }
+        if profile.hasManagementEndpoint, !managementSecret.isEmpty {
+            do {
+                return try await managementStatus(profile: profile, secret: managementSecret)
+            } catch {
+                failures.append("Management：\(shortErrorMessage(error))")
             }
         }
         if !failures.isEmpty {
@@ -610,23 +610,15 @@ struct MihomoAPIClient {
     func action(_ action: CoreAction, profile: ServerProfile, secret: String) async throws -> String {
         switch action {
         case .start, .stop, .restart, .reload:
-            var panelError: Error?
-            if profile.hasManagementEndpoint, !secret.isEmpty {
-                do { return try await managementAction(action, profile: profile, secret: secret) }
-                catch { panelError = error }
-            }
+            var systemdError: Error?
             if profile.hasSystemdServiceEndpoint {
                 do { return try await systemdLifecycleAction(action, profile: profile) }
-                catch {
-                    if let panelError {
-                        throw MihomoClientError.operationFailed(
-                            "Core 服务面板 API 失败：\(shortErrorMessage(panelError))；显式 SSH/mihomo.service 回退也失败：\(shortErrorMessage(error))"
-                        )
-                    }
-                    throw error
-                }
+                catch { systemdError = error }
             }
-            if let panelError { throw panelError }
+            if profile.hasManagementEndpoint, !secret.isEmpty {
+                return try await managementAction(action, profile: profile, secret: secret)
+            }
+            if let systemdError { throw systemdError }
             throw MihomoClientError.missingManagement
         case .applySubscriptions:
             return try await managementAction(action, profile: profile, secret: secret)
@@ -638,7 +630,7 @@ struct MihomoAPIClient {
         managementSecret: String,
         controllerSecret: String
     ) async throws -> String {
-        // Preference order is Core API -> Core management panel API -> explicit SSH.
+        // Preference order is Core API -> mihomo.service -> Core management panel.
         var lastError: Error?
         if profile.hasControllerEndpoint {
             struct Payload: Encodable { let path: String; let payload: String }
@@ -656,13 +648,12 @@ struct MihomoAPIClient {
                 lastError = error
             }
         }
-        if profile.hasManagementEndpoint, !managementSecret.isEmpty {
-            do { return try await managementAction(.restart, profile: profile, secret: managementSecret) }
-            catch { lastError = error }
-        }
         if profile.hasSystemdServiceEndpoint {
             do { return try await systemdLifecycleAction(.restart, profile: profile) }
             catch { lastError = error }
+        }
+        if profile.hasManagementEndpoint, !managementSecret.isEmpty {
+            return try await managementAction(.restart, profile: profile, secret: managementSecret)
         }
         if let lastError { throw lastError }
         throw MihomoClientError.missingManagement
@@ -693,12 +684,12 @@ struct MihomoAPIClient {
                 lastError = error
             }
         }
-        if profile.hasManagementEndpoint, !managementSecret.isEmpty {
-            do { return try await managementAction(.reload, profile: profile, secret: managementSecret) }
-            catch { lastError = error }
-        }
         if profile.hasSystemdServiceEndpoint {
             do { return try await systemdLifecycleAction(.reload, profile: profile) }
+            catch { lastError = error }
+        }
+        if profile.hasManagementEndpoint, !managementSecret.isEmpty {
+            do { return try await managementAction(.reload, profile: profile, secret: managementSecret) }
             catch { lastError = error }
         }
         if let lastError { throw lastError }
@@ -934,33 +925,22 @@ struct MihomoAPIClient {
     }
 
     func logs(lines: Int, profile: ServerProfile, secret: String) async throws -> String {
-        var panelError: Error?
-        if profile.hasManagementEndpoint, !secret.isEmpty {
-            do {
-                let safe = min(300, max(10, lines))
-                let response: LogsResponse = try await get(
-                    "/api/logs",
-                    queryItems: [URLQueryItem(name: "lines", value: String(safe))],
-                    profile: profile,
-                    secret: secret
-                )
-                return response.logs
-            } catch {
-                panelError = error
-            }
-        }
+        var systemdError: Error?
         if profile.hasSystemdServiceEndpoint {
             do { return try await systemdLogs(lines: lines, profile: profile) }
-            catch {
-                if let panelError {
-                    throw MihomoClientError.operationFailed(
-                        "Core 服务面板日志 API 失败：\(shortErrorMessage(panelError))；显式 SSH journalctl 回退也失败：\(shortErrorMessage(error))"
-                    )
-                }
-                throw error
-            }
+            catch { systemdError = error }
         }
-        if let panelError { throw panelError }
+        if profile.hasManagementEndpoint, !secret.isEmpty {
+            let safe = min(300, max(10, lines))
+            let response: LogsResponse = try await get(
+                "/api/logs",
+                queryItems: [URLQueryItem(name: "lines", value: String(safe))],
+                profile: profile,
+                secret: secret
+            )
+            return response.logs
+        }
+        if let systemdError { throw systemdError }
         throw MihomoClientError.missingManagement
     }
 
@@ -1141,7 +1121,7 @@ struct MihomoAPIClient {
                 request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
             }
             request.setValue("application/json", forHTTPHeaderField: "Accept")
-            request.setValue("MihomoManager/1.3.2 (macOS; SwiftUI)", forHTTPHeaderField: "User-Agent")
+            request.setValue("MihomoManager/1.3.1 (macOS; SwiftUI)", forHTTPHeaderField: "User-Agent")
             if let body {
                 request.httpBody = body
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")

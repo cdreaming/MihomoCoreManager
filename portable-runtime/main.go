@@ -25,13 +25,11 @@ import (
 )
 
 const (
-	appVersion                      = "1.3.2"
-	buildNumber                     = "1302"
-	keychainService                 = "cc.kkr.MihomoManager.profile-secret"
-	v131BrokenKeychainService       = "cc.kkr.MihomoManager"
-	legacyKeychainService           = "cc.kkr.MihomoCoreManager.profile-secret"
-	legacyBrokenKeychainService     = "cc.kkr.MihomoCoreManager"
+	appVersion                      = "1.3.1"
+	buildNumber                     = "1301"
+	keychainService                 = "cc.kkr.MihomoManager"
 	controllerKeychainService       = "cc.kkr.MihomoManager.controller-secret"
+	legacyKeychainService           = "cc.kkr.MihomoCoreManager"
 	legacyControllerKeychainService = "cc.kkr.MihomoCoreManager.controller-secret"
 	defaultRefreshIntervalMS        = 1200
 	defaultLogLines                 = 100
@@ -315,13 +313,12 @@ func newHTTPClient() *http.Client {
 
 func loadState() *appState {
 	s := &appState{
-		path:                  configPath(),
-		token:                 newToken(),
-		done:                  make(chan struct{}),
-		client:                newHTTPClient(),
-		secretCache:           make(map[string]string),
-		controllerSecretCache: make(map[string]string),
-		proxyDelayCache:       make(map[string]map[string]int),
+		path:            configPath(),
+		token:           newToken(),
+		done:            make(chan struct{}),
+		client:          newHTTPClient(),
+		secretCache:     make(map[string]string),
+		proxyDelayCache: make(map[string]map[string]int),
 	}
 	b, err := os.ReadFile(s.path)
 	migratedLegacySettings := false
@@ -413,13 +410,41 @@ func systemdSSHPort(p Profile) int {
 	return 22
 }
 
-// effectiveSystemdSSHTarget deliberately enables SSH only when the user has
-// explicitly configured a target. v1.3.1 inferred RFC1918 hosts from the
-// Management/Controller URL; after any direct-network failure that made SSH
-// appear to be the primary path and produced misleading password/public-key
-// errors. v1.3.2 keeps SSH as an opt-in advanced fallback only.
+func hostFromConfiguredURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if !strings.Contains(raw, "://") {
+		raw = "http://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	host := strings.TrimSpace(u.Hostname())
+	if host == "" {
+		return ""
+	}
+	return host
+}
+
+// effectiveSystemdSSHTarget keeps an explicit SSH target authoritative. For a
+// LAN profile it can also infer the server host from Management/Controller URLs.
+// This lets existing v1.3.1 profiles use mihomo.service without requiring users
+// to duplicate the same RFC1918 address in another field. Public hosts are never
+// auto-probed over SSH.
 func effectiveSystemdSSHTarget(p Profile) string {
-	return strings.TrimSpace(p.SystemdSSHTarget)
+	if target := strings.TrimSpace(p.SystemdSSHTarget); target != "" {
+		return target
+	}
+	for _, raw := range []string{p.ManagementURL, p.CoreControllerURL} {
+		host := hostFromConfiguredURL(raw)
+		if host != "" && isLANHost(host) && host != "localhost" && !net.ParseIP(host).IsLoopback() {
+			return host
+		}
+	}
+	return ""
 }
 
 func hasSystemdSSHRoute(p Profile) bool {
@@ -444,7 +469,7 @@ func expandUserPath(path string) string {
 func systemdSSHArgs(p Profile, command string) ([]string, error) {
 	target := effectiveSystemdSSHTarget(p)
 	if target == "" {
-		return nil, errors.New("未显式配置 mihomo.service SSH 目标；SSH 回退未启用")
+		return nil, errors.New("未配置 mihomo.service SSH 目标，且无法从 LAN Management/Controller URL 自动推断")
 	}
 	if strings.HasPrefix(target, "-") || strings.ContainsAny(target, " \t\r\n") {
 		return nil, errors.New("mihomo.service SSH 目标格式无效")
@@ -586,7 +611,7 @@ func (s *appState) runHTTPOverSSHOnce(p Profile, method, target string, body []b
 
 func (s *appState) remoteRequestViaSSH(p Profile, method, target string, body []byte, secret string, timeout time.Duration) ([]byte, int, error) {
 	if !hasSystemdSSHRoute(p) {
-		return nil, 0, errors.New("未显式配置 mihomo.service SSH 路径")
+		return nil, 0, errors.New("没有可用的 mihomo.service SSH 路径")
 	}
 	targets := []string{target}
 	if local, ok := sshLoopbackTarget(target); ok && local != target {
@@ -660,7 +685,7 @@ func (s *appState) remoteRequestWithSSHFallback(
 	if code == 0 {
 		directMessage = friendlyNetworkError(target, directErr)
 	}
-	return sshData, sshCode, fmt.Errorf("%s直连失败：%s；显式 SSH 到服务器后的本机端口回退也失败：%v", backendLabel, directMessage, sshErr)
+	return sshData, sshCode, fmt.Errorf("%s直连失败：%s；SSH 到服务器后的本机端口回退也失败：%v", backendLabel, directMessage, sshErr)
 }
 
 func parseSystemdShow(data []byte) map[string]string {
@@ -752,7 +777,7 @@ func (s *appState) systemdLifecycleAction(p Profile, action string) ([]byte, int
 	}
 	data, _ := json.Marshal(map[string]any{
 		"ok":      true,
-		"message": fmt.Sprintf("已通过显式 SSH 的 mihomo.service（systemd）执行 %s", action),
+		"message": fmt.Sprintf("已通过 mihomo.service（systemd/SSH）执行 %s", action),
 		"via":     "systemd",
 	})
 	return data, http.StatusOK, nil
@@ -777,9 +802,7 @@ func keychainGetWithService(id, service string) string {
 	if err != nil {
 		return ""
 	}
-	// `security -w` appends a line ending. Preserve all other bytes so the
-	// save->read-back verification compares the actual secret, not a trimmed one.
-	return strings.TrimRight(string(out), "\r\n")
+	return strings.TrimSpace(string(out))
 }
 
 func keychainSetWithService(id, secret, service string) error {
@@ -793,57 +816,30 @@ func keychainSetWithService(id, secret, service string) error {
 	return exec.Command("/usr/bin/security", "add-generic-password", "-U", "-a", id, "-s", service, "-w", secret).Run()
 }
 
-func keychainSetVerifiedWithService(id, secret, service string) error {
-	if err := keychainSetWithService(id, secret, service); err != nil {
-		return err
-	}
-	if runtime.GOOS == "darwin" {
-		if got := keychainGetWithService(id, service); got != secret {
-			return fmt.Errorf("Keychain 回读校验失败（service=%s）", service)
-		}
-	}
-	return nil
-}
-
 func keychainDeleteWithService(id, service string) {
 	if runtime.GOOS == "darwin" {
 		_ = exec.Command("/usr/bin/security", "delete-generic-password", "-a", id, "-s", service).Run()
 	}
 }
 
-func managementKeychainServices() []string {
-	return []string{
-		keychainService,
-		v131BrokenKeychainService,
-		legacyKeychainService,
-		legacyBrokenKeychainService,
-	}
-}
-
 func keychainGet(id string) string {
-	for _, service := range managementKeychainServices() {
-		secret := keychainGetWithService(id, service)
-		if secret == "" {
-			continue
-		}
-		if service != keychainService {
-			// Best-effort migration. Keep returning the legacy value even if the
-			// current keychain is temporarily not writable.
-			_ = keychainSetVerifiedWithService(id, secret, keychainService)
-		}
+	if secret := keychainGetWithService(id, keychainService); secret != "" {
 		return secret
 	}
-	return ""
+	secret := keychainGetWithService(id, legacyKeychainService)
+	if secret != "" {
+		_ = keychainSetWithService(id, secret, keychainService)
+	}
+	return secret
 }
 
 func keychainSet(id, secret string) error {
-	return keychainSetVerifiedWithService(id, secret, keychainService)
+	return keychainSetWithService(id, secret, keychainService)
 }
 
 func keychainDelete(id string) {
-	for _, service := range managementKeychainServices() {
-		keychainDeleteWithService(id, service)
-	}
+	keychainDeleteWithService(id, keychainService)
+	keychainDeleteWithService(id, legacyKeychainService)
 }
 
 func controllerKeychainGet(id string) string {
@@ -852,13 +848,13 @@ func controllerKeychainGet(id string) string {
 	}
 	secret := keychainGetWithService(id, legacyControllerKeychainService)
 	if secret != "" {
-		_ = keychainSetVerifiedWithService(id, secret, controllerKeychainService)
+		_ = keychainSetWithService(id, secret, controllerKeychainService)
 	}
 	return secret
 }
 
 func controllerKeychainSet(id, secret string) error {
-	return keychainSetVerifiedWithService(id, secret, controllerKeychainService)
+	return keychainSetWithService(id, secret, controllerKeychainService)
 }
 
 func controllerKeychainDelete(id string) {
@@ -1699,28 +1695,27 @@ func (s *appState) fetchStatusSnapshot(p Profile) ([]byte, error) {
 		}
 		failures = append(failures, "Controller："+err.Error())
 	}
-	// A stopped Core cannot answer its own Controller API. The independent Core
-	// management panel is therefore the preferred lifecycle/status fallback.
-	// SSH is attempted only when the user explicitly configured it.
+	// A stopped Core cannot answer its Controller API. When configured/inferred,
+	// ask the server's actual systemd unit before consulting the optional panel.
+	if hasSystemdSSHRoute(p) {
+		data, err := s.systemdStatusSnapshot(p)
+		if err == nil {
+			return mergeStatusWithManagement(data, s.managementStatusMetadata(p)), nil
+		}
+		failures = append(failures, "mihomo.service："+err.Error())
+	}
 	if strings.TrimSpace(p.ManagementURL) != "" && s.managementSecretFor(p.ID) != "" {
 		data, _, err := s.remoteWithPolicy(http.MethodGet, "/api/status", nil, nil, false, 4*time.Second, 1)
 		if err == nil {
 			s.storeManagementMetadata(p.ID, data)
 			return data, nil
 		}
-		failures = append(failures, "Core 服务面板："+err.Error())
-	}
-	if hasSystemdSSHRoute(p) {
-		data, err := s.systemdStatusSnapshot(p)
-		if err == nil {
-			return mergeStatusWithManagement(data, s.managementStatusMetadata(p)), nil
-		}
-		failures = append(failures, "显式 SSH/mihomo.service："+err.Error())
+		failures = append(failures, "Management："+err.Error())
 	}
 	if len(failures) > 0 {
 		return nil, errors.New(strings.Join(failures, "；"))
 	}
-	return nil, errors.New("未配置 Mihomo Core Controller URL 或 Core 服务面板；SSH 仅在显式配置后启用")
+	return nil, errors.New("未配置 Mihomo Core Controller URL、mihomo.service SSH 或 Core 服务面板")
 }
 
 func enrichStatusSpeed(data, previous []byte, previousAt, now time.Time) []byte {
@@ -2397,7 +2392,7 @@ func (s *appState) handleProfileSave(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if p.ManagementURL == "" && p.CoreControllerURL == "" && p.SystemdSSHTarget == "" {
-		errReply(w, errors.New("至少配置 Mihomo Core Controller URL、Core 服务面板 Management URL 或显式 SSH 目标"))
+		errReply(w, errors.New("至少配置 Mihomo Core Controller URL 或 mihomo.service SSH；Management URL 只是备选扩展"))
 		return
 	}
 	if p.ManagementURL != "" {
@@ -2632,39 +2627,25 @@ func subscriptionReloadTimedOut(data []byte, err error) bool {
 
 func (s *appState) coreLifecycleAction(action string) ([]byte, int, error) {
 	p, currentErr := s.current()
-	if currentErr != nil {
-		return nil, 0, currentErr
-	}
-
-	var panelErr error
-	if strings.TrimSpace(p.ManagementURL) != "" && s.managementSecretFor(p.ID) != "" {
-		body, _ := json.Marshal(map[string]string{"action": action})
-		if data, code, err := s.remote(http.MethodPost, "/api/action", body, nil, false); err == nil {
-			return data, code, nil
-		} else {
-			panelErr = err
-		}
-	}
-
 	var serviceErr error
-	if hasSystemdSSHRoute(p) {
+	if currentErr == nil && hasSystemdSSHRoute(p) {
 		if data, code, err := s.systemdLifecycleAction(p, action); err == nil {
 			return data, code, nil
 		} else {
 			serviceErr = err
 		}
 	}
-
-	if panelErr != nil && serviceErr != nil {
-		return nil, 0, fmt.Errorf("Core 服务面板 API 失败：%v；显式 SSH/mihomo.service 回退也失败：%w", panelErr, serviceErr)
-	}
-	if panelErr != nil {
-		return nil, 0, panelErr
+	if currentErr == nil && strings.TrimSpace(p.ManagementURL) != "" && s.managementSecretFor(p.ID) != "" {
+		body, _ := json.Marshal(map[string]string{"action": action})
+		return s.remote(http.MethodPost, "/api/action", body, nil, false)
 	}
 	if serviceErr != nil {
 		return nil, 0, serviceErr
 	}
-	return nil, 0, errors.New("此操作需要 Core 服务面板 API；如需 SSH 回退请显式配置 SSH 目标")
+	if currentErr != nil {
+		return nil, 0, currentErr
+	}
+	return nil, 0, errors.New("此操作需要 mihomo.service SSH 或 Core 服务面板")
 }
 
 func (s *appState) handleProxyMode(w http.ResponseWriter, r *http.Request) {
@@ -3059,8 +3040,8 @@ func (s *appState) handleAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Priority: Core API (where an equivalent exists) -> Core service panel API ->
-	// explicit-only mihomo.service SSH fallback. A stopped Core cannot start itself.
+	// Priority: Core API (where an equivalent exists) -> mihomo.service ->
+	// optional Core service panel. A stopped Core cannot start itself.
 	if a == "restart" {
 		p, currentErr := s.current()
 		if currentErr == nil && strings.TrimSpace(p.CoreControllerURL) != "" {
@@ -3121,7 +3102,7 @@ func (s *appState) handleReload(w http.ResponseWriter, r *http.Request) {
 	data, code, fallbackErr := s.coreLifecycleAction("reload")
 	if fallbackErr != nil {
 		if directErr != nil {
-			errReply(w, fmt.Errorf("Mihomo Core API 重载失败：%v；Core 服务面板 / 显式 SSH 回退也失败：%w", directErr, fallbackErr))
+			errReply(w, fmt.Errorf("Mihomo Core API 重载失败：%v；mihomo.service / Core 服务面板回退也失败：%w", directErr, fallbackErr))
 			return
 		}
 		errReply(w, fallbackErr)
@@ -3144,32 +3125,27 @@ func (s *appState) handleLogs(w http.ResponseWriter, r *http.Request) {
 	if lines == 0 {
 		lines = defaultLogLines
 	}
-	var panelErr error
-	if strings.TrimSpace(p.ManagementURL) != "" && s.managementSecretFor(p.ID) != "" {
-		data, code, err := s.remote(http.MethodGet, "/api/logs", nil, r.URL.Query(), false)
-		if err == nil {
-			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-			w.WriteHeader(code)
-			_, _ = w.Write(data)
-			return
-		}
-		panelErr = err
-	}
-
 	var systemdErr error
 	if hasSystemdSSHRoute(p) {
 		if logs, err := s.systemdLogs(p, lines); err == nil {
-			jsonReply(w, http.StatusOK, map[string]any{"ok": true, "logs": string(logs), "via": "systemd-ssh"})
+			jsonReply(w, http.StatusOK, map[string]any{"ok": true, "logs": string(logs), "via": "systemd"})
 			return
 		} else {
 			systemdErr = err
 		}
 	}
-	if panelErr != nil && systemdErr != nil {
-		errReply(w, fmt.Errorf("Core 服务面板日志 API 失败：%v；显式 SSH journalctl 回退也失败：%w", panelErr, systemdErr))
-		return
-	}
-	if panelErr != nil {
+	if strings.TrimSpace(p.ManagementURL) != "" && s.managementSecretFor(p.ID) != "" {
+		data, code, panelErr := s.remote(http.MethodGet, "/api/logs", nil, r.URL.Query(), false)
+		if panelErr == nil {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.WriteHeader(code)
+			_, _ = w.Write(data)
+			return
+		}
+		if systemdErr != nil {
+			errReply(w, fmt.Errorf("journalctl/mihomo.service 读取失败：%v；Core 服务面板回退也失败：%w", systemdErr, panelErr))
+			return
+		}
 		errReply(w, panelErr)
 		return
 	}
@@ -3177,7 +3153,7 @@ func (s *appState) handleLogs(w http.ResponseWriter, r *http.Request) {
 		errReply(w, systemdErr)
 		return
 	}
-	errReply(w, errors.New("运行日志需要 Core 服务面板 API；如需 journalctl 回退请显式配置 SSH 目标"))
+	errReply(w, errors.New("运行日志需要 mihomo.service SSH 或 Core 服务面板"))
 }
 
 func (s *appState) handleUpdateApply(w http.ResponseWriter, r *http.Request) {

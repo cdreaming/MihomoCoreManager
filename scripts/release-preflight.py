@@ -97,7 +97,6 @@ for script in [
 run([sys.executable, "-m", "py_compile", "scripts/app-bundle-manifest.py"])
 run([sys.executable, "-m", "py_compile", "scripts/build-gowebui-release-lock.py"])
 run([sys.executable, "-m", "py_compile", "scripts/release_host_policy.py"])
-run([sys.executable, "-m", "py_compile", "scripts/verify-macho-uuid.py"])
 run([sys.executable, "scripts/build-gowebui-release-lock.py", "--check"])
 
 # 2. Project membership: every Swift source on disk must be represented in the Xcode project.
@@ -219,8 +218,8 @@ go = shutil.which("go")
 if not go:
     fail("Go is required for portable release parity")
 go_version = run([go, "version"], capture=True).strip()
-if "go1.26.8" not in go_version:
-    fail(f"GoWebUI release requires Go 1.26.8; got: {go_version}")
+if "go1.23.2" not in go_version:
+    fail(f"GoWebUI release requires Go 1.23.2; got: {go_version}")
 portable_root = root / "portable-runtime"
 go_test_tmp = root / "build" / "go-test-tmp"
 shutil.rmtree(go_test_tmp, ignore_errors=True)

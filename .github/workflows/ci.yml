@@ -19,7 +19,7 @@ jobs:
       - name: 配置 GoWebUI Go 工具链
         uses: actions/setup-go@v6
         with:
-          go-version: '1.26.8'
+          go-version: '1.23.2'
           cache: false
 
       - name: Verify GoWebUI release lock

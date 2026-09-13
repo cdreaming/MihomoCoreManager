@@ -11,15 +11,7 @@ BIN="$APP/Contents/MacOS/MihomoManager"
 [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]] || { echo "Invalid BUILD_NUMBER: $BUILD_NUMBER" >&2; exit 1; }
 command -v go >/dev/null || { echo "Go is required" >&2; exit 1; }
 command -v python3 >/dev/null || { echo "Python 3 is required" >&2; exit 1; }
-REQUIRED_GO="go1.26.8"
-ACTUAL_GO="$(go version | awk '{print $3}')"
-if [[ "$ACTUAL_GO" != "$REQUIRED_GO" ]]; then
-  if [[ "${MIHOMO_RECOVERY_ALLOW_LEGACY_GO:-0}" != "1" ]]; then
-    echo "GoWebUI release requires $REQUIRED_GO (Go 1.24+ is required for native Mach-O LC_UUID); got: $(go version)" >&2
-    exit 1
-  fi
-  echo "WARNING: recovery-only legacy Go build enabled ($ACTUAL_GO); LC_UUID will be repaired and verified post-link." >&2
-fi
+[[ "$(go version | awk '{print $3}')" == "go1.23.2" ]] || { echo "GoWebUI release requires Go 1.23.2; got: $(go version)" >&2; exit 1; }
 # GoWebUI-RELEASE-LOCK.json freezes every preview/release input.
 python3 "$ROOT/scripts/build-gowebui-release-lock.py" --check
 
@@ -29,14 +21,9 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 (
   cd "$ROOT/portable-runtime"
   GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 \
-    go build -trimpath -buildvcs=false -ldflags='-s -w' -o "$BIN" .
+    go build -trimpath -buildvcs=false -ldflags='-s -w -buildid=' -o "$BIN" .
 )
 chmod 0755 "$BIN"
-if [[ "$ACTUAL_GO" == "$REQUIRED_GO" ]]; then
-  python3 "$ROOT/scripts/verify-macho-uuid.py" "$BIN"
-else
-  python3 "$ROOT/scripts/verify-macho-uuid.py" "$BIN" --repair
-fi
 
 ROOT="$ROOT" APP="$APP" VERSION="$VERSION" BUILD_NUMBER="$BUILD_NUMBER" python3 - <<'PY'
 from pathlib import Path
@@ -60,7 +47,6 @@ plist = {
     'LSApplicationCategoryType': 'public.app-category.utilities',
     'LSMinimumSystemVersion': '14.0',
     'NSHighResolutionCapable': True,
-    'NSLocalNetworkUsageDescription': 'MihomoManager 需要访问您配置的局域网 Mihomo Controller、Core 服务面板和 MetaCubeXD。',
     'CFBundleIconFile': 'AppIcon.icns',
     'MCMBuildVariant': 'GoWebUI',
     'NSAppTransportSecurity': {'NSAllowsArbitraryLoads': True},

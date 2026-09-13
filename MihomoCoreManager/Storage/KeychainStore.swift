@@ -3,41 +3,29 @@ import Security
 
 enum KeychainStore {
     private static let service = "cc.kkr.MihomoManager.profile-secret"
-    // v1.3.1 GoWebUI accidentally used this service without `.profile-secret`.
-    private static let v131BrokenGoWebUIService = "cc.kkr.MihomoManager"
     private static let controllerService = "cc.kkr.MihomoManager.controller-secret"
     private static let legacyService = "cc.kkr.MihomoCoreManager.profile-secret"
-    private static let legacyBrokenGoWebUIService = "cc.kkr.MihomoCoreManager"
     private static let legacyControllerService = "cc.kkr.MihomoCoreManager.controller-secret"
 
     static func readSecret(profileID: UUID) -> String {
-        readSecretWithMigration(
-            profileID: profileID,
-            service: service,
-            legacyServices: [v131BrokenGoWebUIService, legacyService, legacyBrokenGoWebUIService]
-        )
+        readSecretWithMigration(profileID: profileID, service: service, legacyService: legacyService)
     }
 
     static func writeSecret(_ secret: String, profileID: UUID) throws {
-        try writeSecretVerified(secret, profileID: profileID, service: service)
+        try writeSecret(secret, profileID: profileID, service: service)
     }
 
     static func deleteSecret(profileID: UUID) {
-        for candidate in [service, v131BrokenGoWebUIService, legacyService, legacyBrokenGoWebUIService] {
-            deleteSecret(profileID: profileID, service: candidate)
-        }
+        deleteSecret(profileID: profileID, service: service)
+        deleteSecret(profileID: profileID, service: legacyService)
     }
 
     static func readControllerSecret(profileID: UUID) -> String {
-        readSecretWithMigration(
-            profileID: profileID,
-            service: controllerService,
-            legacyServices: [legacyControllerService]
-        )
+        readSecretWithMigration(profileID: profileID, service: controllerService, legacyService: legacyControllerService)
     }
 
     static func writeControllerSecret(_ secret: String, profileID: UUID) throws {
-        try writeSecretVerified(secret, profileID: profileID, service: controllerService)
+        try writeSecret(secret, profileID: profileID, service: controllerService)
     }
 
     static func deleteControllerSecret(profileID: UUID) {
@@ -45,20 +33,14 @@ enum KeychainStore {
         deleteSecret(profileID: profileID, service: legacyControllerService)
     }
 
-    private static func readSecretWithMigration(
-        profileID: UUID,
-        service: String,
-        legacyServices: [String]
-    ) -> String {
+    private static func readSecretWithMigration(profileID: UUID, service: String, legacyService: String) -> String {
         let current = readSecret(profileID: profileID, service: service)
         if !current.isEmpty { return current }
-        for legacyService in legacyServices {
-            let legacy = readSecret(profileID: profileID, service: legacyService)
-            guard !legacy.isEmpty else { continue }
-            try? writeSecretVerified(legacy, profileID: profileID, service: service)
-            return legacy
+        let legacy = readSecret(profileID: profileID, service: legacyService)
+        if !legacy.isEmpty {
+            try? writeSecret(legacy, profileID: profileID, service: service)
         }
-        return ""
+        return legacy
     }
 
     private static func readSecret(profileID: UUID, service: String) -> String {
@@ -108,19 +90,6 @@ enum KeychainStore {
         let addStatus = SecItemAdd(add as CFDictionary, nil)
         guard addStatus == errSecSuccess else {
             throw NSError(domain: NSOSStatusErrorDomain, code: Int(addStatus), userInfo: nil)
-        }
-    }
-
-
-    private static func writeSecretVerified(_ secret: String, profileID: UUID, service: String) throws {
-        try writeSecret(secret, profileID: profileID, service: service)
-        let value = readSecret(profileID: profileID, service: service)
-        guard value == secret else {
-            throw NSError(
-                domain: "cc.kkr.MihomoManager.Keychain",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Keychain 保存后回读校验失败（service=\(service)）"]
-            )
         }
     }
 
