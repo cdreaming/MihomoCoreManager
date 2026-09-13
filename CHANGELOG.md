@@ -1,5 +1,33 @@
 # Changelog
 
+## v1.3.1
+
+- **修复侧栏三组件版本：** Controller 快速状态成功时不再丢失 Management 元数据；SwiftUI/GoWebUI 均从 v4.0.1 `/api/status` 补齐 `management_panel` / `metacubexd` 版本，Core 版本继续以 Controller `/version` 为权威，项目升级后主动失效版本缓存。
+- **修复 Core 控制页卡片溢出：** SwiftUI 删除“服务控制 / 服务信息”外层固定 300pt 高度，改为顶部对齐、统一最小高度并允许右侧信息卡向下自然增长。
+- **接口三层逻辑统一：** runtime 为 Controller → systemd → Management；Controller/Management 传输为直连 → SSH 原 URL → SSH `127.0.0.1` 同 scheme/port/path；systemd SSH host 为显式 target → LAN Management → LAN Controller。
+- **URL 规范化增强：** `/ui/` / `/Ui/` 与已知 Controller/Management API 尾部可直接粘贴，反代前置路径/显式端口保留；省略 scheme 按 LAN→HTTP / 公网→HTTPS；拒绝 `0.0.0.0` / `::` 作为客户端目标，不猜 9090/29090/29091。
+- **systemd 对齐 v4.0.1：** reload 先检查 `CanReload`，默认 unit 无 `ExecReload` 时跳过无效 `systemctl reload` 并进入面板 fallback；start/restart 直控前 best-effort disable unit，保持服务器原来的 no-autostart 策略。
+- **MetaCubeXD LAN-first：** 显式 LAN URL → LAN Management host + 面板报告 standalone port → 显式/状态公网 URL；GoWebUI 提示与实际打开地址使用同一 resolver。
+
+- **对照 mihomo-web-installer v4.0.1 的同版本接口修订：** SwiftUI 与 GoWebUI 统一为 Controller/Management **直连 → SSH 原地址 → SSH 127.0.0.1 同端口**传输链；Controller `/ui/` / `/Ui/` 规范化保留反代前置路径，Management 已知 `/api/*` 后缀可回收到根地址，所有显式端口原样保留且不自动猜 9090/29090/29091。
+- **结果逻辑修订：** Controller 主状态路径从 `/connections` 累计流量差分补算瞬时上传/下载速度，避免主路径成功时菜单栏显示 0 B/s；systemd 日志改用 `journalctl ... -o short-iso` 与参考部署一致保留时间戳。
+- **程序名统一为 MihomoManager：** App bundle、可执行文件、菜单/通知、portable 安装/卸载脚本及 v1.3.1 产物统一新名称；旧 `MihomoCoreManager` Application Support / Keychain 数据自动兼容读取并迁移。
+- 同版本 GoWebUI 网络 hotfix：Controller/Management 端口直连出现 `no route to host`、拒绝连接、超时或临时网关故障时，自动通过服务器 SSH 重试同一 API；服务器访问原 URL 仍失败时，保留原 scheme/port/path 并改试 `127.0.0.1`。覆盖运行日志、订阅管理、代理读取/切换/测速、项目更新等路径，不新增或猜测 9090/29090。LAN Profile 的 SSH 目标留空时可从 Management/Controller URL 自动推断主机；公共域名不会自动探测 SSH。
+- 同版本 CI 修复：GitHub Actions 自动构建改用 `macos-15-intel` 交叉产出 arm64-only 双实现安装包，避免标准 Apple Silicon runner 排队卡住。
+
+- **同版本 hotfix（仍为 v1.3.1 / build 1301）：** 主窗口左侧后端选择标签由“服务器”修正为“后端管理”，其余导航标签保持 v1.3.1 不变。
+- 巡查远端接口并优先采用 Mihomo Controller API：重启 Core 改为优先 `POST /restart`，失败时保留管理面板兼容回退；状态、配置、代理、测速、切换继续直接走 Core API。
+- “服务设置”按 v1.3.0 设置能力补齐：GoWebUI 恢复状态刷新间隔与默认日志行数，补 Management Secret 清除；SwiftUI/GoWebUI 恢复 Controller Secret 留空复用 Management Secret 的兼容说明。
+
+- 主窗口右侧内容顶部统一下移并与左侧品牌区 38pt/px 顶线对齐；SwiftUI/GoWebUI 同步优化顶部与底部留白。
+- 导航“设置”Tab 与页面标题统一改为“服务设置”，相关配置提示同步调整。
+- 使用用户提供的 `MihomoCoreManager-2.png` 作为唯一图标源，重新生成 SwiftUI Xcode AppIcon、GoWebUI 内嵌界面图标与 `.icns` 输入。
+- 修复 GoWebUI 访问局域网后端时可能受环境代理影响的问题：私网、loopback、link-local、Bonjour `.local`、`.lan`、`.home.arpa` 和单标签主机强制直连。
+- GoWebUI macOS/CGO=0 增加系统主机解析回退，改善局域网主机名与 mDNS/Bonjour 连接。
+- Cloudflare Tunnel 稳定性加强：安全 GET/HEAD 失败采用退避重试，瞬时网关故障后清理空闲连接，状态/代理后台轮询连续失败自动降低频率，并保留最近成功代理快照。
+- SwiftUI 状态轮询连续失败时指数退避，管理 API 与 Controller 统一解析 Cloudflare 530 / Error 1033，减少恢复期请求风暴。
+- App / Xcode / GoWebUI runtime 统一升级为 v1.3.1 / build 1301。
+
 ## v1.3.0
 
 - 全新现代化 AppIcon：蓝青/蓝紫渐变、抽象 M 网络路径 + 连接节点，16–1024px 全尺寸共享给 GoWebUI 与 SwiftUI。

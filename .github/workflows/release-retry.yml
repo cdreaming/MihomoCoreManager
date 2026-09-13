@@ -1,0 +1,142 @@
+name: Retry Existing GitHub Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '已有发布 tag，例如 v1.3.1（不会移动或重建 tag）'
+        required: true
+        default: 'v1.3.1'
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: existing-release-retry-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  retry-release:
+    name: 从已有 tag 重建并重试发布
+    runs-on: macos-15-intel
+    timeout-minutes: 90
+    steps:
+      # The workflow itself is intentionally taken from the selected branch so
+      # a broken historical tag can be repaired without moving that tag.
+      - name: Checkout hardened release tooling
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          path: release-tools
+
+      - name: 解析已有 tag
+        id: tag
+        shell: bash
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: |
+          set -Eeuo pipefail
+          TAG="$(printf '%s' "$REQUESTED_TAG" | tr -d '[:space:]')"
+          [[ "$TAG" == v* ]] || TAG="v$TAG"
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "无效 tag: $TAG" >&2
+            exit 1
+          }
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: 保存新版 GitHub Release 重试工具
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cp release-tools/scripts/github-release.sh "$RUNNER_TEMP/github-release.sh"
+          chmod +x "$RUNNER_TEMP/github-release.sh"
+
+      - name: Checkout exact existing release tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+          fetch-depth: 0
+          path: source
+
+      - name: 配置 Go 工具链
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.23.2'
+          cache: false
+
+      - name: 校验 tag 与源码版本
+        shell: bash
+        working-directory: source
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          set -Eeuo pipefail
+          FILE_VERSION="$(tr -d '[:space:]' < VERSION)"
+          [[ "$FILE_VERSION" == "$VERSION" ]] || {
+            echo "$TAG 内 VERSION=$FILE_VERSION，与请求 VERSION=$VERSION 不一致" >&2
+            exit 1
+          }
+          TAG_COMMIT="$(git rev-list -n 1 "$TAG")"
+          HEAD_COMMIT="$(git rev-parse HEAD)"
+          [[ "$TAG_COMMIT" == "$HEAD_COMMIT" ]] || {
+            echo "checkout 未精确落在 $TAG" >&2
+            exit 1
+          }
+          echo "Exact release source: $TAG @ $HEAD_COMMIT"
+          echo "Release host=$(uname -m); output target=arm64"
+
+      - name: 从已有 tag 重建双实现发布资产
+        shell: bash
+        working-directory: source
+        run: bash scripts/simulate-release.sh
+
+      - name: 创建/更新 Release 并上传资产（5xx 安全重试）
+        shell: bash
+        working-directory: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          VERSION: ${{ steps.tag.outputs.version }}
+          GH_RETRY_MAX_ATTEMPTS: '6'
+          GH_RETRY_BASE_SECONDS: '3'
+          GH_RETRY_MAX_SECONDS: '30'
+        run: bash "$RUNNER_TEMP/github-release.sh" publish
+
+      - name: 在线回读正式资产并验证
+        shell: bash
+        working-directory: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          VERSION: ${{ steps.tag.outputs.version }}
+          GH_RETRY_MAX_ATTEMPTS: '6'
+          GH_RETRY_BASE_SECONDS: '3'
+          GH_RETRY_MAX_SECONDS: '30'
+        run: |
+          set -Eeuo pipefail
+          VERIFY="$RUNNER_TEMP/release-retry-verify"
+          rm -rf "$VERIFY" && mkdir -p "$VERIFY"
+          bash "$RUNNER_TEMP/github-release.sh" download "$VERIFY"
+          cd "$VERIFY"
+          shasum -a 256 -c SHA256SUMS.txt
+          test -f "MihomoManager-v${VERSION}-GoWebUI-arm64.pkg"
+          test -f "MihomoManager-v${VERSION}-SwiftUI-arm64.pkg"
+          grep -Fq 'variant=GoWebUI' GoWebUI-RELEASE-PROVENANCE.txt
+          grep -Fq 'variant=SwiftUI' SwiftUI-RELEASE-PROVENANCE.txt
+          echo "Existing-tag GitHub Release verification: PASS"
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-retry-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            source/build/xcodebuild-release.log
+            source/dist/
+            source/dist-portable/
+          if-no-files-found: ignore

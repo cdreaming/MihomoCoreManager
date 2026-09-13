@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @main
-struct MihomoCoreManagerApp: App {
+struct MihomoManagerApp: App {
     @StateObject private var model = AppModel()
     @AppStorage("showMenuBarExtra") private var showMenuBarExtra = true
 
@@ -55,7 +55,7 @@ private struct MenuBarLabelView: View {
             )
             .fixedSize(horizontal: true, vertical: true)
             .id(renderIdentity)
-            .accessibilityLabel("Mihomo Core Manager, \(model.menuBarSummary)")
+            .accessibilityLabel("MihomoManager, \(model.menuBarSummary)")
     }
 
     private var renderedStatusItem: NSImage {
@@ -64,14 +64,14 @@ private struct MenuBarLabelView: View {
             showStatus: model.menuBarShowStatus,
             showSpeed: model.menuBarShowSpeed,
             status: statusText,
-            upload: model.menuBarRateParts(live.status?.speed?.up),
-            download: model.menuBarRateParts(live.status?.speed?.down)
+            upload: model.menuBarRateParts(live.effectiveSpeed?.up),
+            download: model.menuBarRateParts(live.effectiveSpeed?.down)
         )
     }
 
     private var renderIdentity: String {
-        let up = model.menuBarRateParts(live.status?.speed?.up)
-        let down = model.menuBarRateParts(live.status?.speed?.down)
+        let up = model.menuBarRateParts(live.effectiveSpeed?.up)
+        let down = model.menuBarRateParts(live.effectiveSpeed?.down)
         return [
             model.menuBarShowIcon ? "i1" : "i0",
             model.menuBarShowStatus ? "s1" : "s0",

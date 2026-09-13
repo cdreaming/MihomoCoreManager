@@ -7,17 +7,21 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: '要发布的版本，例如 1.3.0 或 v1.3.0'
+        description: '要发布的版本，例如 1.3.1 或 v1.3.1'
         required: true
         type: string
 
 permissions:
   contents: write
 
+concurrency:
+  group: macos-release-${{ inputs.version || github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   release:
     name: arm64 双实现发布（GoWebUI + SwiftUI）
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v6
@@ -53,7 +57,8 @@ jobs:
             echo "请求版本 v${REQUESTED} 与 VERSION v${VERSION} 不一致" >&2
             exit 1
           }
-          [[ "$(uname -m)" == "arm64" ]] || { echo "Release runner 必须为 arm64" >&2; exit 1; }
+          [[ "$(uname -m)" == "x86_64" ]] || { echo "Release runner 必须为 macos-15-intel/x86_64" >&2; exit 1; }
+          echo "Release host=$(uname -m); output target=arm64"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "build=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
@@ -61,16 +66,6 @@ jobs:
       - name: 双实现发布全链路模拟
         shell: bash
         run: bash scripts/simulate-release.sh
-
-      - name: Upload diagnostics on failure
-        if: failure()
-        uses: actions/upload-artifact@v6
-        with:
-          name: release-diagnostics-${{ github.run_id }}
-          path: |
-            build/xcodebuild-release.log
-            dist-portable/
-          if-no-files-found: ignore
 
       - name: 为 workflow_dispatch 准备 tag
         if: github.event_name == 'workflow_dispatch'
@@ -93,21 +88,17 @@ jobs:
             git push origin "$TAG"
           fi
 
-      - name: 创建或更新 GitHub Release
+      - name: 创建或更新 GitHub Release（5xx 安全重试）
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ steps.version.outputs.tag }}
           VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          set -Eeuo pipefail
-          NOTES="docs/releases/v${VERSION}/RELEASE-NOTES.md"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --notes-file "$NOTES" --title "$TAG"
-          else
-            gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$NOTES"
-          fi
-          gh release upload "$TAG" dist/* --clobber
+          GH_RETRY_MAX_ATTEMPTS: '6'
+          GH_RETRY_BASE_SECONDS: '3'
+          GH_RETRY_MAX_SECONDS: '30'
+        run: bash scripts/github-release.sh publish
 
       - name: 在线回读正式资产并验证
         shell: bash
@@ -119,11 +110,22 @@ jobs:
           set -Eeuo pipefail
           VERIFY="$RUNNER_TEMP/release-verify"
           rm -rf "$VERIFY" && mkdir -p "$VERIFY"
-          gh release download "$TAG" -D "$VERIFY"
+          bash scripts/github-release.sh download "$VERIFY"
           cd "$VERIFY"
           shasum -a 256 -c SHA256SUMS.txt
-          test -f "MihomoCoreManager-v${VERSION}-GoWebUI-arm64.pkg"
-          test -f "MihomoCoreManager-v${VERSION}-SwiftUI-arm64.pkg"
+          test -f "MihomoManager-v${VERSION}-GoWebUI-arm64.pkg"
+          test -f "MihomoManager-v${VERSION}-SwiftUI-arm64.pkg"
           grep -Fq 'variant=GoWebUI' GoWebUI-RELEASE-PROVENANCE.txt
           grep -Fq 'variant=SwiftUI' SwiftUI-RELEASE-PROVENANCE.txt
           echo "GitHub Release online verification: PASS (GoWebUI.pkg + SwiftUI.pkg)"
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            build/xcodebuild-release.log
+            dist/
+            dist-portable/
+          if-no-files-found: ignore

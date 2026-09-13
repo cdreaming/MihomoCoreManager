@@ -2,7 +2,7 @@
 
 ```text
 ┌──────────────────────────── Apple Silicon macOS ────────────────────────────┐
-│ MihomoCoreManager.app                                                      │
+│ MihomoManager.app                                                      │
 │                                                                            │
 │  SwiftUI Window                  MenuBarExtra                              │
 │  ┌───────────────┐              ┌────────────────────────┐                 │

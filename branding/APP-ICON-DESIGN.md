@@ -1,12 +1,12 @@
 # Mihomo Core Manager App Icon
 
-v1.3.0 adopts a modern macOS-style icon: a cyan-to-blue-to-violet rounded tile with a soft folded-ribbon `M` mark.
+v1.3.1 replaces the previous artwork with the user-provided `MihomoCoreManager-2.png`: a dark fox mark with cyan/blue/violet neon accents and orbital nodes.
 
-Design goals:
+Design / release rules:
 
-- clear silhouette at 16–32 px menu/Dock scales;
-- modern macOS depth without photorealistic clutter;
-- blue/violet network-tool identity consistent with the existing UI;
-- one master asset shared by SwiftUI/AppKit and Go/AppKit/Web UI packaging.
+- `branding/MihomoCoreManager-2.png` is the original uploaded source and must be kept unchanged.
+- `branding/AppIcon-master-1024.png` is the normalized 1024×1024 release master generated from that source.
+- SwiftUI/AppKit and Go/AppKit/Web UI consume the same generated AppIcon assets.
+- The in-app sidebar/overview branding and GoWebUI brand tiles use the same application icon.
 
-`branding/AppIcon-master-1024.png` is the release master. Run `python3 scripts/generate-app-icon.py` to regenerate the Xcode AppIcon set and the GoWebUI embedded 128 px brand asset.
+Run `python3 scripts/generate-app-icon.py` to regenerate the master, Xcode AppIcon set and GoWebUI embedded 128 px asset.
