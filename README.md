@@ -1,337 +1,521 @@
-# MihomoManager for macOS
+# MihomoManager for macOS v1.3.3
 
-对照 **mihomo-web-installer v4.0.1** 的部署与管理接口语义维护的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.3.2 (build 1302)**；本版重点修复 GoWebUI 的 macOS 15+ 局域网访问、Keychain Secret 一致性和 SSH 回退优先级。
+面向 **Apple Silicon macOS** 的 Mihomo 桌面管理客户端。项目同时维护 **GoWebUI** 与 **SwiftUI** 两套正式实现，用于管理远端 Mihomo Controller、Mihomo Core 管理面板、订阅、日志、代理策略和项目升级。
 
-## v1.3.2
+当前版本：**v1.3.3 (build 1303)**  
+支持架构：**arm64**  
+最低系统：**macOS 14.0**
 
-v1.3.2 以 v1.3.1 为基线，完成一次针对网络、Secret、服务控制与打包链的完整修复：
+## v1.3.3 本次优化
 
-- **修复 GoWebUI 局域网根因。** 正式构建切换到 Go 1.26.8，移除 `-buildid=`，并在打包后强制验证 Mach-O `LC_UUID`；缺失 UUID 直接阻止发布。两套 App 同时声明 `NSLocalNetworkUsageDescription`。
-- **修复 Management Secret 错位。** GoWebUI 与 SwiftUI 统一使用 `cc.kkr.MihomoManager.profile-secret`，并兼容迁移 v1.3.1 GoWebUI 误写的 `cc.kkr.MihomoManager`。Secret 保存后立即回读验证。
-- **SSH 改为显式高级回退。** 不再从 Controller/Management LAN URL 自动推断 SSH 主机。服务状态/启停/重启/重载/日志优先 Controller 或 Core 服务面板 API，只有明确填写 SSH target 时才允许 systemd/journalctl 回退。
-- **状态文案消除歧义。** `GoWebUI · Remote` 改为 `GoWebUI · 本机界面`；运行时显示“后端已连接 · …”或“后端未连接 · 检查设置”，它不再被误解为 App 本身端口占用。
-- GoWebUI 设置文件位于 `~/Library/Application Support/MihomoManager/settings.json`，运行快照位于 `Runtime/`；Secret 只保存在 macOS Keychain。
+- **统一 SwiftUI / GoWebUI 左下角后端状态。** 后端连接成功时显示 `后端已连接 · <manager>`，例如 `后端已连接 · Mihomo Controller`；持续连接失败后显示 `后端未连接 · 检查设置`。
+- **重新排版 Core 控制页的服务优先级说明。** 不再使用单段长文本，改为标题 + 四行缩进结构：
+  - 重启/热重载先走 Mihomo Controller API；
+  - 服务生命周期与日志随后走 Core 服务面板 API；
+  - 避免因局域网直连失败而自动触发 SSH 认证；
+  - 只有显式配置 SSH 目标时才尝试 `mihomo.service/systemd`。
+- **README 重新按“当前版本 → 功能 → 安装 → 界面 → 架构 → 运维 → 发布 → 仓库结构”组织。** 历史版本细节统一保留在 [`CHANGELOG.md`](CHANGELOG.md) 与 `docs/releases/`，不再把所有旧版本逐段堆叠在项目首页。
+- **根目录加入界面截图。** `HomePage.png` 与 `CorePage.png` 直接用于 README 预览。
 
-完整说明见 `docs/releases/v1.3.2/RELEASE-NOTES.md` 与 `docs/releases/v1.3.2/QA-v1.3.2.md`。
+> [!IMPORTANT]
+> v1.3.0 起项目固定维护两套实现：**GoWebUI** 与 **SwiftUI**。两者共享 `VERSION`、`BUILD_NUMBER`、应用图标与发布版本，但 UI 源码独立。GoWebUI portable installer 与正式 GoWebUI `.pkg` 共用同一个 `scripts/build-gowebui-app.sh`；SwiftUI `.pkg` 由 Xcode 独立构建。两种实现最终都安装为 `/Applications/MihomoManager.app`，应二选一使用。
 
-## v1.3.1
+---
 
-> **同版本修订：** 本源码仍是 `v1.3.1 / build 1301`，不升级版本。程序对外名称统一为 **MihomoManager**；参考 `mihomo-web-installer v4.0.1` 逐项复核 Controller、Management、systemd/SSH、MetaCubeXD 与结果展示链路，并按 **默认 → 备选 → 兜底** 收敛。URL 会兼容 `/ui/` / `/Ui/` 与反代前置路径，显式端口原样保留且不会猜 9090/29090/29091。完整接口巡查见 `API-AUDIT-v1.3.1.md`，详细接口/端口实现见 `INTERFACE-IMPLEMENTATION-v1.3.1.md`.
+## 主要特性
 
-v1.3.1 以 v1.3.0 为稳定基线，集中修正主界面排版、统一“服务设置”命名，并增强局域网与 Cloudflare Tunnel 后端连接稳定性：
+- **Apple Silicon 原生目标**：发布产物固定为 `arm64`，最低 macOS 14.0。
+- **双实现发布**：
+  - GoWebUI：Go runtime + AppKit/JXA + WKWebView/Web UI。
+  - SwiftUI：SwiftUI + AppKit 原生实现。
+- **多服务器 Profile**：可保存多个 Mihomo 服务器并快速切换。
+- **Mihomo Controller 直连**：读取 Core 版本、运行模式、连接数、流量、内存、代理组、Provider 和测速信息。
+- **Core 生命周期管理**：启动、停止、重启、热重载采用 API-first 策略，显式 SSH/systemd 仅作为高级末级回退。
+- **代理切换**：支持 `rule / global / direct` 模式、策略组节点切换与延迟测试。
+- **订阅管理**：通过 Core 服务面板 `/api/subscriptions` 读取、保存并应用订阅配置。
+- **运行日志**：优先使用 Core 服务面板历史日志接口；显式配置 SSH 后才允许 `journalctl` 回退。
+- **项目升级**：调用 Core 服务面板的项目升级 API，检查和升级 Mihomo Core、MetaCubeXD 与 Core 管理面板。
+- **MetaCubeXD 集成**：可从客户端打开独立 MetaCubeXD 页面，LAN / 公网地址均由 Profile 或服务端部署元数据决定，不猜测业务端口。
+- **状态栏菜单**：运行状态、实时网速、常用 Core 操作和代理快捷切换可在 macOS 状态栏完成。
+- **Keychain Secret**：Management Secret / Controller Secret 保存到 macOS Keychain，不写入普通 Profile JSON。
+- **局域网访问声明**：SwiftUI 与 GoWebUI 都声明 `NSLocalNetworkUsageDescription`，面向 macOS 15+ 的 LAN Controller / Management / MetaCubeXD 访问。
+- **端口不猜测**：不会自动补 `9090`、`29090` 或 `29091`；URL 的 scheme、显式端口与反向代理前缀以用户配置为准。
+- **GoWebUI 本地桥接隔离**：只监听随机 `127.0.0.1` 端口，并使用每次启动生成的本地 token 保护 WebKit ↔ Go runtime 接口。
 
-- **修复三组件版本显示。** Controller `/version` 继续作为 Core 版本权威；Core 面板 / MetaCubeXD 版本改由 v4.0.1 Management `/api/status` 以 30 秒慢速元数据通道补齐并合并到实时状态，避免侧栏长期显示 `--` 或把 stale Management Core 版本覆盖 Controller。
-- **修复 Core 控制卡片溢出。** SwiftUI 移除“服务控制 / 服务信息”外层固定 300pt 高度，改为顶部对齐 + 相同最小高度，右侧 9 行服务信息可向下自然增长，不再越过卡片行。
-- **部署接口三层收敛。** Core runtime 按 Controller → systemd → Management；Controller/Management 网络层按直连 → SSH 原 URL → SSH loopback 同端口；systemd SSH 目标按显式 target → LAN Management host → LAN Controller host。
-- **URL 细节统一。** `/ui/` / `/Ui/`、`/version` 等可直接粘贴，反代前置路径和显式端口保留；省略 scheme 时 LAN→HTTP、公网→HTTPS；拒绝把 `0.0.0.0` / `::` 监听地址当客户端目标，且绝不自动补 9090/29090/29091。
-- **systemd 行为对齐 v4.0.1。** reload 先检查 `CanReload`，默认 unit 无 `ExecReload` 时直接回退 Management；start/restart 直控 systemd 时 best-effort 保持 `mihomo.service` disabled，避免改变服务器“手工运行但不开机自启”的策略。
-- **MetaCubeXD LAN 优先。** 显式 LAN URL 优先；否则 Management 为 LAN 且 `/api/status` 返回 standalone port 时使用同服务器 LAN host + 该端口，再回退公网 URL，不猜 `29091`。
+---
 
-- **主窗口左右顶部重新对齐。** SwiftUI 右侧页面统一使用 38pt 顶部间距、30pt 底部间距；GoWebUI 同步使用 38px 顶部间距，并修正 macOS shell 覆盖样式，右侧内容不再高于左侧品牌区。
-- **“设置”Tab 改为“服务设置”。** SwiftUI 与 GoWebUI 导航及页面标题同步更新，相关连接提示也指向“服务设置”。
-- **应用与界面图标替换为 `MihomoCoreManager-2.png`。** 原始上传 PNG 保存在 `branding/MihomoCoreManager-2.png`，由 `scripts/generate-app-icon.py` 统一生成 16–1024px AppIcon、GoWebUI 品牌图和最终 `.icns` 输入，SwiftUI/GoWebUI 共用同一视觉来源。
-- **GoWebUI 局域网后端连接修复。** RFC1918/loopback/link-local、`.local`/`.lan`/`.home.arpa` 与单标签主机不再错误继承 `HTTP(S)_PROXY`；CGO=0 的 macOS 构建增加系统解析器回退，改善 Bonjour/mDNS 与局域网主机名访问。
-- **Cloudflare Tunnel 容错加强。** GoWebUI 对安全读请求采用更温和的重试与失败退避、断开异常 keep-alive、降低代理菜单后台抓取频率；SwiftUI 状态轮询在连续失败时指数退避，并统一识别 Cloudflare 530/Error 1033，避免 Tunnel 恢复期间持续高频请求。
-- 版本统一升级为 **v1.3.1 / build 1301**，并补充 LAN/Tunnel、布局、图标与双实现发布 QA 门禁。
+## 安装 / 更新 / 卸载
 
-## v1.3.0
+### 方法 A：GoWebUI portable installer
 
-v1.3.0 固化新的双实现开发/发布工作流，并更换全套现代化应用图标：
+适合快速安装、ChatGPT Web / Linux 交付验证和本地 UI 验收。
 
-- **开发交付固定为：源码 + GoWebUI portable。** ChatGPT Web/Linux 直接调用 `scripts/build-gowebui-app.sh` 构建 Go/AppKit/Web UI，再由 `scripts/build-portable-installer.sh` 打成可快速安装的 portable preview。
-- **GitHub Release 同时生成两个明确区分的 PKG：** `MihomoCoreManager-v1.3.0-GoWebUI-arm64.pkg` 与 `MihomoCoreManager-v1.3.0-SwiftUI-arm64.pkg`。GoWebUI.pkg 与 portable preview 共用同一个 App builder，因此不再发生“portable 是一套 UI、GitHub Go 版又是另一套 UI”的翻译漂移；SwiftUI.pkg 作为独立原生实现并行维护。
-- 新增共享 `BUILD_NUMBER`，v1.3.0 使用 **build 1300**，避免简单去掉版本点号后出现 build 倒退。VERSION、BUILD_NUMBER、AppIcon、Release Notes 均为两套实现的共享发布输入。
-- 新图标采用蓝青→蓝紫渐变的 macOS 圆角方形底，中心为抽象流动 M/网络路径和连接节点；SwiftUI Xcode AppIcon 与 GoWebUI `.icns` 均从同一份 `AppIcon.appiconset` 生成。
-- 主窗口左上版本信息继续保持 **本程序版本 / Core 版本 / Core 面板 / MetaCubeXD**。侧栏底部增加实现标识：GoWebUI 与 SwiftUI 分别明确显示自身变体。
-- `ai-project-development-template` 同步固化“双实现 macOS 发布”规则：开发阶段交付源码 + GoWebUI portable，GitHub 同时构建 GoWebUI.pkg + SwiftUI.pkg，并要求 preview/GoWebUI.pkg 共用单一 App builder 与 release lock。
+安装包名称：
 
-## v1.2.12
+```text
+MihomoManager-v1.3.3-GoWebUI-arm64-portable-installer.zip
+```
 
-v1.2.12 解决“本地/portable 验证正常，但 GitHub 原生 `.pkg` UI 又不同”的发布结构问题，并调整主窗口版本区：
+使用步骤：
 
-- 主窗口左上版本信息固定为四行，顺序为 **本程序版本 / Core 版本 / Core 面板 / MetaCubeXD**。本程序版本读取 App bundle；Core 面板读取远端 `versions.management_panel`，两者不再混用。
-- 正式 Release 改为 **One Canonical Native App**：Xcode Release 只编译一次，签名完成后冻结唯一 `MihomoManager.app`；`.app.zip`、`native-installer.zip`、`.pkg` 全部只封装这一份 App。
-- 新增 `NATIVE-APP-MANIFEST.json`：对冻结 App 内每个文件和符号链接生成确定性的 SHA-256 树清单。发布前会重新解包 `.zip`、native installer 和 `.pkg`，逐文件比较；任何差异都会让 GitHub Release 失败。
-- 新增 `RELEASE-PROVENANCE.txt`，记录版本、build、Git commit、Xcode/Swift 版本、App tree SHA-256 与主二进制 SHA-256，Release 上传后还会在线下载全部资产再次验证。
-- **portable-runtime 仍保留回归测试，但不再作为正式 GitHub Release 安装包发布。** 以后需要先验证 UI，请使用 GitHub 生成的 `arm64-native-installer.zip`；它与 `.pkg` 内是同一份原生 App，而不是另一套 UI 实现。
-- 保留 v1.2.11 的状态栏背景色、隐藏滚动条、代理组当前线路刷新，以及此前窗口/状态栏稳定性修复。
+1. 在 Apple Silicon Mac 上解压 ZIP。
+2. 双击：
 
-## v1.2.11
+```text
+Install-MihomoManager.command
+```
 
-v1.2.11 针对 GitHub/Xcode 原生 `.pkg` 中仍可复现的状态栏差异继续修正：
+3. 安装脚本会把 App 安装到：
 
-- 状态栏下拉窗口背景按提供的 macOS 网络面板参考图改为中性深灰 **#1A1A1D**，卡片使用 #1C1C21 / #201F23，避免偏蓝和过深。
-- 超屏菜单保留滚轮/触控板纵向滚动，但通过 AppKit 直接关闭 `NSScrollView` 的 vertical scroller；不再依赖 SwiftUI `scrollIndicators(.hidden)`，GitHub Release 版也不会显示右侧粗拖动条。
-- 代理组标题改为一个不可拆分的 `组名 · 当前线路` 文本，并在原生 MenuBarExtra 窗口每次成为 key 时刷新 Controller `now`；同时处理首次加载与菜单打开并发，避免只显示组名。
-- 主窗口左上版本区将原“Core 面板 v4.0.0”改为“程序版本”，直接读取 App 自身 `CFBundleShortVersionString`；服务端 v4.0.0 只作为 API 兼容基线，不再冒充客户端版本。
-- 保留 v1.2.10 的单图状态栏实时网速、v1.2.9 自适应菜单高度与 v1.2.8 窗口生命周期修复。
+```text
+/Applications/MihomoManager.app
+```
 
-## v1.2.10
+4. 如果 Finder 因 Gatekeeper 阻止 `.command`，请打开“终端”，把 `Install-MihomoManager.command` 拖入终端窗口后回车执行。
+5. portable preview 没有 Developer ID 公证；安装脚本会清理 quarantine、复制 App、执行 ad-hoc 签名并校验后启动。
 
-v1.2.10 继续针对 GitHub/Xcode 原生 `.pkg` 安装版统一状态栏与主窗口体验：
+### 方法 B：GitHub Release 正式安装包
 
-- 状态栏常驻标签改为**单一 AppKit 模板图像**渲染图标、运行状态与双行实时网速，绕过 `MenuBarExtra` 在 Release 构建中可能只保留首个图标的问题；“图标 / 状态 / 网速”开关会直接改变整张状态栏图像。
-- 状态栏下拉菜单采用更柔和的深色背景；菜单超过一屏时仍可滚动，但隐藏系统纵向滚动条。
-- 代理组当前选择改为与组名同一行的明确胶囊标签，并在每次打开状态栏菜单时重新读取 Controller `now`，避免 GitHub `.pkg` 版看不到已选线路或显示旧值。
-- 主窗口右侧内容区改为略抬高的深灰蓝渐变背景，降低近纯黑大面积背景带来的压暗感，同时保留卡片层级对比。
-- 保留 v1.2.9 自适应菜单高度以及 v1.2.8 窗口生命周期/恢复模式稳定性修复。
+正式 Release 同时发布两套明确区分的安装包：
 
-## v1.2.9
+```text
+MihomoManager-v1.3.3-GoWebUI-arm64.pkg
+MihomoManager-v1.3.3-SwiftUI-arm64.pkg
+```
 
-v1.2.9 修复 GitHub/Xcode `.pkg` 安装版状态栏窗口的高度策略：
+二者都安装到：
 
-- 状态栏下拉窗口不再强制显示为固定高度滚动框。
-- 菜单内容能在当前屏幕完整显示时，按内容自然高度一次性全部展开，不显示多余滚动区域。
-- 菜单内容超过当前屏幕可用高度时，才启用纵向滚动，可上下滑动访问全部项目。
-- 高度上限跟随状态栏窗口所在显示器的 `visibleFrame`，切换屏幕或显示参数后会自动刷新。
-- 保留 v1.2.8 的主窗口生命周期与状态栏恢复模式稳定性修复。
+```text
+/Applications/MihomoManager.app
+```
 
-## v1.2.8
+因此同一台 Mac 上只需要选择其中一种实现；后安装的版本会覆盖前一实现的 App。
 
-v1.2.8 以 v1.2.7 为稳定基线，集中修复 portable 安装版在“关闭主窗口 → 从状态栏重新打开”路径上的窗口生命周期与状态栏稳定性问题：
+### 更新
 
-- App / Xcode / portable runtime 统一为 **v1.2.8 / build 128**。
-- portable 主窗口显式关闭 `releasedWhenClosed`，主窗口关闭后保留原生 `NSWindow` 与 WebKit/拖拽视图，状态栏再次打开时不再访问已释放窗口对象。
-- 每次从状态栏打开主窗口前重新确认 `movable` / `movableByWindowBackground`，保留顶部 22px 原生拖拽区，修复重新打开后窗口无法移动。
-- 主状态栏 JXA shell 若发生一次瞬时退出，会先自动重启完整状态栏一次；连续失败才进入最小恢复模式，减少无必要的“状态栏渲染已降级”。
-- 初次构建服务器/代理菜单与状态刷新增加 fail-soft 保护，损坏或暂时不完整的本地快照不会带退出整个状态栏进程。
-- 恢复模式窗口也改为保留窗口对象并加入原生拖拽区；即使真正进入恢复模式，主窗口仍可正常移动和再次打开。
+安装更高版本的 `.pkg` 或运行新版 portable `Install-MihomoManager.command` 即可覆盖 App。
 
-## v1.2.7
+普通设置默认位于：
 
-v1.2.7 以本次 `source-4` 功能代码为基线，并重新套用已经成功发布的 **v1.2.5 fixed5 发布工程设置**。业务层保留 source-4 的流畅度、状态缓存、代理菜单即时刷新和完整左右布局；发布层恢复经过 v1.2.4 / v1.2.5 实际发布验证的完整硬门禁。
+```text
+~/Library/Application Support/MihomoManager/settings.json
+```
 
-- App / Xcode / portable runtime 统一为 **v1.2.7 / build 127**。
-- CI 与 Release 都只调用 `scripts/simulate-release.sh`，避免两套发布流程漂移。
-- strict macOS preflight 自行重建/复核 manifest，并使用当前 Xcode macOS SDK + `arm64-apple-macos14.0` 做 semantic typecheck。
-- Release Xcode build 固定 `SWIFT_ENABLE_BATCH_MODE=NO`，保存完整 `xcodebuild-release.log` 并在失败时回显真实编译错误。
-- 恢复 v1.2.4 Xcode 16.4 兼容写法：显式 Optional switch、独立 `ProxySortPicker`、拆分大型 SwiftUI result builder、显式 `Hashable`、具体 history 中间类型和 macOS 14 双参数 `onChange`。
-- portable 异步缓存/状态刷新重新纳入 `backgroundWG + goBackground()` 生命周期；TempDir 测试清理前等待后台任务，避免 macOS/APFS `directory not empty` 竞态。
-- 发布模拟包含目标竞态重复测试、shuffle、race、vet、Darwin/arm64 runtime/test binary 交叉编译、portable ZIP/Mach-O/版本校验；GitHub CI/Release 使用标准 `macos-15-intel` 主机交叉构建，Xcode 强制 `ARCHS=arm64`、Go 强制 `GOARCH=arm64`，再用 `lipo` / Mach-O 检查验收 arm64-only 产物并完成最终 SHA-256 回放；这样避免标准 M1 runner 容量排队导致自动构建长期停在 “Waiting for a runner”。
-- `SOURCE-SHA256SUMS.txt` 按最终源码重新生成。
+GoWebUI 运行时快照位于：
 
-## v1.2.5
+```text
+~/Library/Application Support/MihomoManager/Runtime/
+```
 
-v1.2.5 以 v1.2.4 的代理排序、测速、Cloudflare 容错和状态栏性能修复为稳定基线，继续优化状态栏代理切换刷新和主窗口布局：
+Secret 保存在 macOS Keychain。覆盖 App 本身不会主动删除这些 Profile / Secret 数据。
 
-- 状态栏下拉菜单中的上传/下载实时网速保持**同一行**显示；代理组区域继续使用前后分隔线独立成组。
-- 修复从状态栏重新选择线路/代理组后，顶层代理组后缀仍停留在旧线路的问题：成功选择后立即更新本地菜单快照和可见菜单标题，再延迟同步 Controller 权威状态。
-- 原生 SwiftUI 同步避免成功 PUT 后首次旧 `now` 响应覆盖新选择，并让代理组菜单 identity 包含当前选中项，确保后缀和勾选立即刷新。
-- 主窗口重构为完整的**左侧导航 + 右侧内容**布局，去掉独立视觉标题栏；portable 仅保留 22px 不可见原生拖拽区域，原生 SwiftUI 使用 `hiddenTitleBar + fullSizeContentView`。
-- 左侧标题区采用蓝紫 `M` 图标 + 两行 `Mihomo Core / 管理面板`；标题改用与界面一致的系统字体和主文字色（深色界面呈柔和白色），版本信息置于其下，并移除重复的独立 `Mihomo Core` 标题。
-- 侧栏统一为 256pt/px，标题字重、间距、主文字色与深色背景按 Dashboard 风格统一。
-- 版本保持 v1.2.5 / build 125。
+### 卸载
 
-## v1.2.4
+portable 包提供：
 
-**v1.2.4 Cloudflare 容错修订**：Controller 经 Cloudflare Tunnel 暴露时，HTTP 530 / Error 1033 会自动短重试；仍不可达时，代理页和状态栏继续使用最近一次成功的代理/延时快照，并显示简短断线提示，不再输出整段 Cloudflare JSON/HTML。
+```text
+Uninstall-MihomoManager.command
+```
 
-**v1.2.4 修订版**：修复默认代理组顺序、线路延时显示和状态栏菜单卡顿。默认组顺序现在以 `GLOBAL.all` 的配置顺序为准；测速结果会直接回填并兼容 Mihomo `extra/history`；portable 状态栏使用本地原子快照 + 懒加载子菜单，打开菜单不再等待远程 Controller。 线路延时数据同时合并 Mihomo `/providers/proxies`，确保 provider-only 具体节点也进入节点表；嵌套策略组会递归解析到最终叶子节点，并复用其它 Test URL 已成功的正延时。
+它会停止 MihomoManager 并删除：
 
-v1.2.4 基于已经验证 Controller 连接正常的 v1.2.3 继续增强代理管理体验：
+```text
+/Applications/MihomoManager.app
+```
 
-- “代理组”和“代理列表”分别支持 **默认 / 延时 / 质量 / 名字** 四种排序。
-- 默认排序：代理组优先使用 Mihomo `/group` 返回的配置顺序，代理列表保持组内 `all` 原始顺序。
-- 延时排序：按最近一次显式测速结果优先，其次使用 Mihomo 历史延时，未知/超时结果靠后。
-- 质量排序：综合节点存活状态、近期失败次数、延时抖动、平均延时和最新延时，优先显示稳定线路。
-- 代理详情增加“测速当前组”，使用 Mihomo `GET /group/{group}/delay`，只测试当前组。
-- 当前组测速结果按节点名全局共享：同一个节点同时出现在其它代理组时，其它组会立即显示相同测速结果。
-- 状态栏新增代理组顶层入口：每个代理组都可直接测速，并可在子菜单中切换该组代理线路。
-- 原生 SwiftUI 与 portable arm64 安装版同步实现。
-- 版本升级为 v1.2.4 / build 124。
+也可以手工删除该 App。客户端卸载**不会**删除远端 Linux 服务器上的 Mihomo、MetaCubeXD 或 Core 管理面板，也不会自动清除本机 Application Support / Keychain 中保存的 Profile 和 Secret。
 
-## v1.2.3
+---
 
-- **认证修复**：Controller Secret 与原 Core Secret 分离，分别保存到 Keychain；未配置 Controller Secret 时兼容复用 Core Secret，并支持 Mihomo `secret: ''`。
-v1.2.3 在 v1.2.2 稳定发布基线上新增 Mihomo Core 代理切换能力：
+## 界面预览
 
-- 新增侧栏“代理切换”页，直接连接当前服务器配置的 **Direct Core Controller URL**，使用同一份 Core Secret 进行 Bearer 鉴权。
-- 新增运行模式切换：**规则（rule）/ 全局（global）/ 直连（direct）**。
-- 读取并展示代理组、当前选中代理与组内详细代理；支持代理名称筛选。
-- 详细代理展示类型、存活状态、最近延迟以及 UDP / XUDP / TFO 能力信息。
-- 支持 Selector / URLTest / Fallback 类型代理组的节点切换，并在切换后自动刷新当前选择。
-- 原生 SwiftUI 与 portable arm64 安装版同步实现；portable 增加 Controller 模式、代理读取和代理选择回归测试。
-- 版本升级为 v1.2.3 / build 123。
+### 概览
 
-### v1.2.3 Direct Core Controller API
+![MihomoManager 概览](HomePage.png)
 
-| 功能 | Mihomo Core API | 客户端行为 |
-| --- | --- | --- |
-| 读取运行模式 | `GET /configs` | 读取 `mode` |
-| 切换运行模式 | `PATCH /configs` | 写入 `rule` / `global` / `direct` |
-| 读取代理 | `GET /proxies` | 展示代理组与详细代理 |
-| 切换代理 | `PUT /proxies/{group}` | 写入目标代理 `name` |
+### Core 控制
 
-## v1.2.2
+![MihomoManager Core 控制](CorePage.png)
 
-v1.2.2 是 v1.2.1 的 GitHub Actions 构建热修复，状态栏显示逻辑保持 v1.2.1 不变：
+---
 
-- 修复 Release 在执行 `scripts/build-portable-installer.sh` 时因 macOS Runner 未预装 Go 而报 `Go is required`、exit code 1 的问题。
-- `.github/workflows/release.yml` 在 portable 测试/构建前显式使用 `actions/setup-go@v6`，Go 版本由 `portable-runtime/go.mod` 提供。
-- Release 增加 `go version` 与 `CGO_ENABLED=0 go test ./...` smoke test，让 Go 工具链问题在正式发布构建前立即暴露。
-- `.github/workflows/ci.yml` 同步安装 Go，并执行同一个 `scripts/build-portable-installer.sh`，以后 PR/main CI 就能覆盖 portable 发布路径。
-- CI artifact 同时包含 `dist/` 与 `dist-portable/`；v1.2.1 的正式 SwiftUI 状态栏 template image 修复、v1.1.9 下拉面板及 portable/AppKit 行为全部保留。
+## MihomoManager 管理界面
 
-## v1.2.1
+### UI 设计
 
-v1.2.1 是针对 GitHub Actions 正式 Xcode/SwiftUI 构建的状态栏热修复；portable/AppKit v1.2.0 已验证正常的行为保持不变：
+两套正式实现保持相同的信息架构和功能目标：
 
-- 修复正式 SwiftUI `MenuBarExtra` 直接承载双行 `VStack` 时被 macOS 状态栏压缩为单行，导致 GitHub 自动构建版只显示单个数字/单位缺失的问题。
-- 正式版把上传/下载两行速率预渲染为一个固定 55×18pt 的 template `NSImage`，再作为单一状态栏元素交给 `MenuBarExtra`，避免系统重新排版内部两行文本。
-- 上传在上、下载在下；数字左对齐并固定预留 4 个等宽字符位，单位独立列自动切换 `B/s / KB/s / MB/s / GB/s / TB/s`，状态栏本体仍不显示箭头。
-- v1.1.9 自定义下拉面板以及 v1.2.0 portable/AppKit 双行状态栏实现均保持不变。
-- GitHub Release workflow 现在同时构建并发布正式 SwiftUI `.pkg/.zip` 与已验证的 portable arm64 安装包，便于直接回归对比。
+- 左侧固定导航；
+- 顶部页面标题与运行状态；
+- 卡片式 Core / 流量 / 连接信息；
+- 深色 macOS 风格界面；
+- 状态栏常驻菜单；
+- Core 控制、代理、订阅、日志、服务设置与后端管理入口。
 
-## v1.2.0
+GoWebUI 与 SwiftUI 不要求像素级完全一致；需要严格对照 GoWebUI 正式版本时，应比较：
 
-v1.2.0 以 v1.1.9 为基线，只修复状态栏本体的实时网速显示，保留已经达标的自定义下拉面板：
+```text
+GoWebUI portable ↔ GitHub GoWebUI.pkg
+```
 
-- 修复 portable 安装版依赖 `NSStatusBarButton` 多行 title 导致网速在状态栏本体被系统裁切/不显示的问题。
-- portable 改为在状态栏按钮内放置可将点击转交给状态栏按钮的原生 AppKit overlay，上传与下载由两组独立 `NSTextField` 渲染，不再依赖多行 title，也不恢复高风险的 `NSButtonCell` 多行属性、`attributedTitle` 或 `CATextLayer`。
-- 上传固定在上半行、下载固定在下半行，整个双行速度块向状态栏底部对齐。
-- 速度文本只显示数字与自动切换的 `B/s / KB/s / MB/s / GB/s / TB/s` 单位，不显示上传/下载箭头。
-- 数字区域预留 4 个等宽字符位并左对齐，单位使用独立列；实时数值变化和单位切换时两行左边缘保持稳定。
-- 原生 SwiftUI `MenuBarExtra` 标签同步使用相同的双行、左对齐、4 字符数字位规则。
-- v1.1.9 的紧凑自定义下拉面板与其它按钮/页面修复全部保持不变。
+因为两者共用同一 Go runtime、`portable-runtime/ui/index.html`、图标和 App builder。
 
-## v1.1.9
+### 页面职责
 
-v1.1.9 以 v1.1.8 为基线，集中重做 macOS 状态栏显示与下拉菜单体验：
+| 页面 / 模块 | 主要职责 |
+|---|---|
+| 概览 | Core 运行状态、内存、流量、连接数、实时流量图、快速控制 |
+| Core 控制 | Core 启动/停止/重启/热重载、服务信息、MetaCubeXD、项目升级入口 |
+| 代理切换 | 运行模式、策略组、节点选择、测速 |
+| 订阅管理 | 读取、编辑并应用服务器端订阅 |
+| 运行日志 | 获取历史日志并刷新显示 |
+| 服务设置 | Management / Controller / MetaCubeXD / SSH / Keychain Secret / 刷新参数 |
+| 后端管理 | 多服务器 Profile 选择、增删与切换 |
+| 状态栏菜单 | 状态、网速、常用 Core 动作、代理快捷选择 |
 
-- 状态栏默认组合显示改为“应用图标在左 + 上传/下载双行网速在右”；上传在上、下载在下，数值使用等宽数字并右对齐，流量变化时不会左右跳动。
-- 运行状态在显示图标时改为图标右下角的小状态点，不再和双行网速争抢横向空间；关闭图标或网速时仍保留对应状态文案。
-- 原生 `MenuBarExtra` 从标准长菜单升级为 `.window` 自定义面板：增加品牌/版本/状态头部、实时上下行卡片、当前服务器卡片、Core 快捷控制、常用入口、项目维护与状态栏显示开关。
-- 下拉面板操作按钮统一使用更明显的按压/回弹反馈，并直接映射当前异步操作的 busy 状态。
-- portable arm64 状态栏同步修复上传/下载顺序、右对齐与固定宽度；下拉菜单改为紧凑的“服务器 / Core 控制 / 管理与工具 / 状态栏显示”分组子菜单，并补充 SF Symbols 图标。
-- 保留 v1.1.8 的通知自动收起、侧栏命中区域修复和设置页首次加载修复。
+### 左下角后端状态
 
-## v1.1.8
+v1.3.3 统一使用远端实际 manager，而不是展示本地 UI 技术栈：
 
-v1.1.8 以 v1.1.7 按钮动画为基线，修复日常交互中的四个体验问题：
+```text
+后端已连接 · Mihomo Controller
+后端已连接 · Mihomo Core Management Panel
+后端未连接 · 检查设置
+```
 
-- 成功通知自动收起：按钮操作产生的成功提示会在操作真正结束、按钮退出 busy 状态后自动消失；错误提示仍保留供排查。
-- 左侧页面导航整行可点击，原生行高提升为 47pt，增加缩放、下沉、亮度与 spring 回弹；portable UI 同步扩大命中区域。
-- 修复“设置”持久页面首次打开不加载当前服务器草稿的问题，无需再新增服务器即可看到“服务器连接 / Core 配置 / App 与状态栏 / 保存设置”等完整选项。
-- 同步修复运行日志首次切换时的加载任务 ID。
-- 完整保留 v1.1.7 的当前操作 spinner、旋转 busy cursor 和项目升级完成检测。
+实际成功文案取自状态返回的 `service.manager`；为空时使用兼容兜底名称。
 
-## v1.1.7
+---
 
-v1.1.7 优化异步操作按钮的完整执行反馈：
+## 后端与 API 架构
 
-- “开始项目升级”不再在远端仅返回“已启动”后立即恢复；持续读取升级日志的 `running` 状态，确认任务结束后才恢复初始按钮。
-- 升级 Core 管理面板导致远端短暂重启/断连时保持“项目升级中…”状态并继续检测，避免误判失败或提前结束动画。
-- 原生 SwiftUI 为当前执行按钮显示 `ProgressView`；鼠标停留在执行中按钮时切换为旋转 busy cursor，开启“减少动态效果”时自动使用静态指针。其它操作保持禁用，完成/失败后统一由 `defer` 恢复。
-- portable Web UI 为执行中按钮增加 spinner、`aria-busy` 和全局 `cursor: progress` 忙碌指针反馈。
-- 按压效果增强：原生按钮按下缩放到 `0.955` 并加入位移/阴影反馈；Web 按钮缩放到 `0.945` 并增加高亮闪层与内阴影。
-- 保留 `prefers-reduced-motion` / macOS Reduce Motion 兼容。
+```text
+┌──────────────────────────── Apple Silicon macOS ────────────────────────────┐
+│                            MihomoManager.app                                │
+│                                                                            │
+│   SwiftUI/AppKit                              GoWebUI/AppKit/WebKit         │
+│        │                                             │                     │
+│        └──────────────────┬──────────────────────────┘                     │
+│                           v                                                │
+│                 Profile / Keychain / App Model                             │
+└───────────────────────────┬────────────────────────────────────────────────┘
+                            │
+          ┌─────────────────┼──────────────────┐
+          │                 │                  │
+          v                 v                  v
+  Mihomo Controller   Core 服务面板 API   显式 SSH / systemd
+  /version            /api/status         mihomo.service
+  /connections        /api/action         journalctl
+  /configs            /api/logs           仅配置目标后启用
+  /proxies            /api/subscriptions
+  /group              /api/project-update/*
+          │                 │
+          └──────────┬──────┘
+                     v
+                 Mihomo Core
+                     │
+                     └──────── MetaCubeXD / Proxy Providers / Connections
+```
 
-## v1.1.6
+### Mihomo Controller API
 
-v1.1.6 再次修复按钮交互，直接恢复 v1.0.9 的实现：
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| `GET` | `/version` | Core 在线探测与版本 |
+| `GET` | `/connections` | 累计流量、连接数、内存快照 |
+| `GET` | `/configs` | 读取运行配置 / 模式 |
+| `PATCH` | `/configs` | 切换 `rule / global / direct` |
+| `PUT` | `/configs?force=true` | 按 Profile 配置路径热重载 |
+| `POST` | `/restart` | 原生 Core 重启 |
+| `GET` | `/proxies` | 代理 / 策略组快照 |
+| `GET` | `/group` | 策略组元数据 |
+| `GET` | `/providers/proxies` | Provider 叶子节点与测速数据 |
+| `GET` | `/group/{name}/delay` | 策略组测速 |
+| `PUT` | `/proxies/{name}` | 选择策略组当前代理 |
 
-- `DashboardActionButtonStyle` 与 v1.0.9 源码实现一致。
-- 删除 v1.1.5 新增的 `DashboardPressButtonStyle`。
-- 删除显式 `0.08s easeOut` 和额外 disabled opacity 动画。
-- 侧栏、管理后端、Popover、文本链接、通知关闭按钮恢复 v1.0.9 的 `.plain` 行为。
-- 主操作按钮保留 v1.0.9 的按下背景反馈与 `0.985` 缩放。
-- v1.1.5 的设置页纵向结构、双列“App 与状态栏”和统一页面 UI 全部保留。
+Controller URL 可以直接粘贴 `/ui/`、`/Ui/`、`/version`、`/connections`、`/configs` 等已知路径；保存时会归一化到 API 根路径，同时保留反向代理前置路径和显式端口。
 
-## v1.1.5
+### Core 服务面板 API
 
-- 全量统一按钮按压反馈，参考 v1.0.9 的背景变化与 `0.985` 缩放，并补充稳定的 0.08 秒回弹。
-- 移除会复制 Button 子树的 `ViewThatFits`。
-- 设置页纵向排列；“App 与状态栏”改为双列分组。
-- 概览和 Core 成对卡片统一高度；日志页统一页面结构。
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| `GET` | `/api/status` | 服务状态、部署元数据、版本 |
+| `POST` | `/api/action` | Core 生命周期动作 |
+| `GET` / `POST` | `/api/subscriptions` | 订阅读取、保存并应用 |
+| `GET` | `/api/logs?lines=N` | 最近 N 行历史日志 |
+| `GET` | `/api/project-update/check` | 检查三组件项目更新 |
+| `POST` | `/api/project-update/apply` | 执行项目更新 |
+| `GET` | `/api/project-update/log` | 项目升级日志 |
 
-## v1.1.4
+认证使用：
 
-这是 v1.1.3 统一布局版的构建修复版本，正式版本升级为 **v1.1.4 (build 114)**。
+```http
+Authorization: Bearer <Core Secret>
+```
 
-- 修复 `OverviewView.swift` 中 SwiftUI `frame` 参数组合导致的 Xcode 16.4 编译失败。
-- 将固定宽度与最小高度拆分为两个合法的 `frame` 修饰器，保持“实时流量 / 快速控制”布局设计不变。
-- 增加源码校验规则，提前拦截固定 `width/height` 与 `min/max/ideal` 尺寸混用的非法 `frame` 调用。
-- 保留 v1.1.3 的统一页面布局、紧凑标题栏和 v1.0.9 菜单栏样式。
+v4.0.1 Management API 可以复用同一 Mihomo Core Secret。MihomoManager 允许 Management Secret 与 Controller Secret 相互复用，避免同一凭据重复保存。
 
-## v1.1.3
+---
 
-本版本基于已完成界面统一修复的 v1.1.2 源码发布，版本升级为 **v1.1.3 (build 113)**。
+## Core 控制策略
 
-- 保留 v1.1.2 的紧凑标题栏优化。
-- 保留“概览 / Core 控制 / 订阅管理 / 设置”等页面的统一布局修复。
-- 保留 v1.0.9 风格的原生菜单栏标签界面。
-- 不改变 Mihomo Core API、订阅处理、升级流程和 portable runtime 功能逻辑。
+v1.3.3 延续 v1.3.2 已确定的 **API-first / explicit-SSH** 策略，只重新整理界面说明，不恢复旧版“LAN 失败就自动尝试 SSH”的行为。
 
-## v1.1.2
+### 优先级
 
-这一版在保留 v1.1.1 功能的基础上，修复界面并压缩主窗口顶部占用：
+```text
+优先级：
+    重启/热重载先走 Mihomo Controller API；
+    服务生命周期与日志随后走 Core 服务面板 API；
+    避免因局域网直连失败而自动触发 SSH 认证；
+    只有显式配置 SSH 目标时才尝试 mihomo.service/systemd。
+```
 
-- **菜单栏恢复 v1.0.9 风格**：恢复原有布局、字号、间距、`Running / Stopped / Checking` 文案与 `↓ / ↑` 双行网速显示。
-- **紧凑标题栏**：主窗口使用隐藏标题栏底板的原生窗口样式，让 Dashboard 延伸到顶部，减少空白和无效高度。
-- **保留系统窗口按钮**：红黄绿按钮仍使用 macOS 原生控件，不做缩放或自绘。
-- **避免顶部重叠**：左侧品牌区为窗口按钮保留紧凑安全区，不重新制造厚标题栏。
-- **功能保持 v1.1.1**：管理后端选择器、窗口拖拽、性能优化、portable runtime 和 unsigned Release 流程全部保留。
+### 操作矩阵
 
-## v1.1.1
+| 操作 | 第一优先 | 第二优先 | 最终回退 |
+|---|---|---|---|
+| 状态 | Mihomo Controller | Core 服务面板 | 显式 SSH/systemd |
+| 启动 | Core 服务面板 | — | 显式 SSH/systemd |
+| 停止 | Core 服务面板 | — | 显式 SSH/systemd |
+| 重启 | Mihomo Controller `/restart` | Core 服务面板 `/api/action` | 显式 SSH/systemd |
+| 热重载 | Controller `/configs?force=true` | Core 服务面板 `/api/action` | 显式 SSH/systemd，且仅 `CanReload=yes` |
+| 历史日志 | Core 服务面板 `/api/logs` | — | 显式 SSH `journalctl` |
+| 订阅事务 | Core 服务面板 | — | 无 systemd 等价操作 |
+| 项目升级 | Core 服务面板 | — | 无 Mihomo `/upgrade` 等价操作 |
 
-这一版集中修复原生状态栏显示问题：
+### SSH / systemd 规则
 
-- **更紧凑的状态栏宽度**：收紧 `MenuBarExtra` 标签横向间距，减少左右空白占用。
-- **更好的垂直居中**：统一状态栏标签高度，修复图标、状态文本和双行网速在菜单栏内上下不居中的问题。
-- **更稳定的双行网速排版**：上传/下载箭头改用 SF Symbols，并优化两行间距与对齐。
-- **更短的状态文案**：显示 `On / Off / Wait`，减少状态栏横向长度。
-- 继续保留 v1.1.0 的无需 Apple Developer Secrets 的 Release 自动构建流程。
+Profile 中只有显式填写：
 
-## v1.1.0
+```text
+systemdSSHTarget
+```
 
-这一版主要修复 GitHub Actions 自动 Release 在没有 Apple Developer 凭据时直接失败的问题：
+才启用 SSH 回退。
 
-- **Release 默认无需 Apple Secrets**：移除 Developer ID / Notary Secrets 强制校验和证书导入步骤。
-- **自动构建未签名 Release**：GitHub Actions 默认使用 `scripts/build-release.sh --unsigned`，继续生成 arm64 `.zip`、`.pkg`、Release Notes 和 SHA-256 清单。
-- **保留自动发布**：支持 tag `v1.1.0` 和手工 `workflow_dispatch`，并自动创建/更新 GitHub Release、上传资产、在线回读验证 SHA-256。
-- **保留正式签名能力**：`scripts/build-release.sh --signed` 路径未删除，以后有 Apple Developer 证书时仍可重新启用签名与公证。
-- **安装提示**：默认产物没有 Developer ID / Apple Notary 身份，其它 Mac 首次安装/启动时可能出现 Gatekeeper 提示。
-- 保留 v1.0.9 的状态栏组合显示、订阅热重载超时安全恢复及此前全部功能。
+相关字段：
 
-## v1.0.9
+```text
+systemdSSHTarget
+systemdSSHPort
+systemdIdentityFile
+```
 
-这一版集中修复状态栏组合显示与订阅“保存并应用”超时问题：
+SSH 端口默认 `22`。未填写 SSH 目标时，即使局域网 Controller / Management 发生 `No route to host`、连接拒绝或超时，也不会因此弹出 SSH 密码/公钥认证路径。
 
-- **图标 / 网速 / 运行状态可同时显示**：三项改为独立开关；状态栏仍使用紧凑双行网速（下载在上、上传在下），图标与运行状态可以同时保留。
-- **升级兼容**：旧版设置没有 `showIcon` 字段时自动按“显示图标”迁移，避免升级后图标意外消失；若三项被全部关闭，会自动保留图标以确保菜单仍可点击。
-- **订阅热重载超时自动恢复**：Mihomo Core 管理面板 v4.0.0 会把保存、renderer 校验和热重载放在一个事务里，热重载超时会回滚配置。v1.0.9 仅在确认是“热重载超时且已回滚”时自动切换为一次安全重启流程：停止 Core → 再次保存并校验 → 启动 Core。
-- **避免误重启**：URL 非法、renderer 失败、配置校验失败等其它错误不会触发安全重启，仍按原错误返回。
-- 保留 v1.0.8 的等宽“管理后端”下拉、v1.0.7 的菜单栏崩溃保护/Recovery Shell、Core Secret 粘贴、窗口拖动与集中状态缓存。
+systemd unit 固定为：
 
-## 功能范围
+```text
+mihomo.service
+```
 
-1. **Apple Silicon arm64 原生应用**：Xcode 工程固定 `ARCHS=arm64`，最低 macOS 14.0。
-2. **跨域 / 跨机管理**：正式 SwiftUI App 使用原生 `URLSession`，不受浏览器 CORS 限制；支持多服务器 Profile、域名、内网 IP 与 VPN 地址。
-3. **配置设置**：每台服务器可设置 Management URL、Core Secret、Direct Core Controller URL、远端 `config.yaml` 路径、MetaCubeXD URL、HTTP 兼容和升级保留策略。
-4. **状态栏管理**：图标、运行状态、实时网速三项可独立开关并同时显示，菜单覆盖日常管理动作。
-5. **自动发布**：GitHub Actions 在 macOS arm64 Runner 构建；v1.1.0 默认无需 Apple Developer Secrets，自动生成未签名 `.pkg` / ad-hoc 签名 App ZIP 并发布到 GitHub Release。
+客户端不会接受任意 unit 名或任意远端 shell 命令。`reload` 只有在远端 unit 明确报告 `CanReload=yes` 时才允许执行。
 
-## v4.0.0 API 兼容
+---
 
-| 功能 | API |
-| --- | --- |
-| 状态 / 流量 / 版本 | `GET /api/status` |
-| Core 启停 / 重启 / 热重载 | `POST /api/action` |
-| 订阅读取 / 保存应用 | `GET/POST /api/subscriptions` |
-| 运行日志 | `GET /api/logs?lines=N` |
-| 项目更新检查 | `GET /api/project-update/check` |
-| 项目更新执行 | `POST /api/project-update/apply` |
-| 更新日志 | `GET /api/project-update/log` |
+## 订阅与项目升级
 
-认证使用 `Authorization: Bearer <Core Secret>`。Secret 不写入 Profile 文件，正式 App 使用 macOS Keychain；portable runtime 使用 `/usr/bin/security` 访问同一 Keychain service。
+### 订阅管理
 
-## 本地构建
+订阅读取与写入统一由 Core 服务面板负责：
 
-要求：Apple Silicon Mac + Xcode（macOS 14 SDK 或更高）。
+```text
+GET  /api/subscriptions
+POST /api/subscriptions
+```
+
+“保存并应用”属于服务器端配置事务，不等同于 Mihomo Proxy Provider 的单纯刷新，因此客户端不会用 Controller 的 Provider API 机械替代它。
+
+### 项目升级
+
+MihomoManager 的“项目升级”针对服务器端整套组件：
+
+```text
+Mihomo Core
+MetaCubeXD
+Core 管理面板
+```
+
+接口：
+
+```text
+GET  /api/project-update/check
+POST /api/project-update/apply
+GET  /api/project-update/log
+```
+
+Mihomo 自带的 `/upgrade` 仅覆盖 Core，本项目不会拿它替代三组件项目升级。
+
+---
+
+## 网络与连接策略
+
+### URL 与端口
+
+客户端不会自动补常见业务端口：
+
+| 端点 | 常见示例 | 实际规则 |
+|---|---:|---|
+| Mihomo Controller | `9090` | **不自动补**；使用 URL 自带端口 |
+| Core 服务面板 | `29090` | **不自动补**；使用 URL 自带端口 |
+| MetaCubeXD | `29091` | **不自动补**；使用 Profile / 服务端元数据 |
+| SSH | `22` | 显式启用 SSH 后默认 22，可配置 |
+
+省略 scheme 时只进行地址类型推断：
+
+```text
+LAN / private host  → http://
+公共主机            → https://
+```
+
+如果用户已经显式填写 `http://` 或 `https://`，客户端不会替换。
+
+### 局域网与浏览器 CORS
+
+SwiftUI 使用原生 `URLSession`；GoWebUI 的远端请求由本地 Go runtime 发起。二者都不是浏览器直接请求远端 Controller，因此不受普通 Web 页面 CORS 规则限制。
+
+MetaCubeXD 本身运行在浏览器中，浏览器直连 Mihomo Controller 时仍需要服务器正确配置 CORS / Private Network Access。
+
+### GoWebUI 本地 runtime
+
+GoWebUI 只监听：
+
+```text
+127.0.0.1:<随机高位端口>
+```
+
+端口由系统分配，不暴露到 LAN。WebKit 访问本地 runtime 时必须携带启动期随机生成的本地 token。
+
+---
+
+## 配置与数据位置
+
+### 普通设置
+
+```text
+~/Library/Application Support/MihomoManager/settings.json
+```
+
+旧版路径：
+
+```text
+~/Library/Application Support/MihomoCoreManager/settings.json
+```
+
+仅用于兼容迁移。
+
+### GoWebUI 运行数据
+
+```text
+~/Library/Application Support/MihomoManager/Runtime/
+```
+
+### Keychain
+
+Management / Controller Secret 使用 macOS Keychain。v1.3.2 起统一使用：
+
+```text
+cc.kkr.MihomoManager.profile-secret
+```
+
+并保留旧 service 的迁移兼容。
+
+### 远端配置路径
+
+每个 Profile 可以单独指定 Mihomo 配置路径，例如：
+
+```text
+/etc/mihomo/config.yaml
+```
+
+Controller 热重载时会把该路径发送到 `/configs?force=true`；若转由服务器 Core 管理面板处理，最终路径由服务器端面板配置决定。
+
+---
+
+## 安全说明
+
+MihomoManager 能够重启 Core、切换代理、修改订阅并触发服务器项目升级，应按管理工具对待。
+
+建议：
+
+- Controller 与 Core 服务面板使用强 Secret。
+- LAN 明文 HTTP 只在可信网络内使用。
+- 公网管理优先使用 HTTPS / VPN / Tailscale / WireGuard / 受控反向代理。
+- 不把 `0.0.0.0` / `::` 当成客户端连接目标；它们是监听地址，不是可路由的服务器地址。
+- 不把 9090 / 29090 / SSH 暴露到不可信公网。
+- SSH 只在确实需要 systemd/journalctl 末级回退时显式配置。
+- 不把真实 Secret、订阅 URL、SSH 私钥路径截图或提交到公开仓库。
+- portable preview 使用 ad-hoc 签名，不等于 Developer ID 签名或 Apple 公证。
+
+以下内容不应提交到 Issue / 日志截图：
+
+```text
+真实 Controller Secret
+Management Secret
+真实订阅 URL
+SSH 私钥
+敏感服务器地址
+Keychain 导出内容
+```
+
+---
+
+## 平台支持
+
+| 项目 | 支持情况 |
+|---|:---:|
+| Apple Silicon macOS 14+ | ✅ |
+| arm64 GoWebUI | ✅ |
+| arm64 SwiftUI | ✅ |
+| macOS Intel 原生发布目标 | ❌ |
+| Windows | ❌ |
+| Linux 桌面 App | ❌ |
+| Linux 作为 ChatGPT / CI 交叉构建 GoWebUI portable 的开发环境 | ✅ |
+| 远端 Linux Mihomo 服务器 | ✅ |
+
+GitHub CI / Release 可以运行在 `macos-15-intel` 主机上，但最终产物必须交叉构建并验证为 **arm64-only**。
+
+---
+
+## 本地构建与验证
+
+### 源码一致性检查
 
 ```bash
-python3 scripts/validate-source.py
+python3 scripts/build-gowebui-release-lock.py --check
 python3 scripts/build-source-manifest.py --check
+python3 scripts/validate-source.py
+```
+
+### GoWebUI 测试
+
+```bash
+cd portable-runtime
+CGO_ENABLED=0 go test -count=1 ./...
+CGO_ENABLED=0 go vet ./...
+```
+
+### GoWebUI portable
+
+正式 GoWebUI 发布工具链固定 Go `1.26.8`。
+
+```bash
+bash scripts/build-portable-installer.sh
+```
+
+输出：
+
+```text
+dist-portable/
+└── MihomoManager-v1.3.3-GoWebUI-arm64-portable-installer.zip
+```
+
+### SwiftUI 本地构建
+
+需要 macOS + Xcode：
+
+```bash
 xcodebuild \
   -project MihomoCoreManager.xcodeproj \
   -scheme MihomoCoreManager \
@@ -341,20 +525,233 @@ xcodebuild \
   build
 ```
 
-## Release
+### 双实现发布模拟
 
-正式 tag `v1.2.2` 成功后生成：
+在 macOS Release 主机上：
+
+```bash
+bash scripts/simulate-release.sh
+```
+
+正式 unsigned Release：
+
+```bash
+bash scripts/build-release.sh --unsigned
+```
+
+需要 Apple Developer 签名链时可使用：
+
+```bash
+bash scripts/build-release.sh --signed
+```
+
+---
+
+## GitHub 开发与发布
+
+推荐版本开发流程：
 
 ```text
-MihomoCoreManager-v1.2.2-arm64.pkg
-MihomoCoreManager-v1.2.2-arm64.zip
-MihomoCoreManager-v1.2.2-arm64-portable-installer.zip
-release_v1.2.2_notes_zh-CN.md
+修改源码
+→ 更新 VERSION / BUILD_NUMBER（如版本变化）
+→ 更新 Release Notes / CHANGELOG
+→ 更新 GoWebUI release lock（仅 GoWebUI 输入变化时）
+→ 更新 SOURCE-SHA256SUMS.txt
+→ validate-source / tests / release-preflight
+→ 构建 GoWebUI portable 验证
+→ Push
+→ macOS CI 双实现 release simulation
+→ 创建 / Push vX.Y.Z tag
+→ Release workflow 构建并发布 GoWebUI.pkg + SwiftUI.pkg
+→ 在线回读 SHA256SUMS 与发布资产
+```
+
+`.github/workflows/release.yml` 支持：
+
+```text
+push v* tag
+workflow_dispatch(version)
+```
+
+正式 Release 固定 GoWebUI Go 工具链：
+
+```text
+Go 1.26.8
+```
+
+发布流程会在线回读并验证至少：
+
+```text
+MihomoManager-v1.3.3-GoWebUI-arm64.pkg
+MihomoManager-v1.3.3-SwiftUI-arm64.pkg
+SHA256SUMS.txt
+GoWebUI-RELEASE-PROVENANCE.txt
+SwiftUI-RELEASE-PROVENANCE.txt
+```
+
+---
+
+## 仓库结构
+
+下面按 v1.3.3 的实际职责列出主要源码与发布文件。
+
+**图例：** `★` 运行源码　`◆` 构建 / 发布　`●` 验证 / QA　`○` 文档 / 参考
+
+```text
+MihomoManager-v1.3.3-source/
+│
+├── VERSION                                             # ◆ 当前版本：1.3.3
+├── BUILD_NUMBER                                        # ◆ 当前 build：1303
+├── README.md                                           # ○ 项目首页
+├── CHANGELOG.md                                        # ○ 历史版本变更
+├── SOURCE-SHA256SUMS.txt                               # ● 源码树 SHA-256 清单
+├── GoWebUI-RELEASE-LOCK.json                           # ● GoWebUI portable / pkg 输入一致性锁
+├── HomePage.png                                        # ○ README 概览截图
+├── CorePage.png                                        # ○ README Core 控制截图
+│
+├── MihomoCoreManager.xcodeproj/                        # ◆ SwiftUI Xcode 工程
+│
+├── MihomoCoreManager/                                  # ★ SwiftUI / AppKit 实现
+│   ├── MihomoCoreManagerApp.swift                      # ★ App 入口
+│   ├── AppModel.swift                                  # ★ 主状态 / Profile / 轮询
+│   ├── Models.swift                                    # ★ 数据模型
+│   ├── Info.plist                                      # ◆ App bundle 配置 / LAN 权限说明
+│   ├── API/
+│   │   └── MihomoAPIClient.swift                       # ★ Controller / Management / SSH API
+│   ├── Storage/                                        # ★ Profile / Keychain 存储
+│   ├── Resources/                                      # ★ SwiftUI 资源
+│   └── Views/
+│       ├── ContentView.swift                           # ★ 主窗口 / 侧栏 / 后端状态
+│       ├── OverviewView.swift                          # ★ 概览
+│       ├── CoreView.swift                              # ★ Core 控制
+│       ├── SubscriptionsView.swift                     # ★ 订阅
+│       ├── LogsView.swift                              # ★ 日志
+│       ├── SettingsView.swift                          # ★ 服务设置
+│       ├── UpdateView.swift                            # ★ 项目升级
+│       └── MenuBarView.swift                           # ★ macOS 状态栏
+│
+├── portable-runtime/                                   # ★ GoWebUI 正式实现
+│   ├── go.mod                                          # ◆ Go module
+│   ├── main.go                                         # ★ Go runtime / AppKit/JXA / API bridge
+│   ├── main_test.go                                    # ● GoWebUI 单元测试
+│   ├── README.md                                       # ○ GoWebUI 技术说明
+│   └── ui/
+│       └── index.html                                  # ★ Web UI / CSS / JavaScript
+│
+├── branding/                                           # ◆ 共享应用图标与品牌资源
+│
+├── scripts/                                            # ◆ 构建 / 发布 / 验证工具
+│   ├── generate-app-icon.py                            # ◆ 生成 AppIcon
+│   ├── build-gowebui-app.sh                            # ◆ 唯一 GoWebUI App builder
+│   ├── build-portable-installer.sh                     # ◆ GoWebUI portable installer
+│   ├── build-gowebui-release.sh                       # ◆ GoWebUI .pkg
+│   ├── build-swiftui-release.sh                       # ◆ SwiftUI .pkg
+│   ├── build-release.sh                               # ◆ 双实现正式 Release
+│   ├── simulate-release.sh                            # ● 双实现发布全链路模拟
+│   ├── build-gowebui-release-lock.py                  # ● GoWebUI 输入锁生成 / 校验
+│   ├── build-source-manifest.py                       # ● 源码 SHA-256 manifest
+│   ├── validate-source.py                             # ● 源码结构 / 版本 / UI 门禁
+│   ├── release-preflight.py                           # ● Release 预检
+│   ├── verify-macho-uuid.py                           # ● arm64 Mach-O LC_UUID 校验
+│   └── github-release.sh                              # ◆ GitHub Release 发布 / 回读
+│
+├── docs/                                               # ○ 架构与发布文档
+│   ├── ARCHITECTURE.md                                 # ○ SwiftUI / 后端架构
+│   ├── RELEASE.md                                      # ○ 双实现发布流程
+│   ├── RELEASE-GUARDRAILS.md                           # ● Release 防漂移规则
+│   └── releases/
+│       ├── v1.3.1/
+│       ├── v1.3.2/
+│       └── v1.3.3/                                     # ○ 当前版本 Release Notes / QA
+│
+├── .github/
+│   └── workflows/
+│       ├── ci.yml                                      # ● macOS CI
+│       ├── release.yml                                 # ◆ 正式 Release
+│       └── release-retry.yml                           # ◆ 已有 tag / Release 故障恢复
+│
+├── QA-v*.md                                            # ● 历史专项 QA 记录
+├── API-AUDIT-v1.3.1.md                                 # ○ API 对照审计
+├── FIX-v1.3.2.md                                       # ○ v1.3.2 修复说明
+├── HOTFIX-v1.3.1-networking.md                         # ○ v1.3.1 网络 hotfix
+└── VALIDATION.md                                       # ● 历史 / 发布验证说明
+```
+
+### 构建时生成、默认不提交的目录
+
+```text
+build/                                                  # ◆ 中间构建产物 / cache / App bundle
+dist/                                                   # ◆ macOS 正式 Release 输出
+dist-portable/                                          # ◆ GoWebUI portable 输出
+DerivedData/                                            # ◆ Xcode 派生数据（如本地使用）
+```
+
+正式 `dist/` 典型资产：
+
+```text
+MihomoManager-v1.3.3-GoWebUI-arm64.pkg
+MihomoManager-v1.3.3-SwiftUI-arm64.pkg
+GoWebUI-APP-MANIFEST.json
+SwiftUI-APP-MANIFEST.json
+GoWebUI-RELEASE-PROVENANCE.txt
+SwiftUI-RELEASE-PROVENANCE.txt
+GoWebUI-RELEASE-LOCK.json
+BUILD-VARIANTS.txt
+release_v1.3.3_notes_zh-CN.md
 SHA256SUMS.txt
 ```
 
-v1.1.0 默认 Release **不需要 Apple Developer Repository Secrets**。默认产物没有 Developer ID / Apple Notary 身份；若以后需要正式签名与公证，可继续使用保留的 `scripts/build-release.sh --signed` 路径并重新接入 Apple 凭据。
+### 安装后主要本机文件
 
-## 当前非 macOS 构建环境的交付说明
+```text
+/Applications/MihomoManager.app
 
-`portable-runtime/` 可在 Linux 上交叉编译为 `darwin/arm64` Mach-O，并在 macOS 上通过系统 AppKit/WebKit + JXA 提供主窗口与状态栏菜单，用于即时安装/测试。GitHub Release 仍以 Xcode/SwiftUI 目标为准；v1.1.0 默认走无需 Apple 凭据的未签名发布路径。
+~/Library/Application Support/MihomoManager/
+├── settings.json
+└── Runtime/                         # GoWebUI 运行时状态（存在时）
+
+macOS Keychain
+└── cc.kkr.MihomoManager.profile-secret
+```
+
+这些是 **macOS 客户端本机数据**。远端 Mihomo Core、Core 管理面板和 MetaCubeXD 的实际安装路径由服务器端项目决定，不由 MihomoManager 本地安装器创建。
+
+---
+
+## 验证与发布文档
+
+当前版本发布说明：
+
+```text
+docs/releases/v1.3.3/RELEASE-NOTES.md
+```
+
+当前版本 QA：
+
+```text
+docs/releases/v1.3.3/QA-v1.3.3.md
+QA-v1.3.3.md
+```
+
+API / 网络相关历史审计：
+
+```text
+API-AUDIT-v1.3.1.md
+HOTFIX-v1.3.1-networking.md
+FIX-v1.3.2.md
+```
+
+完整历史版本变化统一查看：
+
+```text
+CHANGELOG.md
+docs/releases/
+```
+
+---
+
+## 许可证
+
+当前源码树未提供独立 `LICENSE` 文件。正式对外分发前，仓库维护者应补充明确的项目许可证。
+
+Mihomo、MetaCubeXD、Apple 平台组件以及其它第三方依赖分别遵循其各自上游许可证；本项目 README 不替第三方内容重新授权。

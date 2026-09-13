@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.3.3
+
+- SwiftUI 主窗口左下角后端状态文案与 GoWebUI 统一为“后端已连接 · <manager>”/“后端未连接 · 检查设置”。
+- Core 控制页“服务控制”优先级说明改为四行结构化排版，并将 GoWebUI 原有的旧 systemd 优先文案同步修正为 v1.3.2 以来的 API-first / explicit-SSH 策略。
+- 根目录 README 新增 `HomePage.png` 与 `CorePage.png` 两张界面截图。
+- App / Xcode / GoWebUI runtime 统一升级为 v1.3.3 / build 1303。
+
 ## v1.3.2
 - Portable recovery 打包修复：legacy Go 补写 `LC_UUID` 后同步刷新 Mach-O ad-hoc CodeDirectory 哈希；安装脚本不再吞掉 `codesign` 失败，并清理 quarantine 后执行严格签名校验。
 

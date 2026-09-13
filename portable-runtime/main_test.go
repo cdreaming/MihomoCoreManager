@@ -1577,7 +1577,7 @@ func TestEmbeddedModernAppIconV131(t *testing.T) {
 }
 
 func TestPortableVersionV132(t *testing.T) {
-	if appVersion != "1.3.2" || buildNumber != "1302" {
+	if appVersion != "1.3.3" || buildNumber != "1303" {
 		t.Fatalf("unexpected portable version/build: %s/%s", appVersion, buildNumber)
 	}
 }

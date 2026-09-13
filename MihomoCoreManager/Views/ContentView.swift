@@ -286,11 +286,11 @@ private struct DashboardSidebarStatus: View {
     }
 
     private var panelLabel: String {
-        if let raw = model.selectedProfile?.coreControllerURL,
-           let url = URL(string: normalizedControllerURL(raw)), let port = url.port {
-            return "SwiftUI :\(port)"
+        guard let status = live.status else {
+            return "后端未连接 · 检查设置"
         }
-        return "SwiftUI · Core"
+        let manager = status.service.manager?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return "后端已连接 · \(manager.isEmpty ? "Core" : manager)"
     }
 }
 

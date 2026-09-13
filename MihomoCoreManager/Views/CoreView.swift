@@ -9,7 +9,7 @@ struct CoreView: View {
             VStack(alignment: .leading, spacing: DashboardLayout.pageSpacing) {
                 DashboardPageHeader(
                     title: "Core 控制",
-                    subtitle: "优先使用 Mihomo Core API 与 Core 服务面板 API；SSH/mihomo.service 仅显式配置后作为末级回退。"
+                    subtitle: "优先使用 Mihomo Controller API 与 Core 服务面板 API；SSH/mihomo.service 仅显式配置后作为末级回退。"
                 )
 
                 serviceColumns
@@ -78,10 +78,21 @@ struct CoreView: View {
 
                 Spacer(minLength: 0)
 
-                Text("优先级：重启/热重载先走 Mihomo Controller API；服务生命周期与日志随后走 Core 服务面板 API；只有显式配置 SSH 目标时才尝试 mihomo.service/systemd。避免因局域网直连失败而自动触发 SSH 认证。")
-                    .font(.system(size: 11))
-                    .foregroundStyle(DashboardPalette.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("优先级：")
+                        .fontWeight(.semibold)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("重启/热重载先走 Mihomo Controller API；")
+                        Text("服务生命周期与日志随后走 Core 服务面板 API；")
+                        Text("避免因局域网直连失败而自动触发 SSH 认证；")
+                        Text("只有显式配置 SSH 目标时才尝试 mihomo.service/systemd。")
+                    }
+                    .padding(.leading, 14)
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(DashboardPalette.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, minHeight: 328, alignment: .topLeading)
         }

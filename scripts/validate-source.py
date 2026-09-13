@@ -7,8 +7,8 @@ errors = []
 version = (root / "VERSION").read_text(encoding="utf-8").strip()
 if not re.fullmatch(r"\d+\.\d+\.\d+", version):
     errors.append(f"VERSION invalid: {version!r}")
-if version != "1.3.2":
-    errors.append(f"v1.3.2 release must use VERSION=1.3.2 (got {version})")
+if version != "1.3.3":
+    errors.append(f"v1.3.3 release must use VERSION=1.3.3 (got {version})")
 
 required = [
     "MihomoCoreManager.xcodeproj/project.pbxproj",
@@ -37,6 +37,8 @@ required = [
     "docs/RELEASE-GUARDRAILS.md",
     "API-AUDIT-v1.3.1.md",
     "INTERFACE-IMPLEMENTATION-v1.3.1.md",
+    "HomePage.png",
+    "CorePage.png",
 ]
 for rel in required:
     if not (root / rel).is_file(): errors.append(f"missing: {rel}")
@@ -59,7 +61,7 @@ if "MACOSX_DEPLOYMENT_TARGET = 14.0;" not in pbx: errors.append("deployment targ
 if f"MARKETING_VERSION = {version};" not in pbx: errors.append(f"Xcode MARKETING_VERSION must match VERSION {version}")
 expected_build = (root / "BUILD_NUMBER").read_text(encoding="utf-8").strip()
 if not re.fullmatch(r"\d+", expected_build): errors.append(f"BUILD_NUMBER invalid: {expected_build!r}")
-if expected_build != "1302": errors.append(f"v1.3.2 release must use BUILD_NUMBER=1302 (got {expected_build})")
+if expected_build != "1303": errors.append(f"v1.3.3 release must use BUILD_NUMBER=1303 (got {expected_build})")
 if f"CURRENT_PROJECT_VERSION = {expected_build};" not in pbx: errors.append(f"Xcode build number must be {expected_build}")
 if not (root / f"docs/releases/v{version}/RELEASE-NOTES.md").is_file(): errors.append(f"release notes missing for v{version}")
 portable = root / "portable-runtime/main.go"
@@ -856,6 +858,29 @@ for marker in [
 for marker in ['GoWebUI · 本机界面', '后端未连接 · 检查设置', 'mihomo.service（高级回退）', 'Core 服务面板（推荐）']:
     if marker not in portable_ui:
         errors.append(f"v1.3.2 GoWebUI status/service-policy UI gate missing: {marker}")
+
+# v1.3.3 UI parity / README screenshot gates.
+for marker in ["后端已连接 · ", "后端未连接 · 检查设置", "status.service.manager"]:
+    if marker not in content:
+        errors.append(f"v1.3.3 SwiftUI backend-status parity gate missing: {marker}")
+priority_markers = [
+    "重启/热重载先走 Mihomo Controller API；",
+    "服务生命周期与日志随后走 Core 服务面板 API；",
+    "避免因局域网直连失败而自动触发 SSH 认证；",
+    "只有显式配置 SSH 目标时才尝试 mihomo.service/systemd。",
+]
+for marker in priority_markers:
+    if marker not in core_view:
+        errors.append(f"v1.3.3 SwiftUI priority-layout gate missing: {marker}")
+    if marker not in portable_ui:
+        errors.append(f"v1.3.3 GoWebUI priority-layout gate missing: {marker}")
+for marker in ["priority-tip", "priority-lines"]:
+    if marker not in portable_ui:
+        errors.append(f"v1.3.3 GoWebUI structured-priority gate missing: {marker}")
+readme_text = (root / "README.md").read_text(encoding="utf-8")
+for marker in ["![MihomoManager 概览](HomePage.png)", "![MihomoManager Core 控制](CorePage.png)"]:
+    if marker not in readme_text:
+        errors.append(f"v1.3.3 README screenshot gate missing: {marker}")
 
 with (root / "MihomoCoreManager/Info.plist").open("rb") as f:
     plist = plistlib.load(f)

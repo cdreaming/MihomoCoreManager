@@ -19,6 +19,11 @@
 - Profile 非敏感字段写入 `~/Library/Application Support/MihomoManager/settings.json`，旧 `MihomoCoreManager/settings.json` 仅用于迁移；Secret 使用 macOS Keychain。
 - 状态栏、代理切换、线路延时、Controller `/group`/`/proxies` 合并、窗口生命周期等 v1.2.x 稳定性修复继续保留。
 
+## v1.3.3 UI parity
+
+- Core 控制页的优先级说明与 SwiftUI 使用相同四行结构与同一 API-first / explicit-SSH 文案。
+- 版本统一为 v1.3.3 / build 1303。
+
 ## v1.3.2 networking / service policy
 
 - 正式 GoWebUI 构建使用 Go 1.26.8；打包后必须验证 Mach-O `LC_UUID`，并声明 `NSLocalNetworkUsageDescription`。
@@ -32,4 +37,4 @@
 - `CGO_ENABLED=0` 的 macOS runtime 对本地主机名增加系统解析器回退。
 - Cloudflare Tunnel/网关临时故障会清理空闲连接并对只读请求、状态轮询和代理菜单轮询退避，减少恢复期请求风暴。
 
-当前版本：v1.3.2，`VERSION=1.3.2`，`BUILD_NUMBER=1302`。
+当前版本：v1.3.3，`VERSION=1.3.3`，`BUILD_NUMBER=1303`。
