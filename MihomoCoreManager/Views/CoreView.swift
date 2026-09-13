@@ -9,7 +9,7 @@ struct CoreView: View {
             VStack(alignment: .leading, spacing: DashboardLayout.pageSpacing) {
                 DashboardPageHeader(
                     title: "Core 控制",
-                    subtitle: "Controller 是基础连接；启动/停止、订阅、日志和升级需要可选管理面板。"
+                    subtitle: "仅管理 Mihomo Core 进程；MetaCubeXD 与管理面板保持独立。"
                 )
 
                 serviceColumns
@@ -17,8 +17,7 @@ struct CoreView: View {
                 updatePanel
             }
             .padding(.horizontal, DashboardLayout.pageHorizontalPadding)
-            .padding(.top, DashboardLayout.pageTopPadding)
-            .padding(.bottom, DashboardLayout.pageBottomPadding)
+            .padding(.vertical, DashboardLayout.pageVerticalPadding)
         }
     }
 
@@ -44,19 +43,19 @@ struct CoreView: View {
                             DashboardBusyLabel(title: "启动 Core", busyTitle: "启动中…", isBusy: model.activeOperation == .core(.start))
                         }
                             .buttonStyle(DashboardActionButtonStyle(busy: model.activeOperation == .core(.start)))
-                            .disabled(live.status?.service.active == true || model.isBusy || !model.managementFeaturesAvailable)
+                            .disabled(live.status?.service.active == true || model.isBusy)
                         Button { Task { await model.perform(.stop) } } label: {
                             DashboardBusyLabel(title: "停止 Core", busyTitle: "停止中…", isBusy: model.activeOperation == .core(.stop))
                         }
                             .buttonStyle(DashboardActionButtonStyle(destructive: true, busy: model.activeOperation == .core(.stop)))
-                            .disabled(live.status?.service.active != true || model.isBusy || !model.managementFeaturesAvailable)
+                            .disabled(live.status?.service.active != true || model.isBusy)
                     }
                     GridRow {
                         Button { Task { await model.perform(.restart) } } label: {
                             DashboardBusyLabel(title: "重启 Core", busyTitle: "重启中…", isBusy: model.activeOperation == .core(.restart))
                         }
                             .buttonStyle(DashboardActionButtonStyle(busy: model.activeOperation == .core(.restart)))
-                            .disabled(model.isBusy || !model.coreRestartAvailable)
+                            .disabled(model.isBusy)
                         Button { Task { await model.perform(.reload) } } label: {
                             DashboardBusyLabel(title: "热重载配置", busyTitle: "重载中…", isBusy: model.activeOperation == .core(.reload))
                         }
@@ -70,11 +69,11 @@ struct CoreView: View {
                     DashboardBusyLabel(title: "重新生成配置并热重载", busyTitle: "应用中…", isBusy: model.activeOperation == .core(.applySubscriptions))
                 }
                     .buttonStyle(DashboardActionButtonStyle(busy: model.activeOperation == .core(.applySubscriptions)))
-                    .disabled(model.isBusy || !model.managementFeaturesAvailable)
+                    .disabled(model.isBusy)
 
                 Spacer(minLength: 0)
 
-                Text("重启与热重载优先调用 Mihomo Controller；启动/停止与订阅生成属于可选管理面板功能。未配置 Management URL/Secret 时仅这些管理面板动作会禁用。")
+                Text("生命周期动作由远端 Mihomo Core 管理面板 v4.0.0 API 执行；config.yaml 路径可在设置中指定。")
                     .font(.system(size: 11))
                     .foregroundStyle(DashboardPalette.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -130,7 +129,7 @@ struct CoreView: View {
                     }
                         .buttonStyle(DashboardActionButtonStyle(primary: true, busy: model.activeOperation == .applyUpdate))
                 }
-                .disabled(model.isBusy || !model.managementFeaturesAvailable)
+                .disabled(model.isBusy)
 
                 HStack {
                     Text("升级策略")

@@ -617,7 +617,7 @@ private struct MenuBarLiveSummary: View {
                 speedMetric(
                     title: "上传",
                     symbol: "arrow.up",
-                    value: model.menuRate(live.effectiveSpeed?.up)
+                    value: model.menuRate(live.status?.speed?.up)
                 )
 
                 Spacer(minLength: 6)
@@ -629,7 +629,7 @@ private struct MenuBarLiveSummary: View {
                 speedMetric(
                     title: "下载",
                     symbol: "arrow.down",
-                    value: model.menuRate(live.effectiveSpeed?.down)
+                    value: model.menuRate(live.status?.speed?.down)
                 )
             }
             .padding(.horizontal, 12)
