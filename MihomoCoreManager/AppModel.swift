@@ -4,6 +4,7 @@ import Foundation
 
 struct LiveStatusSnapshot {
     var status: StatusPayload?
+    var effectiveSpeed: SpeedInfo?
     var trafficSamples: [TrafficSample] = []
 }
 
@@ -11,29 +12,50 @@ struct LiveStatusSnapshot {
 final class LiveStatusStore: ObservableObject {
     @Published private(set) var snapshot = LiveStatusSnapshot()
     private var lastSuccessfulStatusAt: Date?
+    private var lastTotals: (up: Int64, down: Int64, at: Date)?
 
     var status: StatusPayload? { snapshot.status }
+    var effectiveSpeed: SpeedInfo? { snapshot.effectiveSpeed ?? snapshot.status?.speed }
     var trafficSamples: [TrafficSample] { snapshot.trafficSamples }
 
     func reset() {
         lastSuccessfulStatusAt = nil
+        lastTotals = nil
         snapshot = LiveStatusSnapshot()
     }
 
     func apply(_ newStatus: StatusPayload) {
+        let now = Date()
+        var speed = newStatus.speed
+        if speed == nil,
+           let up = newStatus.totals?.up,
+           let down = newStatus.totals?.down,
+           let previous = lastTotals {
+            let elapsed = now.timeIntervalSince(previous.at)
+            if elapsed > 0.15 {
+                speed = SpeedInfo(
+                    up: max(0, Double(up - previous.up) / elapsed),
+                    down: max(0, Double(down - previous.down) / elapsed)
+                )
+            }
+        }
+        if let up = newStatus.totals?.up, let down = newStatus.totals?.down {
+            lastTotals = (up, down, now)
+        }
+
         var samples = snapshot.trafficSamples
         samples.append(
             TrafficSample(
-                date: Date(),
-                upload: newStatus.speed?.up ?? 0,
-                download: newStatus.speed?.down ?? 0
+                date: now,
+                upload: speed?.up ?? 0,
+                download: speed?.down ?? 0
             )
         )
         if samples.count > 80 {
             samples.removeFirst(samples.count - 80)
         }
-        lastSuccessfulStatusAt = Date()
-        snapshot = LiveStatusSnapshot(status: newStatus, trafficSamples: samples)
+        lastSuccessfulStatusAt = now
+        snapshot = LiveStatusSnapshot(status: newStatus, effectiveSpeed: speed, trafficSamples: samples)
     }
 
     func markUnavailableIfStale(grace: TimeInterval = 5) {
@@ -42,7 +64,7 @@ final class LiveStatusStore: ObservableObject {
               snapshot.status != nil else { return }
         // Preserve chart history but stop presenting an indefinitely stale
         // Running/Stopped state after a sustained telemetry outage.
-        snapshot = LiveStatusSnapshot(status: nil, trafficSamples: snapshot.trafficSamples)
+        snapshot = LiveStatusSnapshot(status: nil, effectiveSpeed: nil, trafficSamples: snapshot.trafficSamples)
     }
 }
 
@@ -104,6 +126,7 @@ final class AppModel: ObservableObject {
     private let api = MihomoAPIClient()
     private var pollingTask: Task<Void, Never>?
     private var statusRefreshes: Set<UUID> = []
+    private var statusFailureCount = 0
     private var proxyBackgroundLoads: Set<UUID> = []
     private var proxyReconcileTasks: [String: Task<Void, Never>] = [:]
     private var proxyReconcileTokens: [String: UUID] = [:]
@@ -190,8 +213,8 @@ final class AppModel: ObservableObject {
             parts.append(status?.service.active == true ? "Running" : (status == nil ? "Checking" : "Stopped"))
         }
         if menuBarShowSpeed {
-            parts.append("↑ \(menuRate(status?.speed?.up))")
-            parts.append("↓ \(menuRate(status?.speed?.down))")
+            parts.append("↑ \(menuRate(live.effectiveSpeed?.up))")
+            parts.append("↓ \(menuRate(live.effectiveSpeed?.down))")
         }
         return parts.joined(separator: " · ")
     }
@@ -272,6 +295,7 @@ final class AppModel: ObservableObject {
         selectedProfileID = id
         UserDefaults.standard.set(id.uuidString, forKey: Self.selectedProfileKey)
         live.reset()
+        statusFailureCount = 0
         proxyMode = nil
         proxies = []
         proxyGroupOrder = []
@@ -314,8 +338,35 @@ final class AppModel: ObservableObject {
 
     func updateProfile(_ profile: ServerProfile) {
         guard let index = profiles.firstIndex(where: { $0.id == profile.id }) else { return }
-        profiles[index] = profile
+        var normalized = profile
+        normalized.managementURL = normalizedManagementURL(normalized.managementURL)
+        normalized.coreControllerURL = normalizedControllerURL(normalized.coreControllerURL)
+        normalized.metaCubeXDURL = normalized.metaCubeXDURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        normalized.systemdSSHTarget = normalized.systemdSSHTarget?.trimmingCharacters(in: .whitespacesAndNewlines)
+        normalized.systemdIdentityFile = normalized.systemdIdentityFile?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalized.hasSystemdServiceEndpoint {
+            normalized.systemdSSHPort = normalized.effectiveSystemdSSHPort
+        }
+        profiles[index] = normalized
         persistProfiles()
+    }
+
+    var managementFeaturesAvailable: Bool {
+        guard let profile = selectedProfile else { return false }
+        return profile.hasManagementEndpoint && !currentSecret.isEmpty
+    }
+
+    var systemdFeaturesAvailable: Bool {
+        selectedProfile?.hasSystemdServiceEndpoint == true
+    }
+
+    var coreLifecycleAvailable: Bool {
+        systemdFeaturesAvailable || managementFeaturesAvailable
+    }
+
+    var coreRestartAvailable: Bool {
+        guard let profile = selectedProfile else { return false }
+        return profile.hasControllerEndpoint || systemdFeaturesAvailable || managementFeaturesAvailable
     }
 
     func hasSecret(for id: UUID) -> Bool {
@@ -329,7 +380,7 @@ final class AppModel: ObservableObject {
         do {
             try KeychainStore.writeSecret(secret, profileID: id)
             secretCache[id] = secret
-            show(secret.isEmpty ? "已清除 Core Secret" : "Core Secret 已保存到 Keychain")
+            show(secret.isEmpty ? "已清除 Management Secret" : "Management Secret 已保存到 Keychain")
             if selectedProfileID == id { Task { await refreshStatus(silent: true) } }
         } catch {
             show("Keychain 写入失败：\(error.localizedDescription)", error: true)
@@ -340,7 +391,7 @@ final class AppModel: ObservableObject {
         do {
             try KeychainStore.writeControllerSecret(secret, profileID: id)
             controllerSecretCache[id] = secret
-            show(secret.isEmpty ? "已清除 Controller Secret，将回退使用 Core Secret" : "Controller Secret 已保存到 Keychain")
+            show(secret.isEmpty ? "已清除 Controller Secret；未单独设置时将兼容复用 Management Secret" : "Controller Secret 已保存到 Keychain")
             if selectedProfileID == id {
                 proxiesLoadedFor = nil
             }
@@ -358,10 +409,17 @@ final class AppModel: ObservableObject {
         defer { statusRefreshes.remove(profileID) }
 
         do {
-            let newStatus = try await api.status(profile: profile, secret: secret)
+            let newStatus = try await api.status(
+                profile: profile,
+                managementSecret: secret,
+                controllerSecret: currentControllerSecret
+            )
             guard selectedProfileID == profileID else { return }
+            statusFailureCount = 0
             live.apply(newStatus)
         } catch {
+            guard selectedProfileID == profileID else { return }
+            statusFailureCount = min(statusFailureCount + 1, 8)
             live.markUnavailableIfStale()
             if !silent { show(error.localizedDescription, error: true) }
         }
@@ -425,10 +483,16 @@ final class AppModel: ObservableObject {
         await busyOperation(.core(action)) {
             let message: String
             if action == .reload {
-                let direct = !profile.coreControllerURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 message = try await api.reloadConfiguredPath(
                     profile: profile,
-                    secret: direct ? currentControllerSecret : currentSecret
+                    managementSecret: currentSecret,
+                    controllerSecret: currentControllerSecret
+                )
+            } else if action == .restart {
+                message = try await api.restartCore(
+                    profile: profile,
+                    managementSecret: currentSecret,
+                    controllerSecret: currentControllerSecret
                 )
             } else {
                 message = try await api.action(action, profile: profile, secret: currentSecret)
@@ -991,8 +1055,18 @@ final class AppModel: ObservableObject {
             while !Task.isCancelled {
                 guard let self else { return }
                 await self.refreshStatus(silent: true)
-                let seconds = max(1, self.refreshInterval)
-                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+
+                // Keep normal telemetry at the configured cadence, but back off
+                // aggressively after repeated network/gateway failures. This is
+                // especially important for Cloudflare Tunnel origins: continually
+                // polling a recovering connector can prolong an otherwise brief
+                // 52x/530 outage and makes the App look like it caused the tunnel.
+                let base = max(1, self.refreshInterval)
+                let failures = min(self.statusFailureCount, 5)
+                let failureDelay = failures == 0
+                    ? base
+                    : min(30, max(base, 2.5 * pow(2, Double(failures - 1))))
+                try? await Task.sleep(nanoseconds: UInt64(failureDelay * 1_000_000_000))
             }
         }
     }

@@ -18,7 +18,8 @@ struct OverviewView: View {
                 contentColumns
             }
             .padding(.horizontal, DashboardLayout.pageHorizontalPadding)
-            .padding(.vertical, DashboardLayout.pageVerticalPadding)
+            .padding(.top, DashboardLayout.pageTopPadding)
+            .padding(.bottom, DashboardLayout.pageBottomPadding)
         }
         .background(
             LinearGradient(
@@ -96,8 +97,8 @@ struct OverviewView: View {
     private var metrics: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
             DashboardMetricCard(title: "MEMORY", value: bytes(live.status?.memoryBytes), subtitle: uptime)
-            DashboardMetricCard(title: "UPLOAD", value: rate(live.status?.speed?.up), subtitle: total(live.status?.totals?.up))
-            DashboardMetricCard(title: "DOWNLOAD", value: rate(live.status?.speed?.down), subtitle: total(live.status?.totals?.down))
+            DashboardMetricCard(title: "UPLOAD", value: rate(live.effectiveSpeed?.up), subtitle: total(live.status?.totals?.up))
+            DashboardMetricCard(title: "DOWNLOAD", value: rate(live.effectiveSpeed?.down), subtitle: total(live.status?.totals?.down))
             DashboardMetricCard(title: "CONNECTIONS", value: String(live.status?.connections ?? 0), subtitle: "Active sessions")
         }
     }

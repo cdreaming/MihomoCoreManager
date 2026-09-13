@@ -10,8 +10,8 @@ permissions:
 
 jobs:
   arm64-build:
-    name: Apple Silicon arm64 dual implementation release simulation
-    runs-on: macos-15
+    name: arm64 dual implementation release simulation (macOS Intel cross-build)
+    runs-on: macos-15-intel
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
@@ -25,15 +25,16 @@ jobs:
       - name: Verify GoWebUI release lock
         run: python3 scripts/build-gowebui-release-lock.py --check
 
-      - name: Verify runner architecture
+      - name: Verify host and arm64 target toolchain
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(uname -m)" = "arm64"
+          test "$(uname -m)" = "x86_64"
+          echo "host=$(uname -m); release-target=arm64"
           xcodebuild -version
           go version
 
-      - name: 真实 macOS arm64 双实现发布模拟
+      - name: macOS Intel 主机交叉构建 arm64 双实现发布模拟
         shell: bash
         run: bash scripts/simulate-release.sh
 
@@ -47,10 +48,10 @@ jobs:
 
       - uses: actions/upload-artifact@v6
         with:
-          name: MihomoCoreManager-dual-release
+          name: MihomoManager-dual-release
           path: dist/
 
       - uses: actions/upload-artifact@v6
         with:
-          name: MihomoCoreManager-GoWebUI-portable-preview
+          name: MihomoManager-GoWebUI-portable-preview
           path: dist-portable/

@@ -1,16 +1,26 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
 
 func TestJoinURL(t *testing.T) {
 	got, err := joinURL("https://example.com/base", "/api/status", false, nil)
@@ -28,6 +38,73 @@ func TestHTTPGate(t *testing.T) {
 	}
 	if _, err := normalizeBase("http://example.com", true); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLANHostClassification(t *testing.T) {
+	for _, host := range []string{
+		"localhost", "nas", "server.local", "router.lan", "host.home.arpa",
+		"127.0.0.1", "10.0.0.8", "172.16.1.9", "192.168.50.4", "169.254.10.2", "::1", "fd00::10",
+	} {
+		if !isLANHost(host) {
+			t.Errorf("expected LAN host classification for %q", host)
+		}
+	}
+	for _, host := range []string{"example.com", "cloudflare.com", "8.8.8.8", "1.1.1.1"} {
+		if isLANHost(host) {
+			t.Errorf("public host must not be classified as LAN: %q", host)
+		}
+	}
+}
+
+func TestBackendProxyAlwaysBypassesExplicitLANHost(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "http://192.168.20.15:8080/api/status", nil)
+	proxyURL, err := backendProxy(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if proxyURL != nil {
+		t.Fatalf("LAN backend must be connected directly, got proxy %s", proxyURL)
+	}
+}
+
+func TestAdaptivePollDelayBacksOffAndCaps(t *testing.T) {
+	base := 1200 * time.Millisecond
+	if got := adaptivePollDelay(base, 30*time.Second, 0); got != base {
+		t.Fatalf("healthy delay changed: %v", got)
+	}
+	if got := adaptivePollDelay(base, 30*time.Second, 1); got != 2400*time.Millisecond {
+		t.Fatalf("first failure should back off to 2x, got %v", got)
+	}
+	if got := adaptivePollDelay(base, 30*time.Second, 9); got != 30*time.Second {
+		t.Fatalf("backoff must cap at 30s, got %v", got)
+	}
+}
+
+func TestControllerURLStripsUIPrefixAndPreservesExplicitPort(t *testing.T) {
+	normalized, err := normalizedControllerString("http://192.168.9.202:9090/ui/", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normalized != "http://192.168.9.202:9090" {
+		t.Fatalf("unexpected normalized controller URL: %s", normalized)
+	}
+	target, err := joinURL(normalized, "/version", true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target != "http://192.168.9.202:9090/version" {
+		t.Fatalf("unexpected controller target: %s", target)
+	}
+}
+
+func TestControllerURLDoesNotInventPort(t *testing.T) {
+	normalized, err := normalizedControllerString("http://mihomo.lan/ui/", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normalized != "http://mihomo.lan" {
+		t.Fatalf("controller URL must not auto-add a port: %s", normalized)
 	}
 }
 
@@ -745,7 +822,7 @@ func TestMenuPreferences(t *testing.T) {
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/local/menu-preferences", strings.NewReader(`{"showIcon":true,"showStatus":false,"showSpeed":true}`))
+	req := httptest.NewRequest(http.MethodPost, "/local/menu-preferences", strings.NewReader(`{"showIcon":true,"showStatus":false,"showSpeed":true,"refreshIntervalMS":5000,"logLines":300}`))
 	rec := httptest.NewRecorder()
 	state.handleMenuPreferences(rec, req)
 	if rec.Code != http.StatusOK {
@@ -756,8 +833,20 @@ func TestMenuPreferences(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got["showIcon"] != true || got["showStatus"] != false || got["showSpeed"] != true {
+	if got["showIcon"] != true || got["showStatus"] != false || got["showSpeed"] != true || got["refreshIntervalMS"] != float64(5000) || got["logLines"] != float64(300) {
 		t.Fatalf("unexpected prefs: %#v", got)
+	}
+	if state.refreshInterval() != 5*time.Second {
+		t.Fatalf("refresh interval was not applied: %v", state.refreshInterval())
+	}
+
+	// The native menu process posts only its three booleans. That must not erase
+	// the v1.3.0-compatible refresh/log preferences restored in the Web UI.
+	req = httptest.NewRequest(http.MethodPost, "/local/menu-preferences", strings.NewReader(`{"showIcon":true,"showStatus":true,"showSpeed":false}`))
+	rec = httptest.NewRecorder()
+	state.handleMenuPreferences(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("tray-only preference update failed: %d (%s)", rec.Code, rec.Body.String())
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/local/menu-preferences", nil)
@@ -769,8 +858,485 @@ func TestMenuPreferences(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got["showIcon"] != true || got["showStatus"] != false || got["showSpeed"] != true {
+	if got["showIcon"] != true || got["showStatus"] != true || got["showSpeed"] != false || got["refreshIntervalMS"] != float64(5000) || got["logLines"] != float64(300) {
 		t.Fatalf("prefs did not persist in state: %#v", got)
+	}
+}
+
+func TestDirectRestartPrefersMihomoCoreAPI(t *testing.T) {
+	restartCalls, managementCalls := 0, 0
+	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/restart":
+			restartCalls++
+			if r.Method != http.MethodPost {
+				t.Errorf("restart method = %s", r.Method)
+			}
+			if got := r.Header.Get("Authorization"); got != "Bearer controller-secret" {
+				t.Errorf("restart Authorization = %q", got)
+			}
+			var body map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode restart body: %v", err)
+			}
+			if body["path"] != "/etc/mihomo/config.yaml" || body["payload"] != "" {
+				t.Errorf("unexpected restart body: %#v", body)
+			}
+			w.WriteHeader(http.StatusNoContent)
+		case "/api/action":
+			managementCalls++
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		case "/version":
+			_, _ = w.Write([]byte(`{"version":"test"}`))
+		case "/connections":
+			_, _ = w.Write([]byte(`{"connections":[],"uploadTotal":0,"downloadTotal":0,"memory":0}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer controller.Close()
+
+	state := &appState{
+		path: filepath.Join(t.TempDir(), "settings.json"),
+		settings: Settings{SelectedID: "test", Profiles: []Profile{{
+			ID: "test", Name: "test", ManagementURL: controller.URL, CoreControllerURL: controller.URL,
+			ConfigPath: "/etc/mihomo/config.yaml", AllowInsecureHTTP: true,
+		}}},
+		client:                controller.Client(),
+		secretCache:           map[string]string{"test": "management-secret"},
+		controllerSecretCache: map[string]string{"test": "controller-secret"},
+		proxyDelayCache:       map[string]map[string]int{},
+	}
+	t.Cleanup(state.waitBackground)
+
+	rec := httptest.NewRecorder()
+	state.handleAction(rec, httptest.NewRequest(http.MethodPost, "/local/action", strings.NewReader(`{"action":"restart"}`)))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"via":"controller"`) {
+		t.Fatalf("direct restart failed: %d %s", rec.Code, rec.Body.String())
+	}
+	if restartCalls != 1 || managementCalls != 0 {
+		t.Fatalf("restart=%d management=%d; expected Core API only", restartCalls, managementCalls)
+	}
+}
+
+func TestRestartFallsBackToManagementWhenControllerRestartFails(t *testing.T) {
+	restartCalls, managementCalls := 0, 0
+	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/restart":
+			restartCalls++
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"message":"unsupported"}`))
+		case "/api/action":
+			managementCalls++
+			var body map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if body["action"] != "restart" {
+				t.Errorf("fallback action = %q", body["action"])
+			}
+			_, _ = w.Write([]byte(`{"ok":true,"message":"fallback ok"}`))
+		case "/version":
+			_, _ = w.Write([]byte(`{"version":"test"}`))
+		case "/connections":
+			_, _ = w.Write([]byte(`{"connections":[],"uploadTotal":0,"downloadTotal":0,"memory":0}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer remote.Close()
+
+	state := &appState{
+		path: filepath.Join(t.TempDir(), "settings.json"),
+		settings: Settings{SelectedID: "test", Profiles: []Profile{{
+			ID: "test", Name: "test", ManagementURL: remote.URL, CoreControllerURL: remote.URL,
+			ConfigPath: "/etc/mihomo/config.yaml", AllowInsecureHTTP: true,
+		}}},
+		client:                remote.Client(),
+		secretCache:           map[string]string{"test": "management-secret"},
+		controllerSecretCache: map[string]string{"test": "controller-secret"},
+		proxyDelayCache:       map[string]map[string]int{},
+	}
+	t.Cleanup(state.waitBackground)
+
+	rec := httptest.NewRecorder()
+	state.handleAction(rec, httptest.NewRequest(http.MethodPost, "/local/action", strings.NewReader(`{"action":"restart"}`)))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "fallback ok") {
+		t.Fatalf("management fallback failed: %d %s", rec.Code, rec.Body.String())
+	}
+	if restartCalls != 1 || managementCalls != 1 {
+		t.Fatalf("restart=%d management=%d; expected one Core attempt then one management fallback", restartCalls, managementCalls)
+	}
+}
+
+func TestEffectiveSystemdSSHTargetInfersLANManagementHost(t *testing.T) {
+	p := Profile{
+		ManagementURL:     "http://192.168.8.202:29090",
+		CoreControllerURL: "http://192.168.9.202:9090",
+	}
+	if got := effectiveSystemdSSHTarget(p); got != "192.168.8.202" {
+		t.Fatalf("expected Management LAN host as inferred SSH target, got %q", got)
+	}
+	p.SystemdSSHTarget = "root@mihomo.lan"
+	if got := effectiveSystemdSSHTarget(p); got != "root@mihomo.lan" {
+		t.Fatalf("explicit SSH target must remain authoritative, got %q", got)
+	}
+	if got := effectiveSystemdSSHTarget(Profile{ManagementURL: "https://example.com"}); got != "" {
+		t.Fatalf("public hosts must not be auto-probed over SSH, got %q", got)
+	}
+}
+
+func TestControllerHTTPFallsBackThroughSSHToServerLoopback(t *testing.T) {
+	oldRunner := systemSSHStdinRunner
+	defer func() { systemSSHStdinRunner = oldRunner }()
+
+	var mu sync.Mutex
+	var commands []string
+	systemSSHStdinRunner = func(ctx context.Context, stdin []byte, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		command := args[len(args)-1]
+		mu.Lock()
+		commands = append(commands, joined)
+		mu.Unlock()
+		if strings.Contains(command, "192.168.9.202:9090/proxies") {
+			return []byte("curl: (7) Failed to connect"), errors.New("exit status 7")
+		}
+		if strings.Contains(command, "127.0.0.1:9090/proxies") {
+			return []byte(`{"proxies":{}}` + "\n" + sshHTTPStatusMarker + "200"), nil
+		}
+		return []byte("unexpected SSH request"), errors.New("unexpected SSH request")
+	}
+
+	state := &appState{
+		settings: Settings{SelectedID: "p1", Profiles: []Profile{{
+			ID: "p1", Name: "test", ManagementURL: "http://192.168.8.202:29090",
+			CoreControllerURL: "http://192.168.9.202:9090", AllowInsecureHTTP: true,
+		}}},
+		client: &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			return nil, errors.New("dial tcp 192.168.9.202:9090: connect: no route to host")
+		})},
+		secretCache:           map[string]string{"p1": "panel-secret"},
+		controllerSecretCache: map[string]string{"p1": "core-secret"},
+	}
+	data, code, err := state.remote(http.MethodGet, "/proxies", nil, nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code != http.StatusOK || !strings.Contains(string(data), `"proxies"`) {
+		t.Fatalf("unexpected fallback response: code=%d data=%s", code, data)
+	}
+	mu.Lock()
+	joined := strings.Join(commands, "\n")
+	mu.Unlock()
+	for _, want := range []string{"-- 192.168.8.202", "192.168.9.202:9090/proxies", "127.0.0.1:9090/proxies"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("SSH fallback missing %q:\n%s", want, joined)
+		}
+	}
+}
+
+func TestManagementEndpointsFallBackThroughSSHToServerLoopback(t *testing.T) {
+	oldRunner := systemSSHStdinRunner
+	defer func() { systemSSHStdinRunner = oldRunner }()
+
+	systemSSHStdinRunner = func(ctx context.Context, stdin []byte, args ...string) ([]byte, error) {
+		command := args[len(args)-1]
+		if strings.Contains(command, "192.168.8.202:29090") {
+			return []byte("curl: (7) Failed to connect"), errors.New("exit status 7")
+		}
+		switch {
+		case strings.Contains(command, "127.0.0.1:29090/api/subscriptions"):
+			return []byte(`{"ok":true,"subscriptions":{}}` + "\n" + sshHTTPStatusMarker + "200"), nil
+		case strings.Contains(command, "127.0.0.1:29090/api/project-update/check"):
+			return []byte(`{"ok":true,"updates":[]}` + "\n" + sshHTTPStatusMarker + "200"), nil
+		default:
+			return []byte("unexpected SSH request"), errors.New("unexpected SSH request")
+		}
+	}
+
+	state := &appState{
+		settings: Settings{SelectedID: "p1", Profiles: []Profile{{
+			ID: "p1", Name: "test", ManagementURL: "http://192.168.8.202:29090",
+			CoreControllerURL: "http://192.168.9.202:9090", AllowInsecureHTTP: true,
+		}}},
+		client: &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			return nil, errors.New("dial tcp 192.168.8.202:29090: connect: no route to host")
+		})},
+		secretCache:           map[string]string{"p1": "panel-secret"},
+		controllerSecretCache: map[string]string{"p1": "core-secret"},
+	}
+
+	rec := httptest.NewRecorder()
+	state.handleSubscriptions(rec, httptest.NewRequest(http.MethodGet, "/local/subscriptions", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"subscriptions"`) {
+		t.Fatalf("subscriptions SSH fallback failed: %d %s", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	state.proxy("/api/project-update/check")(rec, httptest.NewRequest(http.MethodGet, "/local/update/check", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"updates"`) {
+		t.Fatalf("update-check SSH fallback failed: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestProxySelectFallsBackThroughSSHWhenControllerPortIsBlocked(t *testing.T) {
+	oldRunner := systemSSHStdinRunner
+
+	systemSSHStdinRunner = func(ctx context.Context, stdin []byte, args ...string) ([]byte, error) {
+		command := args[len(args)-1]
+		if strings.Contains(command, "192.168.9.202:9090") {
+			return []byte("curl: (7) Failed to connect"), errors.New("exit status 7")
+		}
+		if strings.Contains(command, "127.0.0.1:9090/proxies/GLOBAL") && strings.Contains(command, "PUT") {
+			if !strings.Contains(string(stdin), `"name":"HK"`) {
+				t.Fatalf("proxy selection body was not streamed through SSH stdin: %s", stdin)
+			}
+			return []byte("\n" + sshHTTPStatusMarker + "204"), nil
+		}
+		if strings.Contains(command, "127.0.0.1:9090/proxies") {
+			return []byte(`{"proxies":{"GLOBAL":{"name":"GLOBAL","type":"Selector","now":"HK","all":["HK"]},"HK":{"name":"HK","type":"Direct","alive":true}}}` + "\n" + sshHTTPStatusMarker + "200"), nil
+		}
+		if strings.Contains(command, "127.0.0.1:9090/providers/proxies") {
+			return []byte(`{"providers":{}}` + "\n" + sshHTTPStatusMarker + "200"), nil
+		}
+		return []byte("unexpected SSH request"), errors.New("unexpected SSH request")
+	}
+
+	state := &appState{
+		path: filepath.Join(t.TempDir(), "settings.json"),
+		settings: Settings{SelectedID: "p1", Profiles: []Profile{{
+			ID: "p1", Name: "test", ManagementURL: "http://192.168.8.202:29090",
+			CoreControllerURL: "http://192.168.9.202:9090", AllowInsecureHTTP: true,
+		}}},
+		client: &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			return nil, errors.New("dial tcp 192.168.9.202:9090: connect: no route to host")
+		})},
+		secretCache:           map[string]string{"p1": "panel-secret"},
+		controllerSecretCache: map[string]string{"p1": "core-secret"},
+		proxyDelayCache:       map[string]map[string]int{},
+	}
+	t.Cleanup(func() {
+		state.waitBackground()
+		systemSSHStdinRunner = oldRunner
+	})
+
+	rec := httptest.NewRecorder()
+	state.handleProxySelect(rec, httptest.NewRequest(http.MethodPost, "/local/proxy-select", strings.NewReader(`{"group":"GLOBAL","name":"HK"}`)))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"name":"HK"`) {
+		t.Fatalf("proxy-select SSH fallback failed: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestLogsInferSSHHostAndPreferJournal(t *testing.T) {
+	oldRunner := systemSSHRunner
+	defer func() { systemSSHRunner = oldRunner }()
+	var sshArgs string
+	systemSSHRunner = func(ctx context.Context, args ...string) ([]byte, error) {
+		sshArgs = strings.Join(args, " ")
+		return []byte("mihomo journal line\n"), nil
+	}
+	state := &appState{
+		settings: Settings{SelectedID: "p1", Profiles: []Profile{{
+			ID: "p1", Name: "test", ManagementURL: "http://192.168.8.202:29090",
+			CoreControllerURL: "http://192.168.9.202:9090", AllowInsecureHTTP: true,
+		}}},
+		client:      newHTTPClient(),
+		secretCache: map[string]string{"p1": "panel-secret"},
+	}
+	rec := httptest.NewRecorder()
+	state.handleLogs(rec, httptest.NewRequest(http.MethodGet, "/local/logs?lines=100", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "mihomo journal line") || !strings.Contains(rec.Body.String(), `"via":"systemd"`) {
+		t.Fatalf("journal fallback failed: %d %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(sshArgs, "-- 192.168.8.202") || !strings.Contains(sshArgs, "journalctl -u mihomo.service") {
+		t.Fatalf("did not infer LAN SSH host for journalctl: %s", sshArgs)
+	}
+}
+
+func TestSystemdSSHArgumentsUseExplicitPortAndIdentity(t *testing.T) {
+	args, err := systemdSSHArgs(Profile{
+		SystemdSSHTarget:    "admin@mihomo.lan",
+		SystemdSSHPort:      2222,
+		SystemdIdentityFile: "/tmp/id_ed25519",
+	}, "systemctl status mihomo.service")
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(args, " ")
+	for _, want := range []string{"BatchMode=yes", "ConnectTimeout=4", "-p 2222", "-i /tmp/id_ed25519", "-- admin@mihomo.lan", "mihomo.service"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("systemd SSH args missing %q: %s", want, joined)
+		}
+	}
+}
+
+func TestStartPrefersSystemdBeforeManagementPanel(t *testing.T) {
+	oldRunner := systemSSHRunner
+	var mu sync.Mutex
+	var commands []string
+	systemSSHRunner = func(ctx context.Context, args ...string) ([]byte, error) {
+		mu.Lock()
+		commands = append(commands, args[len(args)-1])
+		mu.Unlock()
+		if strings.Contains(args[len(args)-1], "systemctl show mihomo.service") {
+			return []byte("LoadState=loaded\nActiveState=active\nSubState=running\nUnitFileState=enabled\nMainPID=123\nFragmentPath=/etc/systemd/system/mihomo.service\n"), nil
+		}
+		return nil, nil
+	}
+
+	state := &appState{
+		path: filepath.Join(t.TempDir(), "settings.json"),
+		settings: Settings{SelectedID: "test", Profiles: []Profile{{
+			ID: "test", Name: "test", ManagementURL: "http://127.0.0.1:1",
+			SystemdSSHTarget: "root@mihomo.lan", SystemdSSHPort: 22, AllowInsecureHTTP: true,
+		}}},
+		client:      newHTTPClient(),
+		secretCache: map[string]string{"test": "panel-secret"},
+	}
+	defer func() {
+		state.waitBackground()
+		systemSSHRunner = oldRunner
+	}()
+
+	rec := httptest.NewRecorder()
+	state.handleAction(rec, httptest.NewRequest(http.MethodPost, "/local/action", strings.NewReader(`{"action":"start"}`)))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"via":"systemd"`) {
+		t.Fatalf("start did not prefer systemd: %d %s", rec.Code, rec.Body.String())
+	}
+	state.waitBackground()
+	mu.Lock()
+	joined := strings.Join(commands, "\n")
+	mu.Unlock()
+	if !strings.Contains(joined, "systemctl start mihomo.service") {
+		t.Fatalf("missing systemd start command: %s", joined)
+	}
+}
+
+func TestRestartFallsBackFromControllerToSystemdBeforeManagement(t *testing.T) {
+	var panelActionHits atomic.Int32
+	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/restart", "/version":
+			http.Error(w, "controller unavailable", http.StatusServiceUnavailable)
+		case "/api/action":
+			panelActionHits.Add(1)
+			http.Error(w, "management should not be used", http.StatusInternalServerError)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer controller.Close()
+
+	oldRunner := systemSSHRunner
+	systemSSHRunner = func(ctx context.Context, args ...string) ([]byte, error) {
+		command := args[len(args)-1]
+		if strings.Contains(command, "systemctl show mihomo.service") {
+			return []byte("LoadState=loaded\nActiveState=active\nSubState=running\nUnitFileState=enabled\nMainPID=456\nFragmentPath=/etc/systemd/system/mihomo.service\n"), nil
+		}
+		if !strings.Contains(command, "systemctl restart mihomo.service") {
+			t.Errorf("unexpected SSH command: %s", command)
+		}
+		return nil, nil
+	}
+	state := &appState{
+		path: filepath.Join(t.TempDir(), "settings.json"),
+		settings: Settings{SelectedID: "test", Profiles: []Profile{{
+			ID: "test", Name: "test", CoreControllerURL: controller.URL, ManagementURL: controller.URL,
+			SystemdSSHTarget: "root@mihomo.lan", SystemdSSHPort: 22, AllowInsecureHTTP: true,
+		}}},
+		client:                controller.Client(),
+		secretCache:           map[string]string{"test": "panel-secret"},
+		controllerSecretCache: map[string]string{"test": ""},
+	}
+	defer func() {
+		state.waitBackground()
+		systemSSHRunner = oldRunner
+	}()
+
+	rec := httptest.NewRecorder()
+	state.handleAction(rec, httptest.NewRequest(http.MethodPost, "/local/action", strings.NewReader(`{"action":"restart"}`)))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"via":"systemd"`) {
+		t.Fatalf("restart did not use systemd fallback: %d %s", rec.Code, rec.Body.String())
+	}
+	state.waitBackground()
+	if hits := panelActionHits.Load(); hits != 0 {
+		t.Fatalf("management action must remain final fallback, got %d hits", hits)
+	}
+}
+
+func TestStatusFallsBackFromControllerToSystemdBeforeManagement(t *testing.T) {
+	var panelStatusHits atomic.Int32
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/version":
+			http.Error(w, "controller unavailable", http.StatusServiceUnavailable)
+		case "/api/status":
+			panelStatusHits.Add(1)
+			_, _ = w.Write([]byte(`{"ok":true,"service":{"active":true}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer backend.Close()
+
+	oldRunner := systemSSHRunner
+	defer func() { systemSSHRunner = oldRunner }()
+	systemSSHRunner = func(ctx context.Context, args ...string) ([]byte, error) {
+		return []byte("LoadState=loaded\nActiveState=inactive\nSubState=dead\nUnitFileState=enabled\nMainPID=0\nFragmentPath=/etc/systemd/system/mihomo.service\n"), nil
+	}
+	state := &appState{
+		settings: Settings{SelectedID: "test", Profiles: []Profile{{
+			ID: "test", Name: "test", CoreControllerURL: backend.URL, ManagementURL: backend.URL,
+			SystemdSSHTarget: "root@mihomo.lan", AllowInsecureHTTP: true,
+		}}},
+		client:      backend.Client(),
+		secretCache: map[string]string{"test": "panel-secret"},
+	}
+	data, err := state.fetchStatusSnapshot(state.settings.Profiles[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"manager":"systemd · mihomo.service"`) || !strings.Contains(string(data), `"active":false`) {
+		t.Fatalf("unexpected systemd status payload: %s", data)
+	}
+	if panelStatusHits.Load() != 0 {
+		t.Fatal("management status must not be queried when systemd status succeeds")
+	}
+}
+
+func TestLogsPreferSystemdJournalBeforeManagement(t *testing.T) {
+	var panelHits atomic.Int32
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		panelHits.Add(1)
+		http.Error(w, "management should not be used", http.StatusInternalServerError)
+	}))
+	defer backend.Close()
+
+	oldRunner := systemSSHRunner
+	defer func() { systemSSHRunner = oldRunner }()
+	systemSSHRunner = func(ctx context.Context, args ...string) ([]byte, error) {
+		command := args[len(args)-1]
+		if !strings.Contains(command, "journalctl -u mihomo.service -n 100") {
+			t.Fatalf("unexpected journal command: %s", command)
+		}
+		return []byte("line one\nline two\n"), nil
+	}
+	state := &appState{
+		settings: Settings{SelectedID: "test", Profiles: []Profile{{
+			ID: "test", Name: "test", ManagementURL: backend.URL,
+			SystemdSSHTarget: "root@mihomo.lan", AllowInsecureHTTP: true,
+		}}},
+		client:      backend.Client(),
+		secretCache: map[string]string{"test": "panel-secret"},
+	}
+	rec := httptest.NewRecorder()
+	state.handleLogs(rec, httptest.NewRequest(http.MethodGet, "/local/logs?lines=100", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"via":"systemd"`) || !strings.Contains(rec.Body.String(), "line one") {
+		t.Fatalf("systemd logs failed: %d %s", rec.Code, rec.Body.String())
+	}
+	if panelHits.Load() != 0 {
+		t.Fatal("management logs must not be queried when journalctl succeeds")
 	}
 }
 
@@ -982,18 +1548,18 @@ func TestPortableInteractionRegressionV118(t *testing.T) {
 	}
 }
 
-func TestEmbeddedModernAppIconV130(t *testing.T) {
+func TestEmbeddedModernAppIconV131(t *testing.T) {
 	b, err := assets.ReadFile("ui/app-icon-128.png")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(b) < 1024 || len(b) < 8 || string(b[:8]) != "\x89PNG\r\n\x1a\n" {
-		t.Fatalf("embedded v1.3.0 app icon is missing or invalid PNG: %d bytes", len(b))
+		t.Fatalf("embedded v1.3.1 app icon is missing or invalid PNG: %d bytes", len(b))
 	}
 }
 
-func TestPortableVersionV130(t *testing.T) {
-	if appVersion != "1.3.0" || buildNumber != "1300" {
+func TestPortableVersionV131(t *testing.T) {
+	if appVersion != "1.3.1" || buildNumber != "1301" {
 		t.Fatalf("unexpected portable version/build: %s/%s", appVersion, buildNumber)
 	}
 }
@@ -1012,6 +1578,12 @@ func TestPerformanceHTTPClientKeepsTLSSafetyAndConnectionReuse(t *testing.T) {
 	}
 	if transport.TLSClientConfig != nil && transport.TLSClientConfig.InsecureSkipVerify {
 		t.Fatal("performance tuning must never disable TLS certificate verification")
+	}
+	if transport.Proxy == nil {
+		t.Fatal("backend transport must install LAN-aware proxy policy")
+	}
+	if transport.DialContext == nil {
+		t.Fatal("backend transport must install macOS LAN resolver dialer")
 	}
 }
 
@@ -1107,5 +1679,60 @@ func TestStatusTelemetryGraceIsRecentAndBounded(t *testing.T) {
 	}
 	if _, err := os.Stat(state.statusFilePath()); !os.IsNotExist(err) {
 		t.Fatalf("expired telemetry snapshot should be removed, err=%v", err)
+	}
+}
+
+func TestNormalizeControllerPreservesReverseProxyPrefixAndStripsUICaseInsensitive(t *testing.T) {
+	got, err := normalizedControllerString("https://example.test/mihomo/Ui/#/setup", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "https://example.test/mihomo" {
+		t.Fatalf("unexpected normalized controller URL: %q", got)
+	}
+
+	got, err = normalizedControllerString("http://192.168.8.2:9090/prefix/ui/dashboard", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "http://192.168.8.2:9090/prefix" {
+		t.Fatalf("explicit controller port/prefix not preserved: %q", got)
+	}
+}
+
+func TestNormalizeManagementDeploymentEndpointPreservesPrefixAndPort(t *testing.T) {
+	got, err := normalizedManagementString("http://192.168.8.2:29090/admin/api/status?x=1#frag", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "http://192.168.8.2:29090/admin" {
+		t.Fatalf("unexpected normalized management URL: %q", got)
+	}
+
+	got, err = normalizedManagementString("https://panel.example.test/base/api/project-update/check", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "https://panel.example.test/base" {
+		t.Fatalf("management reverse-proxy prefix was not preserved: %q", got)
+	}
+}
+
+func TestEnrichStatusSpeedFromControllerTotals(t *testing.T) {
+	previous := []byte(`{"ok":true,"totals":{"up":1000,"down":2000}}`)
+	current := []byte(`{"ok":true,"totals":{"up":1300,"down":2600}}`)
+	before := time.Unix(100, 0)
+	after := before.Add(2 * time.Second)
+	got := enrichStatusSpeed(current, previous, before, after)
+	var payload map[string]any
+	if err := json.Unmarshal(got, &payload); err != nil {
+		t.Fatal(err)
+	}
+	speed, ok := payload["speed"].(map[string]any)
+	if !ok {
+		t.Fatalf("speed missing from enriched payload: %s", got)
+	}
+	if speed["up"].(float64) != 150 || speed["down"].(float64) != 300 {
+		t.Fatalf("unexpected speed: %#v", speed)
 	}
 }

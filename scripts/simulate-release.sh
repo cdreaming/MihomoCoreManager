@@ -19,6 +19,7 @@ if ! cmp -s "$MANIFEST_BEFORE" SOURCE-SHA256SUMS.txt; then
 fi
 
 python3 scripts/release-preflight.py
+python3 scripts/release_host_policy.py --self-test
 
 echo "== GoWebUI runtime lifecycle / concurrency stress =="
 (
@@ -44,21 +45,21 @@ PYTEST
 
 echo "== build GoWebUI portable preview from the shared app builder =="
 bash scripts/build-portable-installer.sh
-PORTABLE="$ROOT/dist-portable/MihomoCoreManager-v${VERSION}-GoWebUI-arm64-portable-installer.zip"
+PORTABLE="$ROOT/dist-portable/MihomoManager-v${VERSION}-GoWebUI-arm64-portable-installer.zip"
 [[ -f "$PORTABLE" ]] || { echo "GoWebUI portable ZIP missing: $PORTABLE" >&2; exit 1; }
 
 python3 - "$PORTABLE" "$VERSION" "$BUILD_NUMBER" <<'PY'
 from pathlib import Path
 import plistlib,sys,zipfile
 archive=Path(sys.argv[1]); version=sys.argv[2]; build=sys.argv[3]
-prefix=f'MihomoCoreManager-v{version}-GoWebUI-arm64-portable-installer/'
-plist_name=prefix+'MihomoCoreManager.app/Contents/Info.plist'
-binary_name=prefix+'MihomoCoreManager.app/Contents/MacOS/MihomoCoreManager'
+prefix=f'MihomoManager-v{version}-GoWebUI-arm64-portable-installer/'
+plist_name=prefix+'MihomoManager.app/Contents/Info.plist'
+binary_name=prefix+'MihomoManager.app/Contents/MacOS/MihomoManager'
 with zipfile.ZipFile(archive) as zf:
     bad=zf.testzip()
     if bad: raise SystemExit(f'portable ZIP CRC failure: {bad}')
     names=set(zf.namelist())
-    for n in [plist_name,binary_name,prefix+'Install-MihomoCoreManager.command']:
+    for n in [plist_name,binary_name,prefix+'Install-MihomoManager.command']:
         if n not in names: raise SystemExit(f'portable payload missing: {n}')
     pl=plistlib.loads(zf.read(plist_name))
     assert pl['CFBundleShortVersionString']==version
@@ -68,12 +69,13 @@ with zipfile.ZipFile(archive) as zf:
 print('GoWebUI portable preview verification: PASS')
 PY
 
-if [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]]; then
-  echo "== Apple Silicon GitHub-style dual .pkg release =="
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  echo "== macOS host -> arm64 dual .pkg release =="
+  echo "host=$(uname -m); target=arm64"
   python3 scripts/release-preflight.py --strict-macos
   bash scripts/build-release.sh --unsigned
-  test -f "dist/MihomoCoreManager-v${VERSION}-GoWebUI-arm64.pkg"
-  test -f "dist/MihomoCoreManager-v${VERSION}-SwiftUI-arm64.pkg"
+  test -f "dist/MihomoManager-v${VERSION}-GoWebUI-arm64.pkg"
+  test -f "dist/MihomoManager-v${VERSION}-SwiftUI-arm64.pkg"
   (
     cd dist
     shasum -a 256 -c SHA256SUMS.txt
@@ -81,7 +83,7 @@ if [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]]; then
   echo "dual unsigned .pkg release simulation: PASS"
 else
   echo "GitHub dual .pkg stage: SKIPPED on $(uname -s)/$(uname -m)"
-  echo "CI/Release runs this stage on macos-15 arm64."
+  echo "CI/Release runs this stage on macos-15-intel and cross-builds arm64-only artifacts."
 fi
 
 echo "release simulation: PASS"
