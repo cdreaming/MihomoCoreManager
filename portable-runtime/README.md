@@ -19,10 +19,4 @@
 - Profile 非敏感字段写入 `~/Library/Application Support/MihomoCoreManager/settings.json`；Secret 使用 macOS Keychain。
 - 状态栏、代理切换、线路延时、Controller `/group`/`/proxies` 合并、窗口生命周期等 v1.2.x 稳定性修复继续保留。
 
-## v1.3.1 networking
-
-- 局域网目标（私网 IP、loopback/link-local、`.local` / `.lan` / `.home.arpa`、单标签主机）绕过继承的 HTTP(S) 环境代理。
-- `CGO_ENABLED=0` 的 macOS runtime 对本地主机名增加系统解析器回退。
-- Cloudflare Tunnel/网关临时故障会清理空闲连接并对只读请求、状态轮询和代理菜单轮询退避，减少恢复期请求风暴。
-
-v1.3.1：`VERSION=1.3.1`，`BUILD_NUMBER=1301`。
+v1.3.0：`VERSION=1.3.0`，`BUILD_NUMBER=1300`。

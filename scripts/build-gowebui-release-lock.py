@@ -17,7 +17,6 @@ INPUTS = [
     "portable-runtime/main.go",
     "portable-runtime/ui/index.html",
     "portable-runtime/ui/app-icon-128.png",
-    "branding/MihomoCoreManager-2.png",
     "branding/AppIcon-master-1024.png",
     "scripts/generate-app-icon.py",
     "scripts/build-gowebui-release-lock.py",
