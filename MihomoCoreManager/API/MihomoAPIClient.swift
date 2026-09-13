@@ -1,7 +1,21 @@
 import Foundation
+import Dispatch
 
 private struct ControllerConfigResponse: Decodable {
     let mode: String?
+}
+
+private struct ControllerVersionResponse: Decodable {
+    let version: String?
+}
+
+private struct ControllerConnectionSummary: Decodable {}
+
+private struct ControllerConnectionsStatusResponse: Decodable {
+    let downloadTotal: Int64?
+    let uploadTotal: Int64?
+    let connections: [ControllerConnectionSummary]?
+    let memory: Int64?
 }
 
 private struct ControllerProxiesResponse: Decodable {
@@ -98,8 +112,246 @@ struct MihomoAPIClient {
         return URLSession(configuration: config)
     }()
 
-    func status(profile: ServerProfile, secret: String) async throws -> StatusPayload {
+    private struct SSHProcessResult {
+        let stdout: String
+        let stderr: String
+        let exitCode: Int32
+    }
+
+    private func systemdSSHTarget(profile: ServerProfile) -> String? {
+        let target = (profile.systemdSSHTarget ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !target.isEmpty else { return nil }
+        return target
+    }
+
+    private func runSystemdSSH(profile: ServerProfile, command: String) async throws -> String {
+        guard let target = systemdSSHTarget(profile: profile) else {
+            throw MihomoClientError.operationFailed("未配置 mihomo.service SSH 目标")
+        }
+        guard !target.hasPrefix("-"), target.rangeOfCharacter(from: .whitespacesAndNewlines) == nil else {
+            throw MihomoClientError.operationFailed("mihomo.service SSH 目标格式无效")
+        }
+
+        var arguments = [
+            "-o", "BatchMode=yes",
+            "-o", "ConnectTimeout=4",
+            "-o", "ConnectionAttempts=1",
+            "-o", "StrictHostKeyChecking=accept-new",
+            "-o", "LogLevel=ERROR",
+            "-p", String(profile.effectiveSystemdSSHPort)
+        ]
+        let identity = (profile.systemdIdentityFile ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !identity.isEmpty {
+            arguments += ["-i", NSString(string: identity).expandingTildeInPath]
+        }
+        arguments += ["--", target, command]
+
+        let result = try await Task.detached(priority: .utility) { () throws -> SSHProcessResult in
+            let fileManager = FileManager.default
+            let directory = fileManager.temporaryDirectory
+                .appendingPathComponent("MihomoCoreManager-systemd-\(UUID().uuidString)", isDirectory: true)
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? fileManager.removeItem(at: directory) }
+
+            let stdoutURL = directory.appendingPathComponent("stdout")
+            let stderrURL = directory.appendingPathComponent("stderr")
+            fileManager.createFile(atPath: stdoutURL.path, contents: nil)
+            fileManager.createFile(atPath: stderrURL.path, contents: nil)
+            let stdoutHandle = try FileHandle(forWritingTo: stdoutURL)
+            let stderrHandle = try FileHandle(forWritingTo: stderrURL)
+            defer {
+                try? stdoutHandle.close()
+                try? stderrHandle.close()
+            }
+
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+            process.arguments = arguments
+            process.standardInput = FileHandle.nullDevice
+            process.standardOutput = stdoutHandle
+            process.standardError = stderrHandle
+            let finished = DispatchSemaphore(value: 0)
+            process.terminationHandler = { _ in finished.signal() }
+            try process.run()
+            if finished.wait(timeout: .now() + 10) == .timedOut {
+                process.terminate()
+                _ = finished.wait(timeout: .now() + 1)
+                throw MihomoClientError.operationFailed("mihomo.service SSH 执行超时（10 秒）")
+            }
+            try? stdoutHandle.synchronize()
+            try? stderrHandle.synchronize()
+
+            let stdoutData = (try? Data(contentsOf: stdoutURL)) ?? Data()
+            let stderrData = (try? Data(contentsOf: stderrURL)) ?? Data()
+            return SSHProcessResult(
+                stdout: String(data: stdoutData, encoding: .utf8) ?? "",
+                stderr: String(data: stderrData, encoding: .utf8) ?? "",
+                exitCode: process.terminationStatus
+            )
+        }.value
+
+        guard result.exitCode == 0 else {
+            let detail = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            let fallback = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+            throw MihomoClientError.operationFailed(
+                "mihomo.service SSH 执行失败：\(!detail.isEmpty ? detail : (!fallback.isEmpty ? fallback : "exit \(result.exitCode)"))"
+            )
+        }
+        return result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func systemdStatus(profile: ServerProfile) async throws -> StatusPayload {
+        let output = try await runSystemdSSH(
+            profile: profile,
+            command: "LC_ALL=C systemctl show mihomo.service --no-pager --property=LoadState --property=ActiveState --property=SubState --property=UnitFileState --property=MainPID --property=FragmentPath"
+        )
+        var values: [String: String] = [:]
+        for line in output.split(separator: "\n", omittingEmptySubsequences: true) {
+            let parts = line.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            if parts.count == 2 { values[String(parts[0])] = String(parts[1]) }
+        }
+        guard let loadState = values["LoadState"], loadState != "not-found" else {
+            throw MihomoClientError.operationFailed("服务器未找到 mihomo.service（systemd: not-found）")
+        }
+        let activeState = values["ActiveState"] ?? "unknown"
+        let subState = values["SubState"] ?? "unknown"
+        let unitFileState = values["UnitFileState"]
+        let pid = Int(values["MainPID"] ?? "")
+        return StatusPayload(
+            ok: true,
+            service: ServiceStatus(
+                manager: "systemd · mihomo.service",
+                active: activeState == "active",
+                activeState: activeState,
+                subState: subState,
+                enabled: unitFileState?.hasPrefix("enabled"),
+                unitFileState: unitFileState,
+                pid: pid,
+                unitFilePath: values["FragmentPath"]
+            ),
+            uptimeSeconds: nil,
+            memoryBytes: nil,
+            speed: nil,
+            totals: nil,
+            connections: nil,
+            versions: nil,
+            version: nil,
+            management: nil,
+            corePublicUrl: nil,
+            controller: normalizedControllerURL(profile.coreControllerURL),
+            metacubexd: nil
+        )
+    }
+
+    private func systemdLifecycleAction(_ action: CoreAction, profile: ServerProfile) async throws -> String {
+        let verb: String
+        switch action {
+        case .start: verb = "start"
+        case .stop: verb = "stop"
+        case .restart: verb = "restart"
+        case .reload: verb = "reload"
+        case .applySubscriptions:
+            throw MihomoClientError.operationFailed("mihomo.service 不负责生成订阅配置")
+        }
+        let command = "if [ \"$(id -u)\" -eq 0 ]; then systemctl \(verb) mihomo.service; else sudo -n systemctl \(verb) mihomo.service; fi"
+        _ = try await runSystemdSSH(profile: profile, command: command)
+        return "已通过 mihomo.service（systemd/SSH）执行 \(action.displayName)"
+    }
+
+    private func systemdLogs(lines: Int, profile: ServerProfile) async throws -> String {
+        let safe = min(300, max(10, lines))
+        let command = "journalctl -u mihomo.service -n \(safe) --no-pager -o cat 2>/dev/null || sudo -n journalctl -u mihomo.service -n \(safe) --no-pager -o cat"
+        return try await runSystemdSSH(profile: profile, command: command)
+    }
+
+    func status(
+        profile: ServerProfile,
+        managementSecret: String,
+        controllerSecret: String
+    ) async throws -> StatusPayload {
+        // v1.3.1 in-place fix priority:
+        // 1) Mihomo Controller API (authoritative Core telemetry)
+        // 2) server-side mihomo.service through non-interactive SSH/systemd
+        // 3) optional Core management panel compatibility fallback.
+        var lastError: Error?
+        if profile.hasControllerEndpoint {
+            do {
+                return try await controllerStatus(profile: profile, secret: controllerSecret)
+            } catch {
+                lastError = error
+            }
+        }
+        if profile.hasSystemdServiceEndpoint {
+            do {
+                return try await systemdStatus(profile: profile)
+            } catch {
+                lastError = error
+            }
+        }
+        if profile.hasManagementEndpoint, !managementSecret.isEmpty {
+            do {
+                return try await managementStatus(profile: profile, secret: managementSecret)
+            } catch {
+                lastError = error
+            }
+        }
+        if let lastError { throw lastError }
+        throw MihomoClientError.missingController
+    }
+
+    private func managementStatus(profile: ServerProfile, secret: String) async throws -> StatusPayload {
         try await get("/api/status", profile: profile, secret: secret)
+    }
+
+    private func controllerStatus(profile: ServerProfile, secret: String) async throws -> StatusPayload {
+        let versionData = try await controllerData(
+            path: "/version",
+            method: "GET",
+            body: nil,
+            profile: profile,
+            secret: secret
+        )
+        let version = (try? decoder.decode(ControllerVersionResponse.self, from: versionData))?.version
+
+        var totals: TotalsInfo?
+        var connections: Int?
+        var memoryBytes: Int64?
+        if let connectionData = try? await controllerData(
+            path: "/connections",
+            method: "GET",
+            body: nil,
+            profile: profile,
+            secret: secret
+        ), let snapshot = try? decoder.decode(ControllerConnectionsStatusResponse.self, from: connectionData) {
+            totals = TotalsInfo(up: snapshot.uploadTotal, down: snapshot.downloadTotal)
+            connections = snapshot.connections?.count
+            memoryBytes = snapshot.memory
+        }
+
+        return StatusPayload(
+            ok: true,
+            service: ServiceStatus(
+                manager: "Mihomo Controller",
+                active: true,
+                activeState: "active",
+                subState: "running",
+                enabled: nil,
+                unitFileState: nil,
+                pid: nil,
+                unitFilePath: nil
+            ),
+            uptimeSeconds: nil,
+            memoryBytes: memoryBytes,
+            speed: nil,
+            totals: totals,
+            connections: connections,
+            versions: VersionsInfo(core: version, managementPanel: nil, metacubexd: nil),
+            version: version,
+            management: nil,
+            corePublicUrl: nil,
+            controller: normalizedControllerURL(profile.coreControllerURL),
+            metacubexd: nil
+        )
     }
 
     func subscriptions(profile: ServerProfile, secret: String) async throws -> [String: String] {
@@ -183,38 +435,108 @@ struct MihomoAPIClient {
         return error.localizedDescription
     }
 
-    func action(_ action: CoreAction, profile: ServerProfile, secret: String) async throws -> String {
+    private func managementAction(_ action: CoreAction, profile: ServerProfile, secret: String) async throws -> String {
         struct Payload: Encodable { let action: String }
         let response: APIMessage = try await post("/api/action", payload: Payload(action: action.rawValue), profile: profile, secret: secret)
         return response.message ?? "操作完成"
     }
 
-    func reloadConfiguredPath(profile: ServerProfile, secret: String) async throws -> String {
+    func action(_ action: CoreAction, profile: ServerProfile, secret: String) async throws -> String {
+        switch action {
+        case .start, .stop, .restart, .reload:
+            var systemdError: Error?
+            if profile.hasSystemdServiceEndpoint {
+                do { return try await systemdLifecycleAction(action, profile: profile) }
+                catch { systemdError = error }
+            }
+            if profile.hasManagementEndpoint, !secret.isEmpty {
+                return try await managementAction(action, profile: profile, secret: secret)
+            }
+            if let systemdError { throw systemdError }
+            throw MihomoClientError.missingManagement
+        case .applySubscriptions:
+            return try await managementAction(action, profile: profile, secret: secret)
+        }
+    }
+
+    func restartCore(
+        profile: ServerProfile,
+        managementSecret: String,
+        controllerSecret: String
+    ) async throws -> String {
+        // Preference order is Core API -> mihomo.service -> Core management panel.
+        var lastError: Error?
+        if profile.hasControllerEndpoint {
+            struct Payload: Encodable { let path: String; let payload: String }
+            let body = try encoder.encode(Payload(path: profile.configPath, payload: ""))
+            do {
+                _ = try await controllerData(
+                    path: "/restart",
+                    method: "POST",
+                    body: body,
+                    profile: profile,
+                    secret: controllerSecret
+                )
+                return "已通过 Mihomo Core API 重启 Core"
+            } catch {
+                lastError = error
+            }
+        }
+        if profile.hasSystemdServiceEndpoint {
+            do { return try await systemdLifecycleAction(.restart, profile: profile) }
+            catch { lastError = error }
+        }
+        if profile.hasManagementEndpoint, !managementSecret.isEmpty {
+            return try await managementAction(.restart, profile: profile, secret: managementSecret)
+        }
+        if let lastError { throw lastError }
+        throw MihomoClientError.missingManagement
+    }
+
+    func reloadConfiguredPath(
+        profile: ServerProfile,
+        managementSecret: String,
+        controllerSecret: String
+    ) async throws -> String {
+        var lastError: Error?
         let direct = profile.coreControllerURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !direct.isEmpty else {
-            return try await action(.reload, profile: profile, secret: secret)
+        if !direct.isEmpty {
+            do {
+                let url = try makeURL(
+                    base: try normalizedControllerBase(direct, allowInsecureHTTP: profile.allowInsecureHTTP),
+                    path: "/configs",
+                    queryItems: [URLQueryItem(name: "force", value: "true")],
+                    allowInsecureHTTP: profile.allowInsecureHTTP
+                )
+                struct Payload: Encodable { let path: String; let payload: String }
+                var request = URLRequest(url: url)
+                request.httpMethod = "PUT"
+                if !controllerSecret.isEmpty {
+                    request.setValue("Bearer \(controllerSecret)", forHTTPHeaderField: "Authorization")
+                }
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.httpBody = try encoder.encode(Payload(path: profile.configPath, payload: ""))
+                let (_, response) = try await session.data(for: request)
+                guard let http = response as? HTTPURLResponse else { throw MihomoClientError.invalidResponse }
+                guard (200..<300).contains(http.statusCode) else {
+                    if http.statusCode == 401 { throw MihomoClientError.controllerUnauthorized }
+                    throw MihomoClientError.server(status: http.statusCode, message: "Controller 拒绝重载配置")
+                }
+                return "已通过 Mihomo Core API 重载 \(profile.configPath)"
+            } catch {
+                lastError = error
+            }
         }
-        let url = try makeURL(
-            base: direct,
-            path: "/configs",
-            queryItems: [URLQueryItem(name: "force", value: "true")],
-            allowInsecureHTTP: profile.allowInsecureHTTP
-        )
-        struct Payload: Encodable { let path: String; let payload: String }
-        var request = URLRequest(url: url)
-        request.httpMethod = "PUT"
-        if !secret.isEmpty {
-            request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
+        if profile.hasSystemdServiceEndpoint {
+            do { return try await systemdLifecycleAction(.reload, profile: profile) }
+            catch { lastError = error }
         }
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try encoder.encode(Payload(path: profile.configPath, payload: ""))
-        let (_, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw MihomoClientError.invalidResponse }
-        guard (200..<300).contains(http.statusCode) else {
-            if http.statusCode == 401 { throw MihomoClientError.controllerUnauthorized }
-            throw MihomoClientError.server(status: http.statusCode, message: "Controller 拒绝重载配置")
+        if profile.hasManagementEndpoint, !managementSecret.isEmpty {
+            do { return try await managementAction(.reload, profile: profile, secret: managementSecret) }
+            catch { lastError = error }
         }
-        return "已通过 Direct Controller 重载 \(profile.configPath)"
+        if let lastError { throw lastError }
+        throw MihomoClientError.missingController
     }
 
     func proxyMode(profile: ServerProfile, secret: String) async throws -> MihomoRunMode? {
@@ -446,14 +768,23 @@ struct MihomoAPIClient {
     }
 
     func logs(lines: Int, profile: ServerProfile, secret: String) async throws -> String {
-        let safe = min(300, max(10, lines))
-        let response: LogsResponse = try await get(
-            "/api/logs",
-            queryItems: [URLQueryItem(name: "lines", value: String(safe))],
-            profile: profile,
-            secret: secret
-        )
-        return response.logs
+        var systemdError: Error?
+        if profile.hasSystemdServiceEndpoint {
+            do { return try await systemdLogs(lines: lines, profile: profile) }
+            catch { systemdError = error }
+        }
+        if profile.hasManagementEndpoint, !secret.isEmpty {
+            let safe = min(300, max(10, lines))
+            let response: LogsResponse = try await get(
+                "/api/logs",
+                queryItems: [URLQueryItem(name: "lines", value: String(safe))],
+                profile: profile,
+                secret: secret
+            )
+            return response.logs
+        }
+        if let systemdError { throw systemdError }
+        throw MihomoClientError.missingManagement
     }
 
     func checkUpdate(profile: ServerProfile, secret: String) async throws -> ProjectUpdateInfo {
@@ -503,9 +834,11 @@ struct MihomoAPIClient {
         profile: ServerProfile,
         secret: String
     ) async throws -> Response {
+        let managementBase = profile.managementURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !managementBase.isEmpty else { throw MihomoClientError.missingManagement }
         guard !secret.isEmpty else { throw MihomoClientError.missingSecret }
         let url = try makeURL(
-            base: profile.managementURL,
+            base: managementBase,
             path: path,
             queryItems: queryItems,
             allowInsecureHTTP: profile.allowInsecureHTTP
@@ -522,6 +855,7 @@ struct MihomoAPIClient {
             request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
         }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("MihomoCoreManager/1.3.1 (macOS; SwiftUI)", forHTTPHeaderField: "User-Agent")
         if let body {
             request.httpBody = body
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -530,9 +864,11 @@ struct MihomoAPIClient {
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw MihomoClientError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
-            let message = (try? decoder.decode(APIMessage.self, from: data).message)
-                ?? String(data: data, encoding: .utf8)
-                ?? "Unknown response"
+            let message = remoteErrorMessage(
+                data: data,
+                status: http.statusCode,
+                fallback: "Management API request failed"
+            )
             throw MihomoClientError.server(status: http.statusCode, message: message)
         }
         do {
@@ -545,7 +881,22 @@ struct MihomoAPIClient {
     private func controllerBase(profile: ServerProfile, secret: String) throws -> String {
         let direct = profile.coreControllerURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !direct.isEmpty else { throw MihomoClientError.missingController }
-        return direct
+        return try normalizedControllerBase(direct, allowInsecureHTTP: profile.allowInsecureHTTP)
+    }
+
+    private func normalizedControllerBase(_ rawBase: String, allowInsecureHTTP: Bool) throws -> String {
+        var base = normalizedControllerURL(rawBase)
+        if !base.contains("://") { base = "http://" + base }
+        guard let components = URLComponents(string: base),
+              let scheme = components.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              components.host != nil else {
+            throw MihomoClientError.invalidURL(rawBase)
+        }
+        if scheme == "http" && !allowInsecureHTTP {
+            throw MihomoClientError.insecureHTTPDisabled
+        }
+        return base
     }
 
     private func controllerData(
@@ -573,7 +924,7 @@ struct MihomoAPIClient {
         }
     }
 
-    private func controllerErrorMessage(data: Data, status: Int) -> String {
+    private func remoteErrorMessage(data: Data, status: Int, fallback: String) -> String {
         if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             let errorCode = (object["error_code"] as? NSNumber)?.intValue
                 ?? Int((object["error_code"] as? String) ?? "")
@@ -604,7 +955,7 @@ struct MihomoAPIClient {
                 return "Cloudflare Tunnel 暂时断开（Error 1033）。Controller 主机当前不可达，请稍后重试。"
             }
         }
-        return raw.isEmpty ? "Controller request failed" : raw
+        return raw.isEmpty ? fallback : raw
     }
 
     private func controllerData(
@@ -628,6 +979,7 @@ struct MihomoAPIClient {
                 request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
             }
             request.setValue("application/json", forHTTPHeaderField: "Accept")
+            request.setValue("MihomoCoreManager/1.3.1 (macOS; SwiftUI)", forHTTPHeaderField: "User-Agent")
             if let body {
                 request.httpBody = body
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -648,7 +1000,7 @@ struct MihomoAPIClient {
 
                 let error = MihomoClientError.server(
                     status: http.statusCode,
-                    message: controllerErrorMessage(data: data, status: http.statusCode)
+                    message: remoteErrorMessage(data: data, status: http.statusCode, fallback: "Controller request failed")
                 )
                 lastError = error
 
@@ -694,7 +1046,7 @@ struct MihomoAPIClient {
         allowInsecureHTTP: Bool
     ) throws -> URL {
         let collectionURL = try makeURL(
-            base: rawBase,
+            base: try normalizedControllerBase(rawBase, allowInsecureHTTP: allowInsecureHTTP),
             path: "/\(collection)",
             allowInsecureHTTP: allowInsecureHTTP
         )

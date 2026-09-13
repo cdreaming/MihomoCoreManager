@@ -225,7 +225,7 @@ run([go, "test", "-count=1", "./..."], cwd=portable_root, env=go_env)
 run([go, "vet", "./..."], cwd=portable_root, env=go_env)
 
 
-# 6. Strict runner checks used by GitHub macos-15 CI/Release.
+# 6. Strict macOS/Xcode checks used by GitHub macos-15-intel CI/Release.
 if args.strict_macos:
     for tool in ["xcodebuild", "xcrun", "lipo", "codesign", "ditto", "pkgbuild", "productbuild", "pkgutil", "shasum"]:
         if not shutil.which(tool):
@@ -245,10 +245,10 @@ if args.strict_macos:
             "-project", "MihomoCoreManager.xcodeproj",
             "-scheme", "MihomoCoreManager",
             "-configuration", "Release",
-            "-destination", "platform=macOS",
+            "-destination", "generic/platform=macOS",
             "-showBuildSettings",
             "ARCHS=arm64",
-            "ONLY_ACTIVE_ARCH=YES",
+            "ONLY_ACTIVE_ARCH=NO",
             f"MARKETING_VERSION={version}",
             f"CURRENT_PROJECT_VERSION={build_number}",
             "CODE_SIGNING_ALLOWED=NO",
@@ -262,7 +262,7 @@ if args.strict_macos:
         "MARKETING_VERSION": version,
         "CURRENT_PROJECT_VERSION": build_number,
         "SWIFT_VERSION": "5.0",
-        "ONLY_ACTIVE_ARCH": "YES",
+        "ONLY_ACTIVE_ARCH": "NO",
         "SWIFT_ENABLE_BATCH_MODE": "NO",
     }
     for key, expected in expected_settings.items():

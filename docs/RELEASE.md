@@ -1,4 +1,4 @@
-# macOS v1.3.0 双实现发布流程
+# macOS v1.3.1 双实现发布流程
 
 v1.3.0 起固定维护两套实现，并明确区分用途和资产名称。
 
@@ -14,7 +14,7 @@ bash scripts/build-portable-installer.sh
 交付：
 
 - 完整项目源码
-- `MihomoCoreManager-v1.3.0-GoWebUI-arm64-portable-installer.zip`
+- `MihomoCoreManager-v1.3.1-GoWebUI-arm64-portable-installer.zip`
 
 portable 用于快速安装查看 UI/功能；用户自行验收，问题进入下一版本修复，不设置额外“确认发布”门槛。
 
@@ -38,11 +38,11 @@ bash scripts/build-release.sh --unsigned
    - `scripts/build-gowebui-release.sh`
    - App bundle 必须由 `scripts/build-gowebui-app.sh` 生成。
    - portable preview 也必须调用同一个 App builder。
-   - 正式文件：`MihomoCoreManager-v1.3.0-GoWebUI-arm64.pkg`
+   - 正式文件：`MihomoCoreManager-v1.3.1-GoWebUI-arm64.pkg`
 2. SwiftUI
    - `scripts/build-swiftui-release.sh`
    - Xcode Release / arm64 / macOS 14+。
-   - 正式文件：`MihomoCoreManager-v1.3.0-SwiftUI-arm64.pkg`
+   - 正式文件：`MihomoCoreManager-v1.3.1-SwiftUI-arm64.pkg`
 
 ## GoWebUI 防漂移规则
 

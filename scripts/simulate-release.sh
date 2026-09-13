@@ -68,8 +68,9 @@ with zipfile.ZipFile(archive) as zf:
 print('GoWebUI portable preview verification: PASS')
 PY
 
-if [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]]; then
-  echo "== Apple Silicon GitHub-style dual .pkg release =="
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  echo "== macOS host -> arm64 dual .pkg release =="
+  echo "host=$(uname -m); target=arm64"
   python3 scripts/release-preflight.py --strict-macos
   bash scripts/build-release.sh --unsigned
   test -f "dist/MihomoCoreManager-v${VERSION}-GoWebUI-arm64.pkg"
@@ -81,7 +82,7 @@ if [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]]; then
   echo "dual unsigned .pkg release simulation: PASS"
 else
   echo "GitHub dual .pkg stage: SKIPPED on $(uname -s)/$(uname -m)"
-  echo "CI/Release runs this stage on macos-15 arm64."
+  echo "CI/Release runs this stage on macos-15-intel and cross-builds arm64-only artifacts."
 fi
 
 echo "release simulation: PASS"
