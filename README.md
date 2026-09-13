@@ -1,26 +1,6 @@
-# MihomoManager for macOS
+# Mihomo Core Manager for macOS
 
-对照 **mihomo-web-installer v4.0.1** 的部署与管理接口语义维护的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.3.1 (build 1301)**；本次为同版本接口兼容 hotfix，不改变 App 版本号。
-
-## v1.3.1
-
-> **同版本修订：** 本源码仍是 `v1.3.1 / build 1301`，不升级版本。程序对外名称统一为 **MihomoManager**；参考 `mihomo-web-installer v4.0.1` 逐项复核 Controller、Management、systemd/SSH、MetaCubeXD 与结果展示链路，并按 **默认 → 备选 → 兜底** 收敛。URL 会兼容 `/ui/` / `/Ui/` 与反代前置路径，显式端口原样保留且不会猜 9090/29090/29091。完整接口巡查见 `API-AUDIT-v1.3.1.md`，详细接口/端口实现见 `INTERFACE-IMPLEMENTATION-v1.3.1.md`.
-
-v1.3.1 以 v1.3.0 为稳定基线，集中修正主界面排版、统一“服务设置”命名，并增强局域网与 Cloudflare Tunnel 后端连接稳定性：
-
-- **修复三组件版本显示。** Controller `/version` 继续作为 Core 版本权威；Core 面板 / MetaCubeXD 版本改由 v4.0.1 Management `/api/status` 以 30 秒慢速元数据通道补齐并合并到实时状态，避免侧栏长期显示 `--` 或把 stale Management Core 版本覆盖 Controller。
-- **修复 Core 控制卡片溢出。** SwiftUI 移除“服务控制 / 服务信息”外层固定 300pt 高度，改为顶部对齐 + 相同最小高度，右侧 9 行服务信息可向下自然增长，不再越过卡片行。
-- **部署接口三层收敛。** Core runtime 按 Controller → systemd → Management；Controller/Management 网络层按直连 → SSH 原 URL → SSH loopback 同端口；systemd SSH 目标按显式 target → LAN Management host → LAN Controller host。
-- **URL 细节统一。** `/ui/` / `/Ui/`、`/version` 等可直接粘贴，反代前置路径和显式端口保留；省略 scheme 时 LAN→HTTP、公网→HTTPS；拒绝把 `0.0.0.0` / `::` 监听地址当客户端目标，且绝不自动补 9090/29090/29091。
-- **systemd 行为对齐 v4.0.1。** reload 先检查 `CanReload`，默认 unit 无 `ExecReload` 时直接回退 Management；start/restart 直控 systemd 时 best-effort 保持 `mihomo.service` disabled，避免改变服务器“手工运行但不开机自启”的策略。
-- **MetaCubeXD LAN 优先。** 显式 LAN URL 优先；否则 Management 为 LAN 且 `/api/status` 返回 standalone port 时使用同服务器 LAN host + 该端口，再回退公网 URL，不猜 `29091`。
-
-- **主窗口左右顶部重新对齐。** SwiftUI 右侧页面统一使用 38pt 顶部间距、30pt 底部间距；GoWebUI 同步使用 38px 顶部间距，并修正 macOS shell 覆盖样式，右侧内容不再高于左侧品牌区。
-- **“设置”Tab 改为“服务设置”。** SwiftUI 与 GoWebUI 导航及页面标题同步更新，相关连接提示也指向“服务设置”。
-- **应用与界面图标替换为 `MihomoCoreManager-2.png`。** 原始上传 PNG 保存在 `branding/MihomoCoreManager-2.png`，由 `scripts/generate-app-icon.py` 统一生成 16–1024px AppIcon、GoWebUI 品牌图和最终 `.icns` 输入，SwiftUI/GoWebUI 共用同一视觉来源。
-- **GoWebUI 局域网后端连接修复。** RFC1918/loopback/link-local、`.local`/`.lan`/`.home.arpa` 与单标签主机不再错误继承 `HTTP(S)_PROXY`；CGO=0 的 macOS 构建增加系统解析器回退，改善 Bonjour/mDNS 与局域网主机名访问。
-- **Cloudflare Tunnel 容错加强。** GoWebUI 对安全读请求采用更温和的重试与失败退避、断开异常 keep-alive、降低代理菜单后台抓取频率；SwiftUI 状态轮询在连续失败时指数退避，并统一识别 Cloudflare 530/Error 1033，避免 Tunnel 恢复期间持续高频请求。
-- 版本统一升级为 **v1.3.1 / build 1301**，并补充 LAN/Tunnel、布局、图标与双实现发布 QA 门禁。
+基于 **Mihomo Core 管理面板 v4.0.0** API 开发的 Apple Silicon（arm64）macOS 管理客户端。当前 App 版本为 **v1.3.0 (build 1300)**；`v4.0.0` 是服务端兼容基线，不是 App 版本。
 
 ## v1.3.0
 
@@ -38,7 +18,7 @@ v1.3.0 固化新的双实现开发/发布工作流，并更换全套现代化应
 v1.2.12 解决“本地/portable 验证正常，但 GitHub 原生 `.pkg` UI 又不同”的发布结构问题，并调整主窗口版本区：
 
 - 主窗口左上版本信息固定为四行，顺序为 **本程序版本 / Core 版本 / Core 面板 / MetaCubeXD**。本程序版本读取 App bundle；Core 面板读取远端 `versions.management_panel`，两者不再混用。
-- 正式 Release 改为 **One Canonical Native App**：Xcode Release 只编译一次，签名完成后冻结唯一 `MihomoManager.app`；`.app.zip`、`native-installer.zip`、`.pkg` 全部只封装这一份 App。
+- 正式 Release 改为 **One Canonical Native App**：Xcode Release 只编译一次，签名完成后冻结唯一 `MihomoCoreManager.app`；`.app.zip`、`native-installer.zip`、`.pkg` 全部只封装这一份 App。
 - 新增 `NATIVE-APP-MANIFEST.json`：对冻结 App 内每个文件和符号链接生成确定性的 SHA-256 树清单。发布前会重新解包 `.zip`、native installer 和 `.pkg`，逐文件比较；任何差异都会让 GitHub Release 失败。
 - 新增 `RELEASE-PROVENANCE.txt`，记录版本、build、Git commit、Xcode/Swift 版本、App tree SHA-256 与主二进制 SHA-256，Release 上传后还会在线下载全部资产再次验证。
 - **portable-runtime 仍保留回归测试，但不再作为正式 GitHub Release 安装包发布。** 以后需要先验证 UI，请使用 GitHub 生成的 `arm64-native-installer.zip`；它与 `.pkg` 内是同一份原生 App，而不是另一套 UI 实现。
@@ -95,7 +75,7 @@ v1.2.7 以本次 `source-4` 功能代码为基线，并重新套用已经成功�
 - Release Xcode build 固定 `SWIFT_ENABLE_BATCH_MODE=NO`，保存完整 `xcodebuild-release.log` 并在失败时回显真实编译错误。
 - 恢复 v1.2.4 Xcode 16.4 兼容写法：显式 Optional switch、独立 `ProxySortPicker`、拆分大型 SwiftUI result builder、显式 `Hashable`、具体 history 中间类型和 macOS 14 双参数 `onChange`。
 - portable 异步缓存/状态刷新重新纳入 `backgroundWG + goBackground()` 生命周期；TempDir 测试清理前等待后台任务，避免 macOS/APFS `directory not empty` 竞态。
-- 发布模拟包含目标竞态重复测试、shuffle、race、vet、Darwin/arm64 runtime/test binary 交叉编译、portable ZIP/Mach-O/版本校验；GitHub CI/Release 使用标准 `macos-15-intel` 主机交叉构建，Xcode 强制 `ARCHS=arm64`、Go 强制 `GOARCH=arm64`，再用 `lipo` / Mach-O 检查验收 arm64-only 产物并完成最终 SHA-256 回放；这样避免标准 M1 runner 容量排队导致自动构建长期停在 “Waiting for a runner”。
+- 发布模拟包含目标竞态重复测试、shuffle、race、vet、Darwin/arm64 runtime/test binary 交叉编译、portable ZIP/Mach-O/版本校验；真实 `macos-15` arm64 Runner 继续执行 Xcode Release build 和最终 SHA-256 回放。
 - `SOURCE-SHA256SUMS.txt` 按最终源码重新生成。
 
 ## v1.2.5

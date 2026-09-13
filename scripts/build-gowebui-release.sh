@@ -6,13 +6,14 @@ VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
 BUILD_NUMBER="$(tr -d '[:space:]' < "$ROOT/BUILD_NUMBER")"
 MODE="${1:---unsigned}"
 DIST="${DIST:-$ROOT/dist}"
-APP="$ROOT/build/GoWebUI-Release/MihomoManager.app"
-BINARY="$APP/Contents/MacOS/MihomoManager"
-PKG="$DIST/MihomoManager-v${VERSION}-GoWebUI-arm64.pkg"
+APP="$ROOT/build/GoWebUI-Release/MihomoCoreManager.app"
+BINARY="$APP/Contents/MacOS/MihomoCoreManager"
+PKG="$DIST/MihomoCoreManager-v${VERSION}-GoWebUI-arm64.pkg"
 MANIFEST="$DIST/GoWebUI-APP-MANIFEST.json"
 PROVENANCE="$DIST/GoWebUI-RELEASE-PROVENANCE.txt"
 
 [[ "$(uname -s)" == "Darwin" ]] || { echo "GoWebUI .pkg release requires macOS" >&2; exit 1; }
+[[ "$(uname -m)" == "arm64" ]] || { echo "GoWebUI .pkg release requires Apple Silicon arm64" >&2; exit 1; }
 [[ "$MODE" == "--unsigned" || "$MODE" == "--signed" ]] || { echo "usage: $0 [--unsigned|--signed]" >&2; exit 2; }
 mkdir -p "$DIST" "$ROOT/build"
 rm -rf "$APP" "$PKG"

@@ -89,8 +89,7 @@ struct UpdateView: View {
                 }
             }
             .padding(.horizontal, DashboardLayout.pageHorizontalPadding)
-            .padding(.top, DashboardLayout.pageTopPadding)
-            .padding(.bottom, DashboardLayout.pageBottomPadding)
+            .padding(.vertical, DashboardLayout.pageVerticalPadding)
         }
         .disabled(model.isBusy)
     }

@@ -152,7 +152,7 @@ checksum replay. A release is uploaded only after this complete script passes.
 The portable Go/AppKit/Web application remains useful for regression testing, but it is a different UI implementation and therefore cannot be used as proof that the SwiftUI `.pkg` will render identically. Formal releases must use one native App bundle:
 
 - Xcode Release builds the native app once.
-- Signing/notarization of the App completes before the bundle is frozen at `build/Canonical/MihomoManager.app`.
+- Signing/notarization of the App completes before the bundle is frozen at `build/Canonical/MihomoCoreManager.app`.
 - `MihomoCoreManager-v<version>-arm64.zip`, `-arm64-native-installer.zip`, and `.pkg` are packaged only from that frozen bundle.
 - `NATIVE-APP-MANIFEST.json` hashes every regular file and symlink target in the bundle.
 - `scripts/verify-native-release-parity.sh` must extract all three public containers and prove their manifests are identical before upload and again after GitHub Release download.

@@ -40,7 +40,7 @@
 		618648B5766C521769542D9F /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MihomoCoreManager/Views/SettingsView.swift"; sourceTree = "<group>"; };
 		CCD0D03C743BEDD63A2005B4 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "MihomoCoreManager/Resources/Assets.xcassets"; sourceTree = "<group>"; };
 		9214F630D73C6E51436554BA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "MihomoCoreManager/Info.plist"; sourceTree = "<group>"; };
-		294174BE4BF2511F5691ABCD /* MihomoManager.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MihomoManager.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		294174BE4BF2511F5691ABCD /* MihomoCoreManager.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MihomoCoreManager.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -67,11 +67,11 @@
 			9214F630D73C6E51436554BA /* Info.plist */,
 			FBDC4F23F93125BBEEAE800C /* Products */,
 		); sourceTree = "<group>"; };
-		FBDC4F23F93125BBEEAE800C /* Products */ = {isa = PBXGroup; children = (294174BE4BF2511F5691ABCD /* MihomoManager.app */,); name = Products; sourceTree = "<group>"; };
+		FBDC4F23F93125BBEEAE800C /* Products */ = {isa = PBXGroup; children = (294174BE4BF2511F5691ABCD /* MihomoCoreManager.app */,); name = Products; sourceTree = "<group>"; };
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		0E8A3AD980EC179856012B7E /* MihomoCoreManager */ = {isa = PBXNativeTarget; buildConfigurationList = F8D9D3B88CD6FC592C2C9D18; buildPhases = (E4F78730D65EE9F55E2BAC2F, 7B8633C7EB6F5CB13673C25D, C52ABA055DA4D0050382EB56); buildRules = (); dependencies = (); name = MihomoCoreManager; productName = MihomoManager; productReference = 294174BE4BF2511F5691ABCD; productType = "com.apple.product-type.application"; };
+		0E8A3AD980EC179856012B7E /* MihomoCoreManager */ = {isa = PBXNativeTarget; buildConfigurationList = F8D9D3B88CD6FC592C2C9D18; buildPhases = (E4F78730D65EE9F55E2BAC2F, 7B8633C7EB6F5CB13673C25D, C52ABA055DA4D0050382EB56); buildRules = (); dependencies = (); name = MihomoCoreManager; productName = MihomoCoreManager; productReference = 294174BE4BF2511F5691ABCD; productType = "com.apple.product-type.application"; };
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -120,16 +120,16 @@
 				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1301;
+				CURRENT_PROJECT_VERSION = 1300;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MihomoCoreManager/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.3.1;
+				MARKETING_VERSION = 1.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = cc.kkr.MihomoCoreManager;
-				PRODUCT_NAME = MihomoManager;
+				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_VERSION = 5.0;
 			}; name = Debug; };
@@ -137,16 +137,16 @@
 				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1301;
+				CURRENT_PROJECT_VERSION = 1300;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MihomoCoreManager/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.3.1;
+				MARKETING_VERSION = 1.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = cc.kkr.MihomoCoreManager;
-				PRODUCT_NAME = MihomoManager;
+				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_VERSION = 5.0;
 			}; name = Release; };
