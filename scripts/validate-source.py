@@ -7,8 +7,8 @@ errors = []
 version = (root / "VERSION").read_text(encoding="utf-8").strip()
 if not re.fullmatch(r"\d+\.\d+\.\d+", version):
     errors.append(f"VERSION invalid: {version!r}")
-if version != "1.3.5":
-    errors.append(f"v1.3.5 release must use VERSION=1.3.5 (got {version})")
+if version != "1.3.6":
+    errors.append(f"v1.3.6 release must use VERSION=1.3.6 (got {version})")
 
 required = [
     "MihomoCoreManager.xcodeproj/project.pbxproj",
@@ -61,7 +61,7 @@ if "MACOSX_DEPLOYMENT_TARGET = 14.0;" not in pbx: errors.append("deployment targ
 if f"MARKETING_VERSION = {version};" not in pbx: errors.append(f"Xcode MARKETING_VERSION must match VERSION {version}")
 expected_build = (root / "BUILD_NUMBER").read_text(encoding="utf-8").strip()
 if not re.fullmatch(r"\d+", expected_build): errors.append(f"BUILD_NUMBER invalid: {expected_build!r}")
-if expected_build != "1305": errors.append(f"v1.3.5 release must use BUILD_NUMBER=1305 (got {expected_build})")
+if expected_build != "1306": errors.append(f"v1.3.6 release must use BUILD_NUMBER=1306 (got {expected_build})")
 if f"CURRENT_PROJECT_VERSION = {expected_build};" not in pbx: errors.append(f"Xcode build number must be {expected_build}")
 if not (root / f"docs/releases/v{version}/RELEASE-NOTES.md").is_file(): errors.append(f"release notes missing for v{version}")
 portable = root / "portable-runtime/main.go"
@@ -474,9 +474,11 @@ for marker in [
     "NSImage(size: size, flipped: false)",
     "image.isTemplate = true",
     "NSFont.monospacedDigitSystemFont(ofSize: 8.3, weight: .semibold)",
-    "let speedX = size.width - speedWidth",
-    "drawSpeedLine(upload, x: speedX, y: 8.6)",
-    "drawSpeedLine(download, x: speedX, y: -0.4)",
+    "let speedMetrics = speedMetrics(upload: upload, download: download)",
+    "let speedX = size.width - speedMetrics.totalWidth",
+    "drawSpeedLine(upload, x: speedX, y: 8.0, metrics: speedMetrics)",
+    "drawSpeedLine(download, x: speedX, y: -1.0, metrics: speedMetrics)",
+    "numericParagraph.alignment = .right",
     ".renderingMode(.template)",
     ".id(renderIdentity)",
     "let effectiveIcon = showIcon || (!showStatus && !showSpeed)",
@@ -491,8 +493,9 @@ for forbidden in [
 ]:
     if forbidden in app_swift:
         errors.append(f"native v1.2.10 menu-bar label must remain one rendered image: {forbidden}")
-if "menuBarRateParts" not in app_model:
-    errors.append("native v1.2.2 menu-bar rate-parts formatter missing")
+for marker in ["menuBarRatePair(", "let upload = max(0, rawUpload ?? 0)", "let download = max(0, rawDownload ?? 0)", "let unit = units[unitIndex]"]:
+    if marker not in app_model:
+        errors.append(f"native v1.3.6 shared-unit menu-bar formatter missing: {marker}")
 
 core_view = (root / "MihomoCoreManager/Views/CoreView.swift").read_text(encoding="utf-8")
 update_view = (root / "MihomoCoreManager/Views/UpdateView.swift").read_text(encoding="utf-8")
@@ -582,14 +585,18 @@ for marker in ["private struct MenuBarLiveSummary", "private struct MenuBarCoreA
 # v1.2.0 status-bar body: use independent AppKit labels instead of a multiline
 # NSStatusBarButton title so both traffic rows are actually visible.
 for marker in [
-    "function statusRateParts(raw)",
+    "function statusRateParts(raw,unitIndex)",
+    "function statusRatePair(upRaw,downRaw)",
     "MihomoStatusOverlayView",
     "MihomoStatusLabel",
     "MihomoStatusIconView",
     "statusItem.button.performClick(null)",
     "function renderStatusSpeedOverlay()",
-    "upValueLabel.frame=$.NSMakeRect(speedX,9.3,23,10.5)",
-    "downValueLabel.frame=$.NSMakeRect(speedX,0.3,23,10.5)",
+    "var left=0, gap=2, iconWidth=showIcon?16:0",
+    "var speedX=x, speedWidth=numericWidth+unitWidth",
+    "upValueLabel.alignment=1; downValueLabel.alignment=1",
+    "upValueLabel.frame=$.NSMakeRect(speedX,8.5,numericWidth,10.5)",
+    "downValueLabel.frame=$.NSMakeRect(speedX,-0.5,numericWidth,10.5)",
     "upValueLabel.stringValue=$(up.value)",
     "downValueLabel.stringValue=$(down.value)",
     "statusItem.button.addSubview(statusOverlay)",
@@ -654,7 +661,7 @@ if "d=get('/local/status',quiet===true)" not in portable_main:
 if "scheduledTimerWithTimeIntervalTargetSelectorUserInfoRepeats(1.2" not in portable_main:
     errors.append("portable menu refresh timer missing")
 if "headerSpeedLabel.stringValue=$('↑  上传  '+fmtRate(lastUp)+'      ↓  下载  '+fmtRate(lastDown))" not in portable_main:
-    errors.append("portable v1.3.5 menu dropdown traffic must stay on the second header row")
+    errors.append("portable v1.3.6 menu dropdown traffic must stay on the second header row")
 for marker in [
     "proxyEndSeparator=$.NSMenuItem.separatorItem; menu.addItem(proxyEndSeparator)",
     "var index=proxyEndSeparator?menu.indexOfItem(proxyEndSeparator):menu.indexOfItem(coreRoot)",
@@ -702,7 +709,8 @@ for marker in [
     "MihomoRecoveryDragView",
     "retrying primary shell once",
     "function fmtMenuRate(raw)",
-    "function statusRateParts(raw)",
+    "function statusRateParts(raw,unitIndex)",
+    "function statusRatePair(upRaw,downRaw)",
     "function renderStatusSpeedOverlay()",
     "function renderStatusButton()",
     "function safeSingleLineTitle()",
@@ -883,18 +891,18 @@ for marker in ["![MihomoManager 概览](HomePage.png)", "![MihomoManager Core �
     if marker not in readme_text:
         errors.append(f"v1.3.3 README screenshot gate missing: {marker}")
 
-# v1.3.5 status-menu logo/layout/lifecycle parity gates.
+# v1.3.6 status-menu compact-layout/shared-unit/lifecycle parity gates.
 for marker in [
     'Image("BrandLogo")',
     '.frame(width: 46, height: 46)',
     'speedText(prefix: String, value: String)',
     'NSImage(named: NSImage.Name("BrandLogo"))',
-    'let speedX = size.width - speedWidth',
+    'let speedX = size.width - speedMetrics.totalWidth',
     'applicationShouldTerminateAfterLastWindowClosed',
     '@NSApplicationDelegateAdaptor(MihomoApplicationDelegate.self)',
 ]:
     if marker not in app_swift + "\n" + menu:
-        errors.append(f"v1.3.5 SwiftUI status-menu parity gate missing: {marker}")
+        errors.append(f"v1.3.6 SwiftUI status-menu parity gate missing: {marker}")
 for marker in [
     'BrandLogo.png',
     'LOGO_PATH',
@@ -902,13 +910,19 @@ for marker in [
     'headerLogoView.image=appLogo',
     'statusHeader.view=headerView',
     'NSMakeRect(12,7,44,44)',
-    'var left=2, gap=6, iconWidth=showIcon?16:0',
-    'speedWidth=53',
+    'var left=0, gap=2, iconWidth=showIcon?16:0',
+    'function statusRatePair(upRaw,downRaw)',
+    'var speedX=x, speedWidth=numericWidth+unitWidth',
+    'upValueLabel.alignment=1; downValueLabel.alignment=1',
     'applicationShouldTerminateAfterLastWindowClosed:',
     'cocoaApp.delegate=delegate',
 ]:
     if marker not in portable_main + "\n" + goweb_app_installer:
-        errors.append(f"v1.3.5 GoWebUI status-menu parity gate missing: {marker}")
+        errors.append(f"v1.3.6 GoWebUI status-menu parity gate missing: {marker}")
+
+for forbidden in ["speedWidth=53", "gap=6", "private static let speedWidth: CGFloat = 53", "private static let gap: CGFloat = 6"]:
+    if forbidden in app_swift + "\n" + portable_main:
+        errors.append(f"v1.3.6 status bar must not retain fixed v1.3.5 spacing: {forbidden}")
 
 with (root / "MihomoCoreManager/Info.plist").open("rb") as f:
     plist = plistlib.load(f)

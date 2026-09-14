@@ -69,19 +69,27 @@ private struct MenuBarLabelView: View {
     }
 
     private var renderedStatusItem: NSImage {
-        MenuBarStatusImageRenderer.make(
+        let rates = model.menuBarRatePair(
+            upload: live.effectiveSpeed?.up,
+            download: live.effectiveSpeed?.down
+        )
+        return MenuBarStatusImageRenderer.make(
             showIcon: model.menuBarShowIcon,
             showStatus: model.menuBarShowStatus,
             showSpeed: model.menuBarShowSpeed,
             status: statusText,
-            upload: model.menuBarRateParts(live.effectiveSpeed?.up),
-            download: model.menuBarRateParts(live.effectiveSpeed?.down)
+            upload: rates.upload,
+            download: rates.download
         )
     }
 
     private var renderIdentity: String {
-        let up = model.menuBarRateParts(live.effectiveSpeed?.up)
-        let down = model.menuBarRateParts(live.effectiveSpeed?.down)
+        let rates = model.menuBarRatePair(
+            upload: live.effectiveSpeed?.up,
+            download: live.effectiveSpeed?.down
+        )
+        let up = rates.upload
+        let down = rates.download
         return [
             model.menuBarShowIcon ? "i1" : "i0",
             model.menuBarShowStatus ? "s1" : "s0",
@@ -104,8 +112,8 @@ private enum MenuBarStatusImageRenderer {
     private static let iconWidth: CGFloat = 16
     private static let statusWidth: CGFloat = 46
     private static let statusDotWidth: CGFloat = 7
-    private static let speedWidth: CGFloat = 53
-    private static let gap: CGFloat = 6
+    private static let gap: CGFloat = 2
+    private static let speedFont = NSFont.monospacedDigitSystemFont(ofSize: 8.3, weight: .semibold)
 
     static func make(
         showIcon: Bool,
@@ -118,8 +126,14 @@ private enum MenuBarStatusImageRenderer {
         // AppModel already keeps at least one option enabled, but keep a local
         // fallback as the renderer must never create a zero-width status item.
         let effectiveIcon = showIcon || (!showStatus && !showSpeed)
+        let speedMetrics = speedMetrics(upload: upload, download: download)
         let size = NSSize(
-            width: imageWidth(showIcon: effectiveIcon, showStatus: showStatus, showSpeed: showSpeed),
+            width: imageWidth(
+                showIcon: effectiveIcon,
+                showStatus: showStatus,
+                showSpeed: showSpeed,
+                speedWidth: speedMetrics.totalWidth
+            ),
             height: imageHeight
         )
 
@@ -127,14 +141,13 @@ private enum MenuBarStatusImageRenderer {
             var x: CGFloat = 0
 
             if effectiveIcon {
-                // Keep the shared BrandLogo anchored to the far-left edge.
+                // v1.3.6: logo is flush with the left edge of the reserved item.
                 drawIcon(in: NSRect(x: x, y: 1.2, width: iconWidth, height: iconWidth))
                 x += iconWidth
             }
 
             // When speed is visible, use a separate state dot between the logo
-            // and the speed block. The logo is never over-painted, and the two
-            // traffic rows are pinned to the far-right edge of the status item.
+            // and the speed block. The speed block itself is content-sized.
             if showStatus, showSpeed {
                 if x > 0 { x += gap }
                 drawDot(in: NSRect(x: x + 1.2, y: 6.9, width: 4.5, height: 4.5))
@@ -146,9 +159,10 @@ private enum MenuBarStatusImageRenderer {
             }
 
             if showSpeed {
-                let speedX = size.width - speedWidth
-                drawSpeedLine(upload, x: speedX, y: 8.6)
-                drawSpeedLine(download, x: speedX, y: -0.4)
+                let speedX = size.width - speedMetrics.totalWidth
+                // Move the two traffic rows down slightly relative to v1.3.5.
+                drawSpeedLine(upload, x: speedX, y: 8.0, metrics: speedMetrics)
+                drawSpeedLine(download, x: speedX, y: -1.0, metrics: speedMetrics)
             }
             return true
         }
@@ -158,7 +172,12 @@ private enum MenuBarStatusImageRenderer {
         return image
     }
 
-    private static func imageWidth(showIcon: Bool, showStatus: Bool, showSpeed: Bool) -> CGFloat {
+    private static func imageWidth(
+        showIcon: Bool,
+        showStatus: Bool,
+        showSpeed: Bool,
+        speedWidth: CGFloat
+    ) -> CGFloat {
         var width: CGFloat = 0
         if showIcon { width += iconWidth }
         if showStatus, !showSpeed {
@@ -172,7 +191,37 @@ private enum MenuBarStatusImageRenderer {
             if width > 0 { width += gap }
             width += speedWidth
         }
-        return max(18, width)
+        return max(18, ceil(width))
+    }
+
+    private struct SpeedMetrics {
+        let numericWidth: CGFloat
+        let unitWidth: CGFloat
+
+        var totalWidth: CGFloat { numericWidth + unitWidth }
+    }
+
+    private static func speedMetrics(
+        upload: (value: String, unit: String),
+        download: (value: String, unit: String)
+    ) -> SpeedMetrics {
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: speedFont
+        ]
+        let numericWidth = ceil(max(
+            (upload.value as NSString).size(withAttributes: attributes).width,
+            (download.value as NSString).size(withAttributes: attributes).width
+        ))
+        // AppModel guarantees the same unit on both rows; max keeps the renderer
+        // safe if a future caller violates that contract.
+        let unitWidth = ceil(max(
+            (upload.unit as NSString).size(withAttributes: attributes).width,
+            (download.unit as NSString).size(withAttributes: attributes).width
+        ))
+        return SpeedMetrics(
+            numericWidth: max(1, numericWidth),
+            unitWidth: max(1, unitWidth)
+        )
     }
 
     private static func drawIcon(in rect: NSRect) {
@@ -208,19 +257,31 @@ private enum MenuBarStatusImageRenderer {
     private static func drawSpeedLine(
         _ rate: (value: String, unit: String),
         x: CGFloat,
-        y: CGFloat
+        y: CGFloat,
+        metrics: SpeedMetrics
     ) {
-        let font = NSFont.monospacedDigitSystemFont(ofSize: 8.3, weight: .semibold)
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: font,
+        let numericParagraph = NSMutableParagraphStyle()
+        numericParagraph.alignment = .right
+        let numericAttributes: [NSAttributedString.Key: Any] = [
+            .font: speedFont,
+            .foregroundColor: NSColor.black,
+            .paragraphStyle: numericParagraph
+        ]
+        let unitAttributes: [NSAttributedString.Key: Any] = [
+            .font: speedFont,
             .foregroundColor: NSColor.black
         ]
-        let numericWidth: CGFloat = 23
-        let unitWidth: CGFloat = 30
 
-        NSAttributedString(string: rate.value, attributes: attributes)
-            .draw(in: NSRect(x: x, y: y, width: numericWidth, height: 9.8))
-        NSAttributedString(string: rate.unit, attributes: attributes)
-            .draw(in: NSRect(x: x + numericWidth, y: y, width: unitWidth, height: 9.8))
+        // Number column is right aligned; both unit labels begin at exactly the
+        // same x coordinate and their shared unit ends flush with the right edge.
+        NSAttributedString(string: rate.value, attributes: numericAttributes)
+            .draw(in: NSRect(x: x, y: y, width: metrics.numericWidth, height: 9.8))
+        NSAttributedString(string: rate.unit, attributes: unitAttributes)
+            .draw(in: NSRect(
+                x: x + metrics.numericWidth,
+                y: y,
+                width: metrics.unitWidth,
+                height: 9.8
+            ))
     }
 }

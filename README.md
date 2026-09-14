@@ -1,17 +1,17 @@
-# MihomoManager for macOS v1.3.5
+# MihomoManager for macOS v1.3.6
 
 面向 **Apple Silicon macOS** 的 Mihomo 桌面管理客户端。项目同时维护 **GoWebUI** 与 **SwiftUI** 两套正式实现，用于管理远端 Mihomo Controller、Mihomo Core 管理面板、订阅、日志、代理策略和项目升级。
 
-当前版本：**v1.3.5 (build 1305)**  
+当前版本：**v1.3.6 (build 1306)**  
 支持架构：**arm64**  
 最低系统：**macOS 14.0**
 
-## v1.3.5 本次优化
+## v1.3.6 本次优化
 
-- **状态栏与下拉菜单统一使用 MihomoManager LOGO。** SwiftUI 下拉菜单顶部原来的 SF Symbol 改为 `BrandLogo`；状态栏常驻图标也改为同一 LOGO。GoWebUI AppKit/JXA 壳从 App Bundle 的 `BrandLogo.png` 加载同一 128px 源图。
-- **状态栏布局固定为“LOGO 靠左、网速靠右”。** 当同时显示运行状态与实时网速时，状态点独立放在 LOGO 和双行网速之间，不再覆盖 LOGO；SwiftUI 与 GoWebUI 使用一致的 16pt LOGO、6pt 间距与 53pt 双行网速区。
-- **关闭主窗口不退出常驻程序。** SwiftUI 明确返回 `applicationShouldTerminateAfterLastWindowClosed = false`；GoWebUI 主壳与恢复壳也设置相同 AppKit 生命周期策略。只有状态栏菜单中的“退出 MihomoManager”会结束整个程序。
-- **双实现状态栏行为对齐。** GoWebUI 与 SwiftUI 在本次涉及的 LOGO、状态栏排版、主窗口关闭/状态栏退出语义上保持一致；两套主界面仍保留各自原生实现。
+- **状态栏网速改为共同单位。** 上传/下载不再各自切换 `B/s`、`KB/s`、`MB/s` 等单位，而是由两者中较大的实时速度决定共同单位，两行单位始终同步。
+- **状态栏占位按内容缩小。** 删除 v1.3.5 的固定 53pt 网速块，SwiftUI 使用 AppKit 实际文字测宽，GoWebUI 使用 `NSTextField.sizeToFit` 测宽；数字列取两行所需最大宽度，单位列只保留当前共同单位所需宽度，元素间距由 6pt 收到 2pt。
+- **对齐方式重新整理。** LOGO 贴预留区域左边界；网速整体靠右，数字列右对齐、两行单位从同一 x 坐标开始且单位右缘贴边；状态栏网速本体不增加 `↑/↓` 标识，两行位置整体略向下调整。
+- **SwiftUI / GoWebUI 同步实现。** 两套状态栏均采用相同的共同单位、紧凑数字格式、2pt 间距和内容自适应占位策略，同时保留 v1.3.5 的状态栏常驻与退出语义。
 
 > [!IMPORTANT]
 > v1.3.0 起项目固定维护两套实现：**GoWebUI** 与 **SwiftUI**。两者共享 `VERSION`、`BUILD_NUMBER`、应用图标与发布版本，但 UI 源码独立。GoWebUI portable installer 与正式 GoWebUI `.pkg` 共用同一个 `scripts/build-gowebui-app.sh`；SwiftUI `.pkg` 由 Xcode 独立构建。两种实现最终都安装为 `/Applications/MihomoManager.app`，应二选一使用。
@@ -49,7 +49,7 @@
 安装包名称：
 
 ```text
-MihomoManager-v1.3.5-GoWebUI-arm64-portable-installer.zip
+MihomoManager-v1.3.6-GoWebUI-arm64-portable-installer.zip
 ```
 
 使用步骤：
@@ -75,8 +75,8 @@ Install-MihomoManager.command
 正式 Release 同时发布两套明确区分的安装包：
 
 ```text
-MihomoManager-v1.3.5-GoWebUI-arm64.pkg
-MihomoManager-v1.3.5-SwiftUI-arm64.pkg
+MihomoManager-v1.3.6-GoWebUI-arm64.pkg
+MihomoManager-v1.3.6-SwiftUI-arm64.pkg
 ```
 
 二者都安装到：
@@ -91,11 +91,14 @@ MihomoManager-v1.3.5-SwiftUI-arm64.pkg
 
 安装更高版本的 `.pkg` 或运行新版 portable `Install-MihomoManager.command` 即可覆盖 App。
 
-普通设置默认位于：
+“服务设置”按实现分别保存：
 
 ```text
-~/Library/Application Support/MihomoManager/settings.json
+GoWebUI: ~/Library/Application Support/MihomoManager/settings.json
+SwiftUI: ~/Library/Application Support/MihomoManager/profiles.json
 ```
+
+Management Secret / Controller Secret 不写入上述 JSON，而是保存到 macOS Keychain。SwiftUI 当前选中的 Profile 与状态栏显示偏好使用该 App 的 `UserDefaults` 保存。
 
 GoWebUI 运行时快照位于：
 
@@ -171,7 +174,7 @@ GoWebUI portable ↔ GitHub GoWebUI.pkg
 
 ### 左下角后端状态
 
-v1.3.5 统一使用远端实际 manager，而不是展示本地 UI 技术栈：
+v1.3.6 统一使用远端实际 manager，而不是展示本地 UI 技术栈：
 
 ```text
 后端已连接 · Mihomo Controller
@@ -255,7 +258,7 @@ v4.0.1 Management API 可以复用同一 Mihomo Core Secret。MihomoManager 允�
 
 ## Core 控制策略
 
-v1.3.5 延续 v1.3.2 已确定的 **API-first / explicit-SSH** 策略，只重新整理界面说明，不恢复旧版“LAN 失败就自动尝试 SSH”的行为。
+v1.3.6 延续 v1.3.2 已确定的 **API-first / explicit-SSH** 策略，只重新整理界面说明，不恢复旧版“LAN 失败就自动尝试 SSH”的行为。
 
 ### 优先级
 
@@ -504,7 +507,7 @@ bash scripts/build-portable-installer.sh
 
 ```text
 dist-portable/
-└── MihomoManager-v1.3.5-GoWebUI-arm64-portable-installer.zip
+└── MihomoManager-v1.3.6-GoWebUI-arm64-portable-installer.zip
 ```
 
 ### SwiftUI 本地构建
@@ -578,8 +581,8 @@ Go 1.26.8
 发布流程会在线回读并验证至少：
 
 ```text
-MihomoManager-v1.3.5-GoWebUI-arm64.pkg
-MihomoManager-v1.3.5-SwiftUI-arm64.pkg
+MihomoManager-v1.3.6-GoWebUI-arm64.pkg
+MihomoManager-v1.3.6-SwiftUI-arm64.pkg
 SHA256SUMS.txt
 GoWebUI-RELEASE-PROVENANCE.txt
 SwiftUI-RELEASE-PROVENANCE.txt
@@ -589,15 +592,15 @@ SwiftUI-RELEASE-PROVENANCE.txt
 
 ## 仓库结构
 
-下面按 v1.3.5 的实际职责列出主要源码与发布文件。
+下面按 v1.3.6 的实际职责列出主要源码与发布文件。
 
 **图例：** `★` 运行源码　`◆` 构建 / 发布　`●` 验证 / QA　`○` 文档 / 参考
 
 ```text
-MihomoManager-v1.3.5-source/
+MihomoManager-v1.3.6-source/
 │
-├── VERSION                                             # ◆ 当前版本：1.3.5
-├── BUILD_NUMBER                                        # ◆ 当前 build：1305
+├── VERSION                                             # ◆ 当前版本：1.3.6
+├── BUILD_NUMBER                                        # ◆ 当前 build：1306
 ├── README.md                                           # ○ 项目首页
 ├── CHANGELOG.md                                        # ○ 历史版本变更
 ├── SOURCE-SHA256SUMS.txt                               # ● 源码树 SHA-256 清单
@@ -658,7 +661,7 @@ MihomoManager-v1.3.5-source/
 │   └── releases/
 │       ├── v1.3.1/
 │       ├── v1.3.2/
-│       └── v1.3.5/                                     # ○ 当前版本 Release Notes / QA
+│       └── v1.3.6/                                     # ○ 当前版本 Release Notes / QA
 │
 ├── .github/
 │   └── workflows/
@@ -685,15 +688,15 @@ DerivedData/                                            # ◆ Xcode 派生数据
 正式 `dist/` 典型资产：
 
 ```text
-MihomoManager-v1.3.5-GoWebUI-arm64.pkg
-MihomoManager-v1.3.5-SwiftUI-arm64.pkg
+MihomoManager-v1.3.6-GoWebUI-arm64.pkg
+MihomoManager-v1.3.6-SwiftUI-arm64.pkg
 GoWebUI-APP-MANIFEST.json
 SwiftUI-APP-MANIFEST.json
 GoWebUI-RELEASE-PROVENANCE.txt
 SwiftUI-RELEASE-PROVENANCE.txt
 GoWebUI-RELEASE-LOCK.json
 BUILD-VARIANTS.txt
-release_v1.3.5_notes_zh-CN.md
+release_v1.3.6_notes_zh-CN.md
 SHA256SUMS.txt
 ```
 
@@ -719,14 +722,14 @@ macOS Keychain
 当前版本发布说明：
 
 ```text
-docs/releases/v1.3.5/RELEASE-NOTES.md
+docs/releases/v1.3.6/RELEASE-NOTES.md
 ```
 
 当前版本 QA：
 
 ```text
-docs/releases/v1.3.5/QA-v1.3.5.md
-QA-v1.3.5.md
+docs/releases/v1.3.6/QA-v1.3.6.md
+QA-v1.3.6.md
 ```
 
 API / 网络相关历史审计：

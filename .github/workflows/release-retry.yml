@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: '已有发布 tag，例如 v1.3.5（不会移动或重建 tag）'
+        description: '已有发布 tag，例如 v1.3.6（不会移动或重建 tag）'
         required: true
-        default: 'v1.3.5'
+        default: 'v1.3.6'
         type: string
 
 permissions:

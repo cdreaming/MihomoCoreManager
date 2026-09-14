@@ -84,7 +84,7 @@ for code, filename in [
     parts.append(code + struct.pack('>I', 8 + len(data)) + data)
 payload = b''.join(parts)
 (app/'Contents/Resources/AppIcon.icns').write_bytes(b'icns' + struct.pack('>I', 8 + len(payload)) + payload)
-# v1.3.5: the native status item and dropdown header use the exact same 128px
+# v1.3.6: the native status item and dropdown header use the exact same 128px
 # artwork as SwiftUI's BrandLogo.imageset (byte-identical to AppIcon-128.png).
 (app/'Contents/Resources/BrandLogo.png').write_bytes((icon_dir/'AppIcon-128.png').read_bytes())
 (app/'Contents/Resources/BUILD-VARIANT.txt').write_text(

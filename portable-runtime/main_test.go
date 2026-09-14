@@ -1480,7 +1480,8 @@ func TestMenuScriptUsesCachedSnapshotNativeDragAndV128WindowLifecycle(t *testing
 		"win.movable=true",
 		"function ensureWindowUsable()",
 		"function fmtMenuRate(raw)",
-		"function statusRateParts(raw)",
+		"function statusRateParts(raw,unitIndex)",
+		"function statusRatePair(upRaw,downRaw)",
 		"MihomoStatusOverlayView",
 		"MihomoStatusLabel",
 		"MihomoStatusIconView",
@@ -1498,8 +1499,11 @@ func TestMenuScriptUsesCachedSnapshotNativeDragAndV128WindowLifecycle(t *testing
 		"NSMakeRect(12,7,44,44)",
 		"applicationShouldTerminateAfterLastWindowClosed:",
 		"cocoaApp.delegate=delegate",
-		"upValueLabel.frame=$.NSMakeRect(speedX,9.3,23,10.5)",
-		"downValueLabel.frame=$.NSMakeRect(speedX,0.3,23,10.5)",
+		"var left=0, gap=2, iconWidth=showIcon?16:0",
+		"var speedX=x, speedWidth=numericWidth+unitWidth",
+		"upValueLabel.alignment=1; downValueLabel.alignment=1",
+		"upValueLabel.frame=$.NSMakeRect(speedX,8.5,numericWidth,10.5)",
+		"downValueLabel.frame=$.NSMakeRect(speedX,-0.5,numericWidth,10.5)",
 		"upValueLabel.stringValue=$(up.value)",
 		"downValueLabel.stringValue=$(down.value)",
 		"button.image=null; button.imagePosition=0; button.title=''",
@@ -1516,7 +1520,7 @@ func TestMenuScriptUsesCachedSnapshotNativeDragAndV128WindowLifecycle(t *testing
 			t.Fatalf("menu script missing v1.2.0 marker %q", marker)
 		}
 	}
-	for _, forbidden := range []string{"button.cell.wraps=true", "button.cell.usesSingleLineMode=false", "NSBaselineOffsetAttributeName", "CATextLayer", "function speedImage(up,down)", "title=up+'\\n'+down"} {
+	for _, forbidden := range []string{"button.cell.wraps=true", "button.cell.usesSingleLineMode=false", "NSBaselineOffsetAttributeName", "CATextLayer", "function speedImage(up,down)", "title=up+'\\n'+down", "speedWidth=53", "gap=6"} {
 		if strings.Contains(script, forbidden) {
 			t.Fatalf("v1.2.0 status-bar startup path must avoid marker %q", forbidden)
 		}
@@ -1584,7 +1588,7 @@ func TestEmbeddedModernAppIconV131(t *testing.T) {
 }
 
 func TestPortableVersionV135(t *testing.T) {
-	if appVersion != "1.3.5" || buildNumber != "1305" {
+	if appVersion != "1.3.6" || buildNumber != "1306" {
 		t.Fatalf("unexpected portable version/build: %s/%s", appVersion, buildNumber)
 	}
 }

@@ -305,26 +305,60 @@ final class AppModel: ObservableObject {
         return String(format: "%.*f %@", digits, value, units[unit])
     }
 
-    func menuBarRateParts(_ raw: Double?) -> (value: String, unit: String) {
-        var value = max(0, raw ?? 0)
+    func menuBarRatePair(
+        upload rawUpload: Double?,
+        download rawDownload: Double?
+    ) -> (
+        upload: (value: String, unit: String),
+        download: (value: String, unit: String)
+    ) {
         let units = ["B/s", "KB/s", "MB/s", "GB/s", "TB/s"]
+        let upload = max(0, rawUpload ?? 0)
+        let download = max(0, rawDownload ?? 0)
+        var largest = max(upload, download)
         var unitIndex = 0
-        while value >= 1024, unitIndex < units.count - 1 {
-            value /= 1024
+        var divisor = 1.0
+
+        // v1.3.6: upload and download always share one unit. Pick it from the
+        // larger rate and promote once more before a rounded four-digit value
+        // could appear in the compact menu-bar number column.
+        while largest >= 1024, unitIndex < units.count - 1 {
+            largest /= 1024
+            divisor *= 1024
+            unitIndex += 1
+        }
+        if largest >= 999.5, unitIndex < units.count - 1 {
+            divisor *= 1024
             unitIndex += 1
         }
 
-        // Keep the numeric field within four monospaced cells. Sub-10 values use
-        // one decimal after unit conversion; all other values are integers.
-        // Because the scaled value is always below 1024, the result is at most
-        // four characters (for example 9.8, 53, 999 or 1023).
-        let number: String
-        if unitIndex > 0, value < 10 {
-            number = String(format: "%.1f", value)
-        } else {
-            number = String(format: "%.0f", value)
+        func number(_ raw: Double) -> String {
+            let value = raw / divisor
+            if value < 10 {
+                let rounded = (value * 10).rounded() / 10
+                if rounded >= 10 { return String(format: "%.0f", rounded) }
+                return String(format: "%.1f", rounded)
+            }
+            if value < 100 {
+                // Preserve useful detail such as 19.6 while stripping a trailing
+                // .0. This follows the requested compact 19.6 / 0.3 layout.
+                let rounded = (value * 10).rounded() / 10
+                if rounded >= 100 { return String(format: "%.0f", rounded) }
+                let text = String(format: "%.1f", rounded)
+                return text.hasSuffix(".0") ? String(text.dropLast(2)) : text
+            }
+            return String(format: "%.0f", min(value, 999))
         }
-        return (number, units[unitIndex])
+
+        let unit = units[unitIndex]
+        return (
+            upload: (number(upload), unit),
+            download: (number(download), unit)
+        )
+    }
+
+    func menuBarRateParts(_ raw: Double?) -> (value: String, unit: String) {
+        menuBarRatePair(upload: raw, download: raw).upload
     }
 
     var resolvedMetaCubeXDURL: URL? {

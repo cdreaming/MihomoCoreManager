@@ -25,8 +25,8 @@ import (
 )
 
 const (
-	appVersion                      = "1.3.5"
-	buildNumber                     = "1305"
+	appVersion                      = "1.3.6"
+	buildNumber                     = "1306"
 	keychainService                 = "cc.kkr.MihomoManager.profile-secret"
 	v131BrokenKeychainService       = "cc.kkr.MihomoManager"
 	legacyKeychainService           = "cc.kkr.MihomoCoreManager.profile-secret"
@@ -3426,14 +3426,29 @@ function fmtMenuRate(raw){
   var digits=i===0?0:(value<10?1:0);
   return value.toFixed(digits)+' '+units[i];
 }
-function statusRateParts(raw){
-  var value=Math.max(0,Number(raw||0)), units=['B/s','KB/s','MB/s','GB/s','TB/s'], i=0;
-  while(value>=1024 && i<units.length-1){ value/=1024; i++; }
-  // The value label has exactly four monospaced character cells. Keep the
-  // actual text within those cells and let the adjacent unit label change
-  // independently as traffic crosses B/s, KB/s, MB/s and larger thresholds.
-  var number=(i>0 && value<10)?value.toFixed(1):value.toFixed(0);
-  return {value:number,unit:units[i]};
+function statusRateParts(raw,unitIndex){
+  var value=Math.max(0,Number(raw||0))/Math.pow(1024,unitIndex);
+  var number;
+  if(value<10){
+    var rounded=Math.round(value*10)/10;
+    number=rounded>=10?rounded.toFixed(0):rounded.toFixed(1);
+  }else if(value<100){
+    var rounded10=Math.round(value*10)/10;
+    if(rounded10>=100) number=rounded10.toFixed(0);
+    else { number=rounded10.toFixed(1); if(/\.0$/.test(number)) number=number.slice(0,-2); }
+  }else number=Math.min(999,Math.round(value)).toFixed(0);
+  return {value:number};
+}
+function statusRatePair(upRaw,downRaw){
+  var units=['B/s','KB/s','MB/s','GB/s','TB/s'];
+  var largest=Math.max(0,Number(upRaw||0),Number(downRaw||0)), i=0;
+  while(largest>=1024 && i<units.length-1){ largest/=1024; i++; }
+  // v1.3.6: upload/download share the unit selected by the larger rate. Promote
+  // before a rounded four-digit integer can appear in the compact number column.
+  if(largest>=999.5 && i<units.length-1) i++;
+  var unit=units[i], up=statusRateParts(upRaw,i), down=statusRateParts(downRaw,i);
+  up.unit=unit; down.unit=unit;
+  return {up:up,down:down};
 }
 function statusFromFile(){
   try {
@@ -3510,17 +3525,28 @@ function setStatusOverlayHidden(hidden){
   if(statusOverlay) statusOverlay.hidden=hidden;
 }
 function renderStatusSpeedOverlay(){
-  var up=statusRateParts(lastUp), down=statusRateParts(lastDown);
-  // v1.3.5 parity with SwiftUI: shared logo at the far left, optional state dot
-  // in the middle, and the two speed rows pinned to the far right.
-  var left=2, gap=6, iconWidth=showIcon?16:0, dotWidth=showStatus?7:0, x=left;
+  var rates=statusRatePair(lastUp,lastDown), up=rates.up, down=rates.down;
+  // v1.3.6 parity with SwiftUI: no outer left/right padding, 2pt element gaps,
+  // and a content-sized speed block whose unit finishes at the right edge.
+  var left=0, gap=2, iconWidth=showIcon?16:0, dotWidth=showStatus?7:0, x=left;
   if(showIcon) x+=iconWidth;
-  if(showStatus){if(x>left)x+=gap;var dotX=x;x+=dotWidth;statusDot.frame=$.NSMakeRect(dotX+1,6.2,6,8);}
+  if(showStatus){if(x>left)x+=gap;var dotX=x;x+=dotWidth;statusDot.frame=$.NSMakeRect(dotX+1,5.4,6,8);}
   if(showSpeed&&x>left)x+=gap;
-  var speedX=x, speedWidth=53;
-  var width=(showSpeed?speedX+speedWidth:x)+2;
-  statusItem.length=Math.max(25,width);
-  statusOverlay.frame=$.NSMakeRect(0,0,Math.max(25,width),22);
+
+  upValueLabel.stringValue=$(up.value); upUnitLabel.stringValue=$(up.unit);
+  downValueLabel.stringValue=$(down.value); downUnitLabel.stringValue=$(down.unit);
+  // NSTextField's native sizeToFit gives the actual AppKit text width. The
+  // fallback keeps the status item usable if a bridge/runtime rejects sizing.
+  function fittedWidth(label,text){
+    try{label.sizeToFit;var w=Number(label.frame.size.width);if(isFinite(w)&&w>0)return Math.ceil(w);}catch(e){}
+    return Math.ceil(Math.max(1,String(text).length)*5);
+  }
+  var numericWidth=Math.max(fittedWidth(upValueLabel,up.value),fittedWidth(downValueLabel,down.value));
+  var unitWidth=Math.max(fittedWidth(upUnitLabel,up.unit),fittedWidth(downUnitLabel,down.unit));
+  var speedX=x, speedWidth=numericWidth+unitWidth;
+  var width=showSpeed?speedX+speedWidth:x;
+  statusItem.length=Math.max(25,Math.ceil(width));
+  statusOverlay.frame=$.NSMakeRect(0,0,Math.max(25,Math.ceil(width)),22);
   statusOverlay.hidden=false;
 
   statusIconView.hidden=!showIcon;
@@ -3534,14 +3560,14 @@ function renderStatusSpeedOverlay(){
     statusDot.textColor=lastReachable?(lastRunning?$.NSColor.systemGreenColor:$.NSColor.systemOrangeColor):$.NSColor.secondaryLabelColor;
   }
 
-  // Keep numeric and unit fields separate, matching the SwiftUI renderer's
-  // 23pt + 30pt speed block while avoiding NSButtonCell multiline rendering.
-  upValueLabel.frame=$.NSMakeRect(speedX,9.3,23,10.5);
-  upUnitLabel.frame=$.NSMakeRect(speedX+23,9.3,30,10.5);
-  downValueLabel.frame=$.NSMakeRect(speedX,0.3,23,10.5);
-  downUnitLabel.frame=$.NSMakeRect(speedX+23,0.3,30,10.5);
-  upValueLabel.stringValue=$(up.value); upUnitLabel.stringValue=$(up.unit);
-  downValueLabel.stringValue=$(down.value); downUnitLabel.stringValue=$(down.unit);
+  // Numeric values are right-aligned against one shared unit start; the two
+  // common-unit labels then end flush with the status item's right boundary.
+  upValueLabel.alignment=1; downValueLabel.alignment=1;
+  upUnitLabel.alignment=0; downUnitLabel.alignment=0;
+  upValueLabel.frame=$.NSMakeRect(speedX,8.5,numericWidth,10.5);
+  upUnitLabel.frame=$.NSMakeRect(speedX+numericWidth,8.5,unitWidth,10.5);
+  downValueLabel.frame=$.NSMakeRect(speedX,-0.5,numericWidth,10.5);
+  downUnitLabel.frame=$.NSMakeRect(speedX+numericWidth,-0.5,unitWidth,10.5);
 }
 function renderStatusButton(){
   if(!statusItem) return;
@@ -3888,8 +3914,8 @@ try{
     label.alignment=0; label.textColor=$.NSColor.labelColor;
     return label;
   }
-  upValueLabel=makeStatusLabel(8.5,0.28); upUnitLabel=makeStatusLabel(8.5,0.28);
-  downValueLabel=makeStatusLabel(8.5,0.28); downUnitLabel=makeStatusLabel(8.5,0.28);
+  upValueLabel=makeStatusLabel(8.3,0.28); upUnitLabel=makeStatusLabel(8.3,0.28);
+  downValueLabel=makeStatusLabel(8.3,0.28); downUnitLabel=makeStatusLabel(8.3,0.28);
   statusDot=makeStatusLabel(5.5,0.0); statusDot.stringValue='●';
   statusOverlay.addSubview(upValueLabel); statusOverlay.addSubview(upUnitLabel);
   statusOverlay.addSubview(downValueLabel); statusOverlay.addSubview(downUnitLabel); statusOverlay.addSubview(statusDot);
@@ -3903,7 +3929,7 @@ function addItem(targetMenu,title,sel,key){var i=$.NSMenuItem.alloc.initWithTitl
 function addSymbol(item,name){try{var img=$.NSImage.imageWithSystemSymbolNameAccessibilityDescription(name,item.title);if(img){img.template=true;item.image=img;}}catch(e){} return item;}
 function addSep(targetMenu){targetMenu.addItem($.NSMenuItem.separatorItem);}
 
-// v1.3.5 compact dropdown header: a large color BrandLogo spans both rows on
+// v1.3.6 compact dropdown header: a large color BrandLogo spans both rows on
 // the left, while Core/version/state and traffic are two aligned rows at right.
 function makeHeaderLabel(frame,size,weight,color){
   var label=$.NSTextField.alloc.initWithFrame(frame);

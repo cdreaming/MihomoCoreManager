@@ -1,15 +1,15 @@
 {
-  "build": "1305",
+  "build": "1306",
   "contract": "ChatGPT portable preview and GitHub GoWebUI.pkg share scripts/build-gowebui-app.sh and these exact release inputs",
   "files": [
     {
       "path": "VERSION",
-      "sha256": "fc253dae4f432925780b608f87298fbbd2f948cd811d2e894cdcbb98ec855d2e",
+      "sha256": "f4eaae07c72dd003028a4583ee93e5146e4fb2e5ba80566d3e79d73edd39ee36",
       "size": 6
     },
     {
       "path": "BUILD_NUMBER",
-      "sha256": "0c71714e087aaad551c7a1dee2c153ad56951ef11384c30e6e36d4273e398cf3",
+      "sha256": "78faeb56a3fd5484eabd9fbf7c06bf971286a43ae5027653ad5163d7e6c126ee",
       "size": 5
     },
     {
@@ -19,8 +19,8 @@
     },
     {
       "path": "portable-runtime/main.go",
-      "sha256": "3e7ba0af1c66e643d4ec9e2fe2e31fef7612591bfad521db58a5950cf6161b09",
-      "size": 143475
+      "sha256": "6fea8ef23a4438c3e5b64d182ade3ab72f6234737c67d3913aaeafcde0e8151e",
+      "size": 144861
     },
     {
       "path": "portable-runtime/ui/index.html",
@@ -54,7 +54,7 @@
     },
     {
       "path": "scripts/build-gowebui-app.sh",
-      "sha256": "6c0c506363368662a7c2f21b65d1799cd28951e8e0f1d53e6bc5dca2d180cc9e",
+      "sha256": "b8563c286af5556dae906ca1814f44c03f1a75b7f99233321e2a9f436edf2af5",
       "size": 3986
     },
     {
@@ -108,9 +108,9 @@
       "size": 779389
     }
   ],
-  "input_tree_sha256": "6feddc9adab2860614dc1b1520279f4c22394dbe1f3b8f19e275cbfa1efaa26c",
+  "input_tree_sha256": "6b5aab7d201fd5837c719dfa0b99f73fa95fb8f4c98c565d23e4132940dec9b5",
   "required_go": "go1.26.8",
   "schema": 1,
   "variant": "GoWebUI",
-  "version": "1.3.5"
+  "version": "1.3.6"
 }

@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.3.6
+
+- 状态栏上传/下载网速改为共同单位：以两者较大实时速度决定 `B/s` / `KB/s` / `MB/s` / `GB/s` / `TB/s`，上下两行同步切换。
+- SwiftUI 与 GoWebUI 同步移除固定 53pt 网速区，改为按当前数字与共同单位实际所需宽度动态收缩；元素间距由 6pt 缩为 2pt。
+- 网速数字列按两行最大文本宽度建立共同列并右对齐，单位列从同一位置开始、右缘贴状态项边界；LOGO 贴左边界，状态栏网速本体不增加上传/下载箭头。
+- 两行网速整体略向下调整；GoWebUI 使用 `NSTextField.sizeToFit`，SwiftUI 使用 AppKit 字体实际测宽，避免短速率仍保留大块空白。
+- 明确“服务设置”持久化位置：GoWebUI 为 `~/Library/Application Support/MihomoManager/settings.json`，SwiftUI 为 `~/Library/Application Support/MihomoManager/profiles.json`；Secret 继续只进 macOS Keychain。
+- App / Xcode / GoWebUI runtime 统一升级为 v1.3.6 / build 1306。
+
 ## v1.3.5
 
 - 状态栏下拉菜单头部重新排版：BrandLogo 放大并固定在左侧跨两行，右侧第一行显示 Mihomo Core / Core 版本 / 运行状态，第二行显示上传与下载实时网速。
