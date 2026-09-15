@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -1587,9 +1588,118 @@ func TestEmbeddedModernAppIconV131(t *testing.T) {
 	}
 }
 
-func TestPortableVersionV135(t *testing.T) {
-	if appVersion != "1.3.6" || buildNumber != "1306" {
+func TestPortableVersionV137(t *testing.T) {
+	if appVersion != "1.3.7" || buildNumber != "1307" {
 		t.Fatalf("unexpected portable version/build: %s/%s", appVersion, buildNumber)
+	}
+}
+
+func TestPortManagementBridgeV137(t *testing.T) {
+	var hits []string
+	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer panel-secret" {
+			t.Errorf("unexpected auth header %q", got)
+		}
+		hits = append(hits, r.Method+" "+r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/ports":
+			_, _ = w.Write([]byte(`{"ok":true,"route_count":1,"settings":[],"routes":[]}`))
+		case "/api/ports/settings":
+			body, _ := io.ReadAll(r.Body)
+			if !strings.Contains(string(body), `"id":"mixed-port"`) {
+				t.Errorf("settings body not forwarded: %s", body)
+			}
+			_, _ = w.Write([]byte(`{"ok":true,"message":"saved"}`))
+		case "/api/ports/delay":
+			body, _ := io.ReadAll(r.Body)
+			if !strings.Contains(string(body), `"target":"HK-01"`) {
+				t.Errorf("delay body not forwarded: %s", body)
+			}
+			_, _ = w.Write([]byte(`{"ok":true,"delay":88}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer remote.Close()
+
+	state := &appState{
+		settings: Settings{SelectedID: "test", Profiles: []Profile{{
+			ID: "test", Name: "test", ManagementURL: remote.URL + "/api/ports", AllowInsecureHTTP: true,
+		}}},
+		client:      remote.Client(),
+		secretCache: map[string]string{"test": "panel-secret"},
+	}
+
+	for _, tc := range []struct {
+		name string
+		fn   func(http.ResponseWriter, *http.Request)
+		req  *http.Request
+		want string
+	}{
+		{"snapshot", state.handlePorts, httptest.NewRequest(http.MethodGet, "/local/ports", nil), `"route_count":1`},
+		{"settings", state.handlePortSettings, httptest.NewRequest(http.MethodPost, "/local/ports/settings", strings.NewReader(`{"settings":[{"id":"mixed-port","enabled":true,"port":7890}]}`)), `"message":"saved"`},
+		{"delay", state.handlePortDelay, httptest.NewRequest(http.MethodPost, "/local/ports/delay", strings.NewReader(`{"target":"HK-01"}`)), `"delay":88`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			tc.fn(rec, tc.req)
+			if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), tc.want) {
+				t.Fatalf("unexpected response: %d %s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+
+	wantHits := []string{"GET /api/ports", "POST /api/ports/settings", "POST /api/ports/delay"}
+	if !reflect.DeepEqual(hits, wantHits) {
+		t.Fatalf("unexpected port bridge calls: %#v", hits)
+	}
+}
+
+func TestPortManagementUIV137(t *testing.T) {
+	page, err := assets.ReadFile("ui/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(page)
+	for _, marker := range []string{
+		`data-nav="ports"`,
+		`data-view="ports"`,
+		"Core 端口设置",
+		`id="corePortSettings"`,
+		"core-layout",
+		"core-port-panel",
+		"线路端口信息",
+		"对应线路 / 代理组",
+		"刷新延时",
+		"/local/ports",
+		"/local/ports/settings",
+		"/local/ports/delay",
+		"重启/热重载先走 Mihomo Controller API；服务生命周期与日志随后走 Core 服务面板 API；",
+		"只有显式配置 SSH 目标时才尝试 mihomo.service；避免因局域网直连失败而自动触发 SSH 认证；",
+	} {
+		if !strings.Contains(text, marker) {
+			t.Fatalf("portable v1.3.7 port-management UI missing marker %q", marker)
+		}
+	}
+	if !strings.Contains(text, "grid-template-columns:minmax(0,2fr) minmax(0,3fr)") {
+		t.Fatal("corrected v1.3.7 Core layout must use the requested 2:3 column ratio")
+	}
+	serviceInfo := strings.Index(text, "<h3>服务信息</h3>")
+	serviceControl := strings.Index(text, "<h3>服务控制</h3>")
+	metaCube := strings.Index(text, "<h3>MetaCubeXD</h3>")
+	projectUpdate := strings.Index(text, "<h3>项目升级</h3>")
+	if serviceInfo < 0 || serviceControl < 0 || serviceInfo > serviceControl {
+		t.Fatal("corrected v1.3.7 Core layout must place 服务信息 before 服务控制")
+	}
+	if metaCube < 0 || projectUpdate < 0 || metaCube > projectUpdate {
+		t.Fatal("corrected v1.3.7 Core layout must place MetaCubeXD before 项目升级")
+	}
+	if strings.Contains(text, `id="linePortSettings"`) {
+		t.Fatal("corrected v1.3.7 line-port page must not duplicate Core port settings")
+	}
+	if !strings.Contains(text, "min-height:574px;max-height:747px") {
+		t.Fatal("corrected v1.3.7 log viewport must be approximately one-third taller")
 	}
 }
 

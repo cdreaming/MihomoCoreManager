@@ -1,17 +1,20 @@
-# MihomoManager for macOS v1.3.6
+# MihomoManager for macOS v1.3.7
 
 面向 **Apple Silicon macOS** 的 Mihomo 桌面管理客户端。项目同时维护 **GoWebUI** 与 **SwiftUI** 两套正式实现，用于管理远端 Mihomo Controller、Mihomo Core 管理面板、订阅、日志、代理策略和项目升级。
 
-当前版本：**v1.3.6 (build 1306)**  
+当前版本：**v1.3.7 (build 1307)**  
 支持架构：**arm64**  
 最低系统：**macOS 14.0**
 
-## v1.3.6 本次优化
+## v1.3.7 本次开发
 
-- **状态栏网速改为共同单位。** 上传/下载不再各自切换 `B/s`、`KB/s`、`MB/s` 等单位，而是由两者中较大的实时速度决定共同单位，两行单位始终同步。
-- **状态栏占位按内容缩小。** 删除 v1.3.5 的固定 53pt 网速块，SwiftUI 使用 AppKit 实际文字测宽，GoWebUI 使用 `NSTextField.sizeToFit` 测宽；数字列取两行所需最大宽度，单位列只保留当前共同单位所需宽度，元素间距由 6pt 收到 2pt。
-- **对齐方式重新整理。** LOGO 贴预留区域左边界；网速整体靠右，数字列右对齐、两行单位从同一 x 坐标开始且单位右缘贴边；状态栏网速本体不增加 `↑/↓` 标识，两行位置整体略向下调整。
-- **SwiftUI / GoWebUI 同步实现。** 两套状态栏均采用相同的共同单位、紧凑数字格式、2pt 间距和内容自适应占位策略，同时保留 v1.3.5 的状态栏常驻与退出语义。
+- **Core 控制页重新排版。** 第一行“服务控制 / 服务信息”，第二行独立“Core 端口设置”（端口项双列），第三行“MetaCubeXD / 项目升级”；端口写入仍由 Core 服务面板 v4.1.2 事务接口完成校验、热重载与失败回滚。
+- **服务控制优先级说明按指定格式更新。** 重启/热重载优先 Mihomo Controller API；生命周期与日志随后走 Core 服务面板 API；仅显式配置 SSH 目标时才尝试 `mihomo.service`，局域网直连失败不会自动触发 SSH 认证。
+- **“线路端口”页面去重。** 入口仍位于“代理切换”之后；删除重复的“Core 端口设置”模块，只显示受管端口、端口类型、对应线路/代理组、最近延时，并允许每条线路单独刷新延时。
+- **运行日志扩容。** GoWebUI 日志框高度约增加 1/3；SwiftUI 日志区同步提高最小高度。
+- **保持 v4.1.2 多端口所有权边界。** 标准 Core 端口与普通自定义 listener 可安全修改；由 multiport reconcile 派生的受管线路 listener 只展示与测速，不逐条硬改，避免被后续重建覆盖。
+- **SwiftUI / GoWebUI 同步实现。** 两套正式实现使用相同 `/api/ports*` 服务面板合约和同一版本/build。
+
 
 > [!IMPORTANT]
 > v1.3.0 起项目固定维护两套实现：**GoWebUI** 与 **SwiftUI**。两者共享 `VERSION`、`BUILD_NUMBER`、应用图标与发布版本，但 UI 源码独立。GoWebUI portable installer 与正式 GoWebUI `.pkg` 共用同一个 `scripts/build-gowebui-app.sh`；SwiftUI `.pkg` 由 Xcode 独立构建。两种实现最终都安装为 `/Applications/MihomoManager.app`，应二选一使用。
@@ -49,7 +52,7 @@
 安装包名称：
 
 ```text
-MihomoManager-v1.3.6-GoWebUI-arm64-portable-installer.zip
+MihomoManager-v1.3.7-GoWebUI-arm64-portable-installer.zip
 ```
 
 使用步骤：
@@ -75,8 +78,8 @@ Install-MihomoManager.command
 正式 Release 同时发布两套明确区分的安装包：
 
 ```text
-MihomoManager-v1.3.6-GoWebUI-arm64.pkg
-MihomoManager-v1.3.6-SwiftUI-arm64.pkg
+MihomoManager-v1.3.7-GoWebUI-arm64.pkg
+MihomoManager-v1.3.7-SwiftUI-arm64.pkg
 ```
 
 二者都安装到：
@@ -507,7 +510,7 @@ bash scripts/build-portable-installer.sh
 
 ```text
 dist-portable/
-└── MihomoManager-v1.3.6-GoWebUI-arm64-portable-installer.zip
+└── MihomoManager-v1.3.7-GoWebUI-arm64-portable-installer.zip
 ```
 
 ### SwiftUI 本地构建
@@ -581,8 +584,8 @@ Go 1.26.8
 发布流程会在线回读并验证至少：
 
 ```text
-MihomoManager-v1.3.6-GoWebUI-arm64.pkg
-MihomoManager-v1.3.6-SwiftUI-arm64.pkg
+MihomoManager-v1.3.7-GoWebUI-arm64.pkg
+MihomoManager-v1.3.7-SwiftUI-arm64.pkg
 SHA256SUMS.txt
 GoWebUI-RELEASE-PROVENANCE.txt
 SwiftUI-RELEASE-PROVENANCE.txt
@@ -592,15 +595,15 @@ SwiftUI-RELEASE-PROVENANCE.txt
 
 ## 仓库结构
 
-下面按 v1.3.6 的实际职责列出主要源码与发布文件。
+下面按 v1.3.7 的实际职责列出主要源码与发布文件。
 
 **图例：** `★` 运行源码　`◆` 构建 / 发布　`●` 验证 / QA　`○` 文档 / 参考
 
 ```text
-MihomoManager-v1.3.6-source/
+MihomoManager-v1.3.7-source/
 │
-├── VERSION                                             # ◆ 当前版本：1.3.6
-├── BUILD_NUMBER                                        # ◆ 当前 build：1306
+├── VERSION                                             # ◆ 当前版本：1.3.7
+├── BUILD_NUMBER                                        # ◆ 当前 build：1307
 ├── README.md                                           # ○ 项目首页
 ├── CHANGELOG.md                                        # ○ 历史版本变更
 ├── SOURCE-SHA256SUMS.txt                               # ● 源码树 SHA-256 清单
@@ -661,7 +664,7 @@ MihomoManager-v1.3.6-source/
 │   └── releases/
 │       ├── v1.3.1/
 │       ├── v1.3.2/
-│       └── v1.3.6/                                     # ○ 当前版本 Release Notes / QA
+│       └── v1.3.7/                                     # ○ 当前版本 Release Notes / QA
 │
 ├── .github/
 │   └── workflows/
@@ -688,15 +691,15 @@ DerivedData/                                            # ◆ Xcode 派生数据
 正式 `dist/` 典型资产：
 
 ```text
-MihomoManager-v1.3.6-GoWebUI-arm64.pkg
-MihomoManager-v1.3.6-SwiftUI-arm64.pkg
+MihomoManager-v1.3.7-GoWebUI-arm64.pkg
+MihomoManager-v1.3.7-SwiftUI-arm64.pkg
 GoWebUI-APP-MANIFEST.json
 SwiftUI-APP-MANIFEST.json
 GoWebUI-RELEASE-PROVENANCE.txt
 SwiftUI-RELEASE-PROVENANCE.txt
 GoWebUI-RELEASE-LOCK.json
 BUILD-VARIANTS.txt
-release_v1.3.6_notes_zh-CN.md
+release_v1.3.7_notes_zh-CN.md
 SHA256SUMS.txt
 ```
 
@@ -722,14 +725,14 @@ macOS Keychain
 当前版本发布说明：
 
 ```text
-docs/releases/v1.3.6/RELEASE-NOTES.md
+docs/releases/v1.3.7/RELEASE-NOTES.md
 ```
 
 当前版本 QA：
 
 ```text
-docs/releases/v1.3.6/QA-v1.3.6.md
-QA-v1.3.6.md
+docs/releases/v1.3.7/QA-v1.3.7.md
+QA-v1.3.7.md
 ```
 
 API / 网络相关历史审计：

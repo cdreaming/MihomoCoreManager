@@ -83,6 +83,7 @@ struct ContentView: View {
             persistentPage(.overview) { OverviewView() }
             persistentPage(.core) { CoreView() }
             persistentPage(.proxies) { ProxiesView() }
+            persistentPage(.ports) { LinePortsView() }
             persistentPage(.subscriptions) { SubscriptionsView() }
             persistentPage(.logs) { LogsView() }
             persistentPage(.updates) { UpdateView() }
@@ -145,7 +146,7 @@ private struct WindowBehaviorConfigurator: NSViewRepresentable {
 private struct DashboardSidebar: View {
     @EnvironmentObject private var model: AppModel
 
-    private let visibleSections: [SidebarSection] = [.overview, .core, .proxies, .subscriptions, .logs, .settings]
+    private let visibleSections: [SidebarSection] = [.overview, .core, .proxies, .ports, .subscriptions, .logs, .settings]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -205,6 +206,7 @@ private struct DashboardSidebar: View {
         case .overview: "arrow.up.left.and.arrow.down.right"
         case .core: "dot.circle"
         case .proxies: "arrow.triangle.branch"
+        case .ports: "point.3.connected.trianglepath.dotted"
         case .subscriptions: "arrow.left.arrow.right"
         case .logs: "command"
         case .updates: "arrow.down.circle"
