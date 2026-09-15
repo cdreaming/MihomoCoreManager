@@ -933,48 +933,6 @@ struct MihomoAPIClient {
         _ = try await controllerData(url: url, method: "PUT", body: body, profile: profile, secret: secret)
     }
 
-    func portManagement(profile: ServerProfile, secret: String) async throws -> PortManagementPayload {
-        try await get("/api/ports", profile: profile, secret: secret)
-    }
-
-    func savePortSettings(
-        _ settings: [PortSettingUpdate],
-        profile: ServerProfile,
-        secret: String
-    ) async throws -> String {
-        struct Payload: Encodable { let settings: [PortSettingUpdate] }
-        let response: APIMessage = try await post(
-            "/api/ports/settings",
-            payload: Payload(settings: settings),
-            profile: profile,
-            secret: secret
-        )
-        return response.message ?? "端口设置已保存"
-    }
-
-    func refreshRouteDelay(
-        _ target: String,
-        profile: ServerProfile,
-        secret: String
-    ) async throws -> Int {
-        struct Payload: Encodable { let target: String }
-        struct Response: Decodable {
-            let ok: Bool
-            let message: String?
-            let delay: Int?
-        }
-        let response: Response = try await post(
-            "/api/ports/delay",
-            payload: Payload(target: target),
-            profile: profile,
-            secret: secret
-        )
-        guard let delay = response.delay, delay > 0 else {
-            throw MihomoClientError.operationFailed(response.message ?? "线路延时刷新失败")
-        }
-        return delay
-    }
-
     func logs(lines: Int, profile: ServerProfile, secret: String) async throws -> String {
         var panelError: Error?
         if profile.hasManagementEndpoint, !secret.isEmpty {

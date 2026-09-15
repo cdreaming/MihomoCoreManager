@@ -19,14 +19,6 @@
 - Profile 非敏感字段写入 `~/Library/Application Support/MihomoManager/settings.json`，旧 `MihomoCoreManager/settings.json` 仅用于迁移；Secret 使用 macOS Keychain。
 - 状态栏、代理切换、线路延时、Controller `/group`/`/proxies` 合并、窗口生命周期等 v1.2.x 稳定性修复继续保留。
 
-## v1.3.7 Core / line port management
-
-- Core 控制页“服务控制”卡直接提供 Core 端口设置，调用 Core 服务面板 v4.1.2 `/api/ports*` 接口完成事务写入、校验和热重载。
-- “代理切换”后新增“线路端口”页；页面同步提供 Core 本地代理端口编辑，并展示受管端口到线路/代理组的映射与最近延时，每条线路可单独刷新。
-- 受管 multiport listener 保持只读，沿用 v4.1.2 的 ownership/reconcile 边界；标准 Core 端口和普通 listener 在 Core 端口设置中修改。
-- 服务控制保持 API-first / explicit-SSH：局域网直连失败不会自动触发 SSH。
-- 版本统一为 v1.3.7 / build 1307。
-
 ## v1.3.6 status-menu parity
 
 - GoWebUI 与 SwiftUI 的状态栏入口继续使用同一份 `BrandLogo` / AppIcon 图形资源。
@@ -48,4 +40,4 @@
 - `CGO_ENABLED=0` 的 macOS runtime 对本地主机名增加系统解析器回退。
 - Cloudflare Tunnel/网关临时故障会清理空闲连接并对只读请求、状态轮询和代理菜单轮询退避，减少恢复期请求风暴。
 
-当前版本：v1.3.7，`VERSION=1.3.7`，`BUILD_NUMBER=1307`。
+当前版本：v1.3.6，`VERSION=1.3.6`，`BUILD_NUMBER=1306`。

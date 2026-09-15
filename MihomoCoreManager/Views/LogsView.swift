@@ -3,7 +3,6 @@ import SwiftUI
 struct LogsView: View {
     @EnvironmentObject private var model: AppModel
     var body: some View {
-        ScrollView {
         VStack(alignment: .leading, spacing: DashboardLayout.pageSpacing) {
             DashboardPageHeader(title: "运行日志", subtitle: "读取 Mihomo Core 最近的服务日志。")
             DashboardPanel {
@@ -25,7 +24,7 @@ struct LogsView: View {
                             .foregroundStyle(Color(red: 0.82, green: 0.85, blue: 0.90))
                             .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .topLeading).padding(2)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 574)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(DashboardPalette.field.opacity(0.72))
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(DashboardPalette.separator, lineWidth: 1) }
@@ -35,7 +34,6 @@ struct LogsView: View {
         .padding(.horizontal, DashboardLayout.pageHorizontalPadding)
         .padding(.top, DashboardLayout.pageTopPadding)
             .padding(.bottom, DashboardLayout.pageBottomPadding)
-        }
         .task(id: loadTaskID) { guard model.selectedSection == .logs else { return }; await model.ensureLogsLoaded() }
         .disabled(model.isBusy)
     }

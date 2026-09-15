@@ -109,7 +109,6 @@ final class AppModel: ObservableObject {
     }
     @Published var proxyGroupOrder: [String] = []
     @Published var proxyDelayResults: [String: Int] = [:]
-    @Published var portManagement: PortManagementPayload?
     @Published var subscriptions: [String: String] = [:]
     @Published var logs: String = ""
     @Published var updateInfo: ProjectUpdateInfo?
@@ -169,7 +168,6 @@ final class AppModel: ObservableObject {
     private var managementMetadataRefreshes: Set<UUID> = []
     private let managementMetadataRefreshInterval: TimeInterval = 30
     private var proxiesLoadedFor: UUID?
-    private var portsLoadedFor: UUID?
     private var subscriptionsLoadedFor: UUID?
     private var logsLoadedFor: UUID?
     private var noticeDismissTask: Task<Void, Never>?
@@ -409,13 +407,11 @@ final class AppModel: ObservableObject {
         proxies = []
         proxyGroupOrder = []
         proxyDelayResults = [:]
-        portManagement = nil
         subscriptions = [:]
         logs = ""
         updateInfo = nil
         updateLogs = ""
         proxiesLoadedFor = nil
-        portsLoadedFor = nil
         subscriptionsLoadedFor = nil
         logsLoadedFor = nil
         proxyReconcileTasks.values.forEach { $0.cancel() }
@@ -464,10 +460,6 @@ final class AppModel: ObservableObject {
         profiles[index] = normalized
         managementMetadataCache.removeValue(forKey: profile.id)
         managementMetadataUpdatedAt.removeValue(forKey: profile.id)
-        if selectedProfileID == profile.id {
-            portsLoadedFor = nil
-            portManagement = nil
-        }
         persistProfiles()
     }
 
@@ -796,67 +788,6 @@ final class AppModel: ObservableObject {
             // will reconcile health/history later.
             proxiesLoadedFor = profileID
             show("代理组“\(groupName)”测速完成，共 \(results.count) 个结果")
-        }
-    }
-
-    func ensurePortsLoaded() async {
-        guard let profile = selectedProfile,
-              profile.hasManagementEndpoint,
-              !currentSecret.isEmpty,
-              portsLoadedFor != profile.id else { return }
-        do {
-            let payload = try await api.portManagement(profile: profile, secret: currentSecret)
-            guard selectedProfileID == profile.id else { return }
-            portManagement = payload
-            portsLoadedFor = profile.id
-        } catch {
-            // Keep Core/Proxy pages usable when the remote management panel is
-            // older than v4.1.2 or temporarily unreachable. An explicit refresh
-            // below will surface the actionable error to the operator.
-        }
-    }
-
-    func fetchPorts() async {
-        guard let profile = selectedProfile else { return }
-        let profileID = profile.id
-        await busyOperation(.fetchPorts) {
-            let payload = try await api.portManagement(profile: profile, secret: currentSecret)
-            guard selectedProfileID == profileID else { return }
-            portManagement = payload
-            portsLoadedFor = profileID
-            show("端口信息已刷新")
-        }
-    }
-
-    func savePortSetting(_ setting: CorePortSetting, enabled: Bool, port: Int?) async {
-        guard let profile = selectedProfile else { return }
-        let profileID = profile.id
-        await busyOperation(.savePortSetting(setting.id)) {
-            let message = try await api.savePortSettings(
-                [PortSettingUpdate(id: setting.id, enabled: enabled, port: enabled ? port : nil)],
-                profile: profile,
-                secret: currentSecret
-            )
-            let payload = try await api.portManagement(profile: profile, secret: currentSecret)
-            guard selectedProfileID == profileID else { return }
-            portManagement = payload
-            portsLoadedFor = profileID
-            show(message)
-        }
-    }
-
-    func refreshRouteDelay(_ route: LinePortRoute) async {
-        guard let profile = selectedProfile else { return }
-        let profileID = profile.id
-        await busyOperation(.refreshRouteDelay(route.target)) {
-            let delay = try await api.refreshRouteDelay(route.target, profile: profile, secret: currentSecret)
-            guard selectedProfileID == profileID else { return }
-            if var payload = portManagement,
-               let index = payload.routes.firstIndex(where: { $0.port == route.port && $0.target == route.target }) {
-                payload.routes[index].delay = delay
-                portManagement = payload
-            }
-            show("\(route.target): \(delay) ms")
         }
     }
 

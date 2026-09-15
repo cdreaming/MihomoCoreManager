@@ -25,8 +25,8 @@ import (
 )
 
 const (
-	appVersion                      = "1.3.7"
-	buildNumber                     = "1307"
+	appVersion                      = "1.3.6"
+	buildNumber                     = "1306"
 	keychainService                 = "cc.kkr.MihomoManager.profile-secret"
 	v131BrokenKeychainService       = "cc.kkr.MihomoManager"
 	legacyKeychainService           = "cc.kkr.MihomoCoreManager.profile-secret"
@@ -2015,7 +2015,6 @@ func normalizeManagementBase(raw string, allowHTTP bool) (*url.URL, error) {
 	segments := strings.FieldsFunc(u.Path, func(r rune) bool { return r == '/' })
 	suffixes := [][]string{
 		{"api", "project-update", "check"}, {"api", "project-update", "apply"}, {"api", "project-update", "log"},
-		{"api", "ports", "settings"}, {"api", "ports", "delay"}, {"api", "ports", "mode"}, {"api", "ports"},
 		{"api", "subscriptions"}, {"api", "status"}, {"api", "action"}, {"api", "logs"},
 		{"api", "login"}, {"api", "logout"}, {"healthz"}, {"api"},
 	}
@@ -2703,56 +2702,6 @@ func (s *appState) handleProxyMode(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handlePorts exposes the v4.1.2 Core service panel's transactional port
-// management snapshot through the local authenticated bridge.  The remote
-// panel remains responsible for parsing/validating config.yaml, applying a
-// hot reload and rolling back a failed mutation.
-func (s *appState) handlePorts(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		jsonReply(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "message": "method not allowed"})
-		return
-	}
-	data, code, err := s.remote(http.MethodGet, "/api/ports", nil, nil, false)
-	if err != nil {
-		errReply(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(code)
-	_, _ = w.Write(data)
-}
-
-func (s *appState) forwardPortMutation(w http.ResponseWriter, r *http.Request, remotePath string) {
-	if r.Method != http.MethodPost {
-		jsonReply(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "message": "method not allowed"})
-		return
-	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, 2<<20))
-	if err != nil {
-		errReply(w, err)
-		return
-	}
-	if len(bytes.TrimSpace(body)) == 0 {
-		body = []byte(`{}`)
-	}
-	data, code, err := s.remote(http.MethodPost, remotePath, body, nil, false)
-	if err != nil {
-		errReply(w, errors.New(remoteMessage(data, err)))
-		return
-	}
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(code)
-	_, _ = w.Write(data)
-}
-
-func (s *appState) handlePortSettings(w http.ResponseWriter, r *http.Request) {
-	s.forwardPortMutation(w, r, "/api/ports/settings")
-}
-
-func (s *appState) handlePortDelay(w http.ResponseWriter, r *http.Request) {
-	s.forwardPortMutation(w, r, "/api/ports/delay")
-}
-
 func (s *appState) handleProxyGroups(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		jsonReply(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "message": "method not allowed"})
@@ -3418,9 +3367,6 @@ func (s *appState) routes() http.Handler {
 	mux.HandleFunc("/local/action", s.auth(s.handleAction))
 	mux.HandleFunc("/local/reload-config", s.auth(s.handleReload))
 	mux.HandleFunc("/local/proxy-mode", s.auth(s.handleProxyMode))
-	mux.HandleFunc("/local/ports", s.auth(s.handlePorts))
-	mux.HandleFunc("/local/ports/settings", s.auth(s.handlePortSettings))
-	mux.HandleFunc("/local/ports/delay", s.auth(s.handlePortDelay))
 	mux.HandleFunc("/local/proxy-groups", s.auth(s.handleProxyGroups))
 	mux.HandleFunc("/local/proxies", s.auth(s.handleProxies))
 	mux.HandleFunc("/local/proxy-menu-cache", s.auth(s.handleProxyMenuCache))
