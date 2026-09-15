@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.3.7
+
+- 同版本继续重构 Core 控制页：MetaCubeXD 并入“服务控制”，备注固定为指定两行；“Core 端口设置”与“项目升级”合并为一张上下排列的整行卡；SwiftUI/GoWebUI 同步统一端口逐项“保存”按钮尺寸。
+- 修订 Core 控制页布局：第一行“服务控制 / 服务信息”，第二行整行“Core 端口设置”并采用双列端口项，第三行“MetaCubeXD / 项目升级”。
+- “线路端口”页移除重复的“Core 端口设置”模块，仅保留线路端口映射、代理组/线路信息与逐条延时刷新。
+- “运行日志”日志框高度在原 v1.3.7 基础上增加约 1/3（GoWebUI 430/560px → 574/747px；SwiftUI 同步使用 574pt 最小日志区）。
+- Core 控制页新增独立“Core 端口设置”卡，复用 Mihomo-Web-Panel v4.1.2 `/api/ports` 与 `/api/ports/settings` 事务接口，支持标准入站端口、Controller/DNS 及非受管 listener 的安全修改、校验、热重载与失败回滚。
+- 服务控制优先级说明按新要求合并为两行：重启/热重载优先 Mihomo Controller API；服务生命周期与日志随后使用 Core 服务面板 API；仅显式配置 SSH 目标时才尝试 `mihomo.service`，不会因局域网直连失败自动触发 SSH 认证。
+- “代理切换”后新增“线路端口”页面；页面展示端口、端口类型、对应线路/代理组、最近延时，支持每条线路独立刷新延时。
+- Provider 线路延时、代理组延时与受管线路端口解析沿用 v4.1.2 Core 服务面板语义；受管 `mihomo-mp-*` 派生 listener 保持只读，避免下次 multiport reconcile 覆盖人工修改。
+- SwiftUI 与 GoWebUI 两套正式实现同步新增端口管理数据模型、页面、API 桥接与回归门禁。
+- App / Xcode / GoWebUI runtime 统一升级为 v1.3.7 / build 1307。
+
 ## v1.3.6
 
 - 状态栏上传/下载网速改为共同单位：以两者较大实时速度决定 `B/s` / `KB/s` / `MB/s` / `GB/s` / `TB/s`，上下两行同步切换。

@@ -7,8 +7,8 @@ errors = []
 version = (root / "VERSION").read_text(encoding="utf-8").strip()
 if not re.fullmatch(r"\d+\.\d+\.\d+", version):
     errors.append(f"VERSION invalid: {version!r}")
-if version != "1.3.6":
-    errors.append(f"v1.3.6 release must use VERSION=1.3.6 (got {version})")
+if version != "1.3.7":
+    errors.append(f"v1.3.7 release must use VERSION=1.3.7 (got {version})")
 
 required = [
     "MihomoCoreManager.xcodeproj/project.pbxproj",
@@ -61,7 +61,7 @@ if "MACOSX_DEPLOYMENT_TARGET = 14.0;" not in pbx: errors.append("deployment targ
 if f"MARKETING_VERSION = {version};" not in pbx: errors.append(f"Xcode MARKETING_VERSION must match VERSION {version}")
 expected_build = (root / "BUILD_NUMBER").read_text(encoding="utf-8").strip()
 if not re.fullmatch(r"\d+", expected_build): errors.append(f"BUILD_NUMBER invalid: {expected_build!r}")
-if expected_build != "1306": errors.append(f"v1.3.6 release must use BUILD_NUMBER=1306 (got {expected_build})")
+if expected_build != "1307": errors.append(f"v1.3.7 release must use BUILD_NUMBER=1307 (got {expected_build})")
 if f"CURRENT_PROJECT_VERSION = {expected_build};" not in pbx: errors.append(f"Xcode build number must be {expected_build}")
 if not (root / f"docs/releases/v{version}/RELEASE-NOTES.md").is_file(): errors.append(f"release notes missing for v{version}")
 portable = root / "portable-runtime/main.go"
@@ -69,7 +69,7 @@ if portable.is_file() and not re.search(rf'appVersion\s*=\s*\"{re.escape(version
     errors.append("portable runtime appVersion must match VERSION")
 
 client = (root / "MihomoCoreManager/API/MihomoAPIClient.swift").read_text(encoding="utf-8")
-for endpoint in ["/api/status", "/api/action", "/api/subscriptions", "/api/logs", "/api/project-update/check", "/api/project-update/apply", "/api/project-update/log"]:
+for endpoint in ["/api/status", "/api/action", "/api/subscriptions", "/api/logs", "/api/project-update/check", "/api/project-update/apply", "/api/project-update/log", "/api/ports", "/api/ports/settings", "/api/ports/delay"]:
     if endpoint not in client: errors.append(f"missing API endpoint: {endpoint}")
 for marker in ["/configs", "/proxies", "proxyMode", "setProxyMode", "selectProxy", "ControllerProxiesResponse"]:
     if marker not in client:
@@ -873,10 +873,8 @@ for marker in ["后端已连接 · ", "后端未连接 · 检查设置", "status
     if marker not in content:
         errors.append(f"v1.3.3 SwiftUI backend-status parity gate missing: {marker}")
 priority_markers = [
-    "重启/热重载先走 Mihomo Controller API；",
-    "服务生命周期与日志随后走 Core 服务面板 API；",
-    "避免因局域网直连失败而自动触发 SSH 认证；",
-    "只有显式配置 SSH 目标时才尝试 mihomo.service/systemd。",
+    "重启/热重载先走 Mihomo Controller API；服务生命周期与日志随后走 Core 服务面板 API；",
+    "只有显式配置 SSH 目标时才尝试 mihomo.service；避免因局域网直连失败而自动触发 SSH 认证；",
 ]
 for marker in priority_markers:
     if marker not in core_view:
@@ -890,6 +888,62 @@ readme_text = (root / "README.md").read_text(encoding="utf-8")
 for marker in ["![MihomoManager 概览](HomePage.png)", "![MihomoManager Core 控制](CorePage.png)"]:
     if marker not in readme_text:
         errors.append(f"v1.3.3 README screenshot gate missing: {marker}")
+
+# v1.3.7 Core-port / line-port management parity gates.
+for marker in [
+    "PortManagementPayload",
+    "CorePortSetting",
+    "LinePortRoute",
+    "case ports",
+    'case .ports: "线路端口"',
+]:
+    if marker not in models_auth:
+        errors.append(f"native v1.3.7 port model/navigation gate missing: {marker}")
+for marker in ["portManagement", "ensurePortsLoaded", "fetchPorts", "savePortSetting", "refreshRouteDelay"]:
+    if marker not in app_model:
+        errors.append(f"native v1.3.7 port operation gate missing: {marker}")
+for marker in ["Core 端口设置", "LinePortsView", "线路端口信息", "对应线路 / 代理组", "刷新延时"]:
+    if marker not in core_view:
+        errors.append(f"native v1.3.7 port UI gate missing: {marker}")
+for marker in ['data-nav="ports"', 'data-view="ports"', 'id="corePortSettings"', "core-layout", "core-port-panel", "Core 端口设置", "线路端口信息", "对应线路 / 代理组", "刷新延时", "/local/ports", "/local/ports/settings", "/local/ports/delay"]:
+    if marker not in portable_ui:
+        errors.append(f"portable v1.3.7 port UI gate missing: {marker}")
+if "grid-template-columns:minmax(300px,.65fr) minmax(0,1.35fr)" not in portable_ui:
+    errors.append("portable v1.3.7 Core layout must mirror Overview quick-control : realtime-traffic proportions")
+service_info_index = portable_ui.find("<h3>服务信息</h3>")
+service_control_index = portable_ui.find("<h3>服务控制</h3>")
+if service_info_index < 0 or service_control_index < 0 or service_info_index > service_control_index:
+    errors.append("portable v1.3.7 Core layout must place 服务信息 before 服务控制")
+open_meta_index = portable_ui.find('>打开 MetaCubeXD</button>', service_control_index)
+project_update_index = portable_ui.find('data-integrated="project-update"')
+if 'data-integrated="metacubexd"' in portable_ui or open_meta_index < service_control_index or project_update_index < 0:
+    errors.append("portable v1.3.7 Core layout must flatten MetaCubeXD into 服务控制 and keep 项目升级 below Core 端口设置")
+for marker in [
+    "MetaCubeXD 独立面板：http://127.0.0.1:29091",
+    "配置文件：/usr/local/libexec/Mihomo-Web-Panel/env/metacubexd-panel.env",
+    'class="core-update-section" data-integrated="project-update"',
+    ".core-update-section .actions{width:100%;grid-template-columns:repeat(2,minmax(0,1fr))}",
+]:
+    if marker not in portable_ui:
+        errors.append(f"portable v1.3.7 flattened Core layout missing marker: {marker}")
+if 'class="integrated-section core-update-section"' in portable_ui or ".core-update-section .actions{max-width:" in portable_ui:
+    errors.append("portable v1.3.7 Core port/update card must not render a middle divider or constrained upgrade buttons")
+if 'class="btn port-save-btn"' not in portable_ui or "saveCorePortSetting(this)" not in portable_ui:
+    errors.append("portable v1.3.7 Core port rows must use fixed-size per-row save buttons")
+if "private var serviceColumns" not in core_view or ".frame(width: 334)" not in core_view:
+    errors.append("native v1.3.7 Core layout must mirror Overview quick-control fixed width and realtime-traffic flexible width")
+if 'id="linePortSettings"' in portable_ui:
+    errors.append("portable v1.3.7 corrected layout must not duplicate Core port settings on the line-port page")
+for marker in ["corePortPanel", "updateSection", "LazyVGrid", ".frame(width: 88, height: 38)", 'Text("MetaCubeXD 独立面板：http://127.0.0.1:29091")', 'Text("配置文件：/usr/local/libexec/Mihomo-Web-Panel/env/metacubexd-panel.env")', ".frame(maxWidth: .infinity)", "minHeight: 574"]:
+    if marker not in core_view and marker != "minHeight: 574":
+        errors.append(f"native v1.3.7 corrected layout gate missing: {marker}")
+if "minHeight: 574" not in logs_view:
+    errors.append("native v1.3.7 log viewport must use the corrected 574pt minimum height")
+if "min-height:574px;max-height:747px" not in portable_ui:
+    errors.append("portable v1.3.7 log viewport must be approximately one-third taller")
+for marker in ["handlePorts", "handlePortSettings", "handlePortDelay", 'mux.HandleFunc("/local/ports"', '"/api/ports/settings"', '"/api/ports/delay"']:
+    if marker not in portable_main:
+        errors.append(f"portable v1.3.7 port bridge gate missing: {marker}")
 
 # v1.3.6 status-menu compact-layout/shared-unit/lifecycle parity gates.
 for marker in [

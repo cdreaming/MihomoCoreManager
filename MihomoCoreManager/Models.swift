@@ -4,6 +4,7 @@ enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
     case overview
     case core
     case proxies
+    case ports
     case subscriptions
     case logs
     case updates
@@ -16,6 +17,7 @@ enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
         case .overview: "概览"
         case .core: "Core 控制"
         case .proxies: "代理切换"
+        case .ports: "线路端口"
         case .subscriptions: "订阅管理"
         case .logs: "运行日志"
         case .updates: "项目升级"
@@ -28,6 +30,7 @@ enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
         case .overview: "gauge.with.dots.needle.50percent"
         case .core: "bolt.horizontal.circle"
         case .proxies: "arrow.triangle.branch"
+        case .ports: "point.3.connected.trianglepath.dotted"
         case .subscriptions: "arrow.triangle.2.circlepath"
         case .logs: "doc.text.magnifyingglass"
         case .updates: "arrow.down.circle"
@@ -167,6 +170,10 @@ func normalizedManagementURL(_ raw: String) -> String {
         ["api", "project-update", "check"],
         ["api", "project-update", "apply"],
         ["api", "project-update", "log"],
+        ["api", "ports", "settings"],
+        ["api", "ports", "delay"],
+        ["api", "ports", "mode"],
+        ["api", "ports"],
         ["api", "subscriptions"],
         ["api", "status"],
         ["api", "action"],
@@ -346,6 +353,45 @@ struct SubscriptionsResponse: Decodable {
 struct LogsResponse: Decodable {
     let ok: Bool
     let logs: String
+}
+
+struct CorePortSetting: Decodable, Identifiable, Hashable {
+    let id: String
+    let kind: String
+    let key: String
+    let label: String
+    let description: String
+    let configured: Bool
+    let optional: Bool
+    let editable: Bool
+    let port: Int?
+}
+
+struct LinePortRoute: Decodable, Identifiable, Hashable {
+    var id: String { "\(port):\(target)" }
+    let port: Int
+    let portType: String
+    let kind: String
+    let kindLabel: String
+    let target: String
+    var delay: Int?
+    let provider: String?
+}
+
+struct PortManagementPayload: Decodable {
+    let ok: Bool
+    let mode: MihomoRunMode?
+    let serviceActive: Bool
+    let settings: [CorePortSetting]
+    var routes: [LinePortRoute]
+    let routeCount: Int
+    let delayUrl: String?
+}
+
+struct PortSettingUpdate: Encodable {
+    let id: String
+    let enabled: Bool
+    let port: Int?
 }
 
 struct UpdateLogResponse: Decodable {
@@ -535,6 +581,9 @@ enum AppOperation: Equatable {
     case setProxyMode(MihomoRunMode)
     case selectProxy(group: String, proxy: String)
     case testProxyGroup(String)
+    case fetchPorts
+    case savePortSetting(String)
+    case refreshRouteDelay(String)
     case fetchSubscriptions
     case saveSubscriptions
     case fetchLogs
